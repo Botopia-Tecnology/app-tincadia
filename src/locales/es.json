@@ -1,0 +1,23 @@
+{
+  "common": {
+    "loading": "Cargando...",
+    "error": "Error",
+    "success": "Éxito",
+    "close": "Cerrar",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "back": "Volver",
+    "continue": "Continuar",
+    "submit": "Enviar",
+    "search": "Buscar",
+    "filter": "Filtrar",
+    "reset": "Restablecer"
+  },
+  "app": {
+    "welcome": "Bienvenido a TINCADIA",
+    "description": "Plataforma de tecnología inclusiva"
+  }
+}
+
