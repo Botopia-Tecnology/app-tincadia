@@ -18,6 +18,48 @@
   "app": {
     "welcome": "Bem-vindo ao TINCADIA",
     "description": "Plataforma de tecnologia inclusiva"
+  },
+  "login": {
+    "email": "Endereço de e-mail",
+    "password": "Senha",
+    "forgotPassword": "Esqueceu sua senha?",
+    "loginButton": "entrar",
+    "noAccount": "Não tem uma conta?",
+    "register": "Registre-se",
+    "continueWithGoogle": "Continuar com Google",
+    "continueWithPhone": "Continuar com celular",
+    "continueWithEmail": "Continuar com e-mail",
+    "otherMethods": "Outros métodos de login",
+    "continueWithApple": "Continuar com Apple",
+    "continueWithMicrosoft": "Continuar com Microsoft"
+  },
+  "register": {
+    "title": "Criar conta",
+    "firstName": "Nome",
+    "lastName": "Sobrenome",
+    "email": "Endereço de e-mail",
+    "phone": "Celular",
+    "password": "Senha",
+    "confirmPassword": "Confirmar senha",
+    "createAccount": "Registrar-se",
+    "alreadyHaveAccount": "Já tem uma conta?",
+    "loginLink": "Entrar",
+    "or": "ou",
+    "continueWithGoogle": "Continuar com Google",
+    "termsText": "Ao se registrar, você aceita nossos",
+    "terms": "Termos de Serviço",
+    "and": "e",
+    "privacy": "Política de Privacidade"
+  },
+  "chats": {
+    "title": "Chats"
+  },
+  "navigation": {
+    "chats": "Chats",
+    "courses": "Cursos",
+    "sos": "SOS",
+    "profile": "Perfil",
+    "more": "Mais"
   }
 }
 

@@ -1,47 +1,35 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text } from 'react-native';
 import { I18nProvider } from '../contexts/I18nContext';
-import { useTranslation } from '../hooks/useTranslation';
-
-function AppContent() {
-  const { t } = useTranslation();
-
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{t('app.welcome')}</Text>
-      <Text style={styles.description}>{t('app.description')}</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
-}
+import { SplashScreen } from '../components/SplashScreen';
+import { LoginScreen } from '../components/LoginScreen';
+import { ChatsScreen } from '../components/ChatsScreen';
 
 export default function App() {
-  return (
-    <I18nProvider>
-      <AppContent />
-    </I18nProvider>
-  );
-}
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    textAlign: 'center',
-    color: '#1a1a1a',
-  },
-  description: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-});
+  if (isLoading) {
+    return <SplashScreen onFinish={() => setIsLoading(false)} />;
+  }
+
+  try {
+    return (
+      
+      <I18nProvider>
+        {isAuthenticated ? (
+          <ChatsScreen />
+        ) : (
+          <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />
+        )}
+      </I18nProvider>
+    );
+  } catch (error) {
+    console.error('Error en App:', error);
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Error: {String(error)}</Text>
+      </View>
+    );
+  }
+}
