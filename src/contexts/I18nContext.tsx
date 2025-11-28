@@ -32,7 +32,6 @@ interface I18nProviderProps {
 
 export function I18nProvider({ children, defaultLocale = 'es' }: I18nProviderProps) {
   const [locale, setLocaleState] = useState<Locale>(defaultLocale);
-  const [isLoading, setIsLoading] = useState(true);
 
   // Cargar el idioma guardado en AsyncStorage al iniciar
   useEffect(() => {
@@ -44,8 +43,6 @@ export function I18nProvider({ children, defaultLocale = 'es' }: I18nProviderPro
         }
       } catch (error) {
         console.error('Error loading saved locale:', error);
-      } finally {
-        setIsLoading(false);
       }
     };
 
