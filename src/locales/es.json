@@ -18,6 +18,107 @@
   "app": {
     "welcome": "Bienvenido a TINCADIA",
     "description": "Plataforma de tecnología inclusiva"
+  },
+  "login": {
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "loginButton": "iniciar sesión",
+    "noAccount": "¿No tienes cuenta?",
+    "register": "Regístrate",
+    "continueWithGoogle": "Continúa con Google",
+    "continueWithPhone": "Continúa con tu celular",
+    "continueWithEmail": "Continúa con tu correo",
+    "otherMethods": "Otros métodos de ingreso",
+    "continueWithApple": "Continúa con Apple",
+    "continueWithMicrosoft": "Continúa con Microsoft"
+  },
+  "register": {
+    "title": "Crear cuenta",
+    "firstName": "Nombres",
+    "lastName": "Apellidos",
+    "email": "Correo electrónico",
+    "phone": "Celular",
+    "password": "Contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "createAccount": "Registrarse",
+    "alreadyHaveAccount": "¿Ya tienes cuenta?",
+    "loginLink": "Iniciar sesión",
+    "or": "o",
+    "continueWithGoogle": "Continúa con Google",
+    "termsText": "Al registrarte, aceptas nuestros",
+    "terms": "Términos de servicio",
+    "and": "y",
+    "privacy": "Política de privacidad"
+  },
+  "chats": {
+    "title": "Chats",
+    "list": [
+      {
+        "id": "1",
+        "name": "Arjun Das Mygate",
+        "lastMessage": "Hey i got to know your are amid a design task, ATB for same.",
+        "timestamp": "12:35 PM",
+        "unreadCount": 10,
+        "messageType": "text"
+      },
+      {
+        "id": "2",
+        "name": "Antony Das",
+        "lastMessage": "What kind of strategy is better?",
+        "timestamp": "11:55 AM",
+        "messageType": "text"
+      },
+      {
+        "id": "3",
+        "name": "Elisa das Zoho",
+        "lastMessage": "0:14",
+        "timestamp": "Yesterday",
+        "messageType": "voice"
+      },
+      {
+        "id": "4",
+        "name": "Harold Das",
+        "lastMessage": "Bro, I have a good idea!",
+        "timestamp": "Yesterday",
+        "messageType": "text"
+      },
+      {
+        "id": "5",
+        "name": "Revathi Freshworks",
+        "lastMessage": "Photo",
+        "timestamp": "Yesterday",
+        "messageType": "photo"
+      },
+      {
+        "id": "6",
+        "name": "Kishore Rocketlane",
+        "lastMessage": "Actually I wanted to check with you about your online business plan on our...",
+        "timestamp": "Yesterday",
+        "messageType": "text"
+      },
+      {
+        "id": "7",
+        "name": "Herold Das",
+        "lastMessage": "Welcome, to make design process faster, look at Pixsellz.",
+        "timestamp": "Wednesday",
+        "messageType": "text"
+      },
+      {
+        "id": "8",
+        "name": "LEO Das",
+        "lastMessage": "Ok, have a good trip!",
+        "timestamp": "Wednesday",
+        "messageType": "text"
+      }
+    ]
+  },
+  "navigation": {
+    "chats": "Chats",
+    "courses": "Cursos",
+    "sos": "SOS",
+    "profile": "Perfil",
+    "more": "Más"
   }
 }
 
