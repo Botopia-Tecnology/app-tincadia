@@ -4,6 +4,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from '../hooks/useTranslation';
 import { chatsScreenStyles as styles } from '../styles/ChatsScreen.styles';
+import {
+  BackArrowIcon,
+  VideoCallIcon,
+  ChatIcon,
+  CoursesIcon,
+  SOSIcon,
+  ProfileIcon,
+  HandshakeIcon,
+  VoiceIcon,
+  PhotoIcon,
+  CheckIcon,
+} from './icons/NavigationIcons';
 
 interface Chat {
   id: string;
@@ -17,23 +29,6 @@ interface Chat {
 }
 
 function ChatItem({ chat }: { chat: Chat }) {
-  const getMessageIcon = () => {
-    if (chat.messageType === 'voice') {
-      return '🎤';
-    }
-    if (chat.messageType === 'photo') {
-      return '📷';
-    }
-    return null;
-  };
-
-  const getReadIcon = () => {
-    if (chat.isRead) {
-      return '✓✓';
-    }
-    return '✓';
-  };
-
   return (
     <TouchableOpacity style={styles.chatItem}>
       <Image source={chat.avatar} style={styles.avatar} />
@@ -44,10 +39,22 @@ function ChatItem({ chat }: { chat: Chat }) {
         </View>
         <View style={styles.messageRow}>
           {chat.isRead && chat.messageType === 'text' && (
-            <Text style={styles.readIcon}>{getReadIcon()}</Text>
+            <View style={styles.readIcon}>
+              <CheckIcon size={12} color="#4CAF50" />
+              <View style={{ marginLeft: -4 }}>
+                <CheckIcon size={12} color="#4CAF50" />
+              </View>
+            </View>
           )}
-          {getMessageIcon() && (
-            <Text style={styles.messageIcon}>{getMessageIcon()}</Text>
+          {chat.messageType === 'voice' && (
+            <View style={styles.messageIcon}>
+              <VoiceIcon size={16} color="#666666" />
+            </View>
+          )}
+          {chat.messageType === 'photo' && (
+            <View style={styles.messageIcon}>
+              <PhotoIcon size={16} color="#666666" />
+            </View>
           )}
           <Text style={styles.lastMessage} numberOfLines={1}>
             {chat.lastMessage}
@@ -74,16 +81,22 @@ export function ChatsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
+          <BackArrowIcon size={20} color="#000000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('chats.title')}</Text>
-        <TouchableOpacity style={styles.videoButton}>
-          <Text style={styles.videoIcon}>📹</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.videoButton}>
+            <VideoCallIcon size={24} color="#000000" />
+          </TouchableOpacity>
+          <Image
+            source={require('../../assets/user.png')}
+            style={styles.headerProfile}
+          />
+        </View>
       </View>
 
       {/* Lista de chats */}
@@ -96,28 +109,29 @@ export function ChatsScreen() {
       />
 
       {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
-          <Text style={styles.navIcon}>💬</Text>
-          <Text style={[styles.navLabel, styles.navLabelActive]}>
-            {t('navigation.chats')}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>📚</Text>
-          <Text style={styles.navLabel}>{t('navigation.courses')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>💡</Text>
-          <Text style={styles.navLabel}>{t('navigation.sos')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>👤</Text>
-          <Text style={styles.navLabel}>{t('navigation.profile')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>🤝</Text>
-          <Text style={styles.navLabel}>{t('navigation.more')}</Text>
+      <View style={styles.bottomNavContainer}>
+        <View style={styles.bottomNav}>
+          <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
+            <ChatIcon size={24} color="#666666" />
+            <Text style={[styles.navLabel, styles.navLabelActive]}>
+              {t('navigation.chats')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem}>
+            <CoursesIcon size={24} color="#000000" />
+            <Text style={styles.navLabel}>{t('navigation.courses')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem}>
+            <SOSIcon size={24} color="#000000" />
+            <Text style={styles.navLabel}>{t('navigation.sos')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem}>
+            <ProfileIcon size={24} color="#000000" />
+            <Text style={styles.navLabel}>{t('navigation.profile')}</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity style={styles.handshakeButton}>
+          <HandshakeIcon size={32} color="#000000" />
         </TouchableOpacity>
       </View>
     </SafeAreaView>

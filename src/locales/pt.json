@@ -67,6 +67,7 @@
         "name": "Antony Das",
         "lastMessage": "What kind of strategy is better?",
         "timestamp": "11:55 AM",
+        "isRead": true,
         "messageType": "text"
       },
       {
@@ -74,6 +75,7 @@
         "name": "Elisa das Zoho",
         "lastMessage": "0:14",
         "timestamp": "Yesterday",
+        "isRead": false,
         "messageType": "voice"
       },
       {
@@ -81,6 +83,7 @@
         "name": "Harold Das",
         "lastMessage": "Bro, I have a good idea!",
         "timestamp": "Yesterday",
+        "isRead": true,
         "messageType": "text"
       },
       {
@@ -88,6 +91,7 @@
         "name": "Revathi Freshworks",
         "lastMessage": "Photo",
         "timestamp": "Yesterday",
+        "isRead": false,
         "messageType": "photo"
       },
       {
@@ -95,6 +99,7 @@
         "name": "Kishore Rocketlane",
         "lastMessage": "Actually I wanted to check with you about your online business plan on our...",
         "timestamp": "Yesterday",
+        "isRead": false,
         "messageType": "text"
       },
       {
@@ -102,6 +107,7 @@
         "name": "Herold Das",
         "lastMessage": "Welcome, to make design process faster, look at Pixsellz.",
         "timestamp": "Wednesday",
+        "isRead": true,
         "messageType": "text"
       },
       {
@@ -109,6 +115,7 @@
         "name": "LEO Das",
         "lastMessage": "Ok, have a good trip!",
         "timestamp": "Wednesday",
+        "isRead": true,
         "messageType": "text"
       }
     ]
