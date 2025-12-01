@@ -2,6 +2,13 @@ import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
+import {
+    ChatIcon,
+    CoursesIcon,
+    SOSIcon,
+    ProfileIcon,
+    HandshakeIcon,
+} from './icons/NavigationIcons';
 
 interface Course {
     id: string;
@@ -118,23 +125,23 @@ export function CoursesScreen({ onNavigate }: { onNavigate: (screen: 'chats' | '
             {/* Bottom Navigation */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('chats')}>
-                    <Text style={styles.navIcon}>💬</Text>
+                    <ChatIcon size={24} color="#000000" />
                     <Text style={styles.navLabel}>Chats</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('courses')}>
-                    <Text style={styles.navIcon}>📚</Text>
+                    <CoursesIcon size={24} color="#666666" />
                     <Text style={[styles.navLabel, styles.navLabelActive]}>Cursos</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.navItem}>
-                    <Text style={styles.navIcon}>💡</Text>
+                    <SOSIcon size={24} color="#000000" />
                     <Text style={styles.navLabel}>SOS</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.navItem}>
-                    <Text style={styles.navIcon}>👤</Text>
+                    <ProfileIcon size={24} color="#000000" />
                     <Text style={styles.navLabel}>Perfil</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.navItem}>
-                    <Text style={styles.navIcon}>🤝</Text>
+                    <HandshakeIcon size={24} color="#000000" />
                     <Text style={styles.navLabel}>Más</Text>
                 </TouchableOpacity>
             </View>

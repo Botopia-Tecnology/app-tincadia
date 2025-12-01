@@ -111,25 +111,25 @@ export function ChatsScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'co
       {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
         <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('chats')}>
-          <Text style={styles.navIcon}>💬</Text>
+          <ChatIcon size={24} color="#666666" />
           <Text style={[styles.navLabel, styles.navLabelActive]}>
             {t('navigation.chats')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('courses')}>
-          <Text style={styles.navIcon}>📚</Text>
+          <CoursesIcon size={24} color="#000000" />
           <Text style={styles.navLabel}>{t('navigation.courses')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>💡</Text>
+          <SOSIcon size={24} color="#000000" />
           <Text style={styles.navLabel}>{t('navigation.sos')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>👤</Text>
+          <ProfileIcon size={24} color="#000000" />
           <Text style={styles.navLabel}>{t('navigation.profile')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>🤝</Text>
+          <HandshakeIcon size={24} color="#000000" />
           <Text style={styles.navLabel}>{t('navigation.more')}</Text>
         </TouchableOpacity>
       </View>

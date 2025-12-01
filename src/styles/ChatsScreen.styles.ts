@@ -61,6 +61,7 @@ export const chatsScreenStyles = StyleSheet.create({
   },
   listContent: {
     paddingVertical: 8,
+    paddingBottom: 100, // Space for bottom nav
   },
   chatItem: {
     flexDirection: 'row',
@@ -126,40 +127,25 @@ export const chatsScreenStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  bottomNavContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 30,
-    backgroundColor: '#FFFFFF',
-  },
   bottomNav: {
     flexDirection: 'row',
+    justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 30,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    flex: 1,
-    marginRight: 16,
-    justifyContent: 'space-between',
-  },
-  handshakeButton: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+    backgroundColor: '#FFFFFF',
   },
   navItem: {
     alignItems: 'center',
     justifyContent: 'center',
+    flex: 1,
   },
   navItemActive: {
-    backgroundColor: '#999999',
+    backgroundColor: '#F5F5F5',
     borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
   navIcon: {
     fontSize: 20,
@@ -167,11 +153,10 @@ export const chatsScreenStyles = StyleSheet.create({
   },
   navLabel: {
     fontSize: 10,
-    color: '#000000',
-    marginTop: 4,
+    color: '#999999',
   },
   navLabelActive: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontWeight: '600',
   },
 });
