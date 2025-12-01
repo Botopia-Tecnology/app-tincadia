@@ -63,7 +63,7 @@ function ChatItem({ chat }: { chat: Chat }) {
   );
 }
 
-export function ChatsScreen() {
+export function ChatsScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses') => void }) {
   const { t } = useTranslation();
 
   const chatsData = (t('chats.list') as unknown as Chat[]).map((item) => ({
@@ -74,7 +74,7 @@ export function ChatsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton}>
@@ -97,13 +97,13 @@ export function ChatsScreen() {
 
       {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
+        <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('chats')}>
           <Text style={styles.navIcon}>💬</Text>
           <Text style={[styles.navLabel, styles.navLabelActive]}>
             {t('navigation.chats')}
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('courses')}>
           <Text style={styles.navIcon}>📚</Text>
           <Text style={styles.navLabel}>{t('navigation.courses')}</Text>
         </TouchableOpacity>
