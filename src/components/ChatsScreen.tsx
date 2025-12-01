@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, FlatList, Image, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from '../hooks/useTranslation';
 import { chatsScreenStyles as styles } from '../styles/ChatsScreen.styles';
