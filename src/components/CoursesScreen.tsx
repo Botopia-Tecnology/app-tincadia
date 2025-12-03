@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
 import {
@@ -23,7 +23,7 @@ interface CourseCategory {
     courses: Course[];
 }
 
-export function CoursesScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses') => void }) {
+export function CoursesScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void }) {
     const categories: CourseCategory[] = [
         {
             title: 'Desarrollo web',
@@ -123,27 +123,26 @@ export function CoursesScreen({ onNavigate }: { onNavigate: (screen: 'chats' | '
             </ScrollView>
 
             {/* Bottom Navigation */}
-            <View style={styles.bottomNav}>
-                <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('chats')}>
-                    <ChatIcon size={24} color="#000000" />
-                    <Text style={styles.navLabel}>Chats</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('courses')}>
-                    <CoursesIcon size={24} color="#666666" />
-                    <Text style={[styles.navLabel, styles.navLabelActive]}>Cursos</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.navItem}>
-                    <SOSIcon size={24} color="#000000" />
-                    <Text style={styles.navLabel}>SOS</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.navItem}>
-                    <ProfileIcon size={24} color="#000000" />
-                    <Text style={styles.navLabel}>Perfil</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.navItem}>
-                    <HandshakeIcon size={24} color="#000000" />
-                    <Text style={styles.navLabel}>Más</Text>
-                </TouchableOpacity>
+            <View style={styles.bottomContainer}>
+                <View style={styles.bottomNav}>
+                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('chats')}>
+                        <ChatIcon size={24} color="#000000" />
+                        <Text style={styles.navLabel}>Chats</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('courses')}>
+                        <CoursesIcon size={24} color="#666666" />
+                        <Text style={[styles.navLabel, styles.navLabelActive]}>Cursos</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('sos')}>
+                        <SOSIcon size={32} color="#000000" />
+                        <Text style={styles.navLabel}>SOS</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('profile')}>
+                        <ProfileIcon size={24} color="#000000" />
+                        <Text style={styles.navLabel}>Perfil</Text>
+                    </TouchableOpacity>
+                </View>
+                <Image source={require('../../assets/icon.png')} style={styles.tincadiaIcon} />
             </View>
         </SafeAreaView>
     );
