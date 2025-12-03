@@ -70,7 +70,7 @@ function ChatItem({ chat }: { chat: Chat }) {
   );
 }
 
-export function ChatsScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses') => void }) {
+export function ChatsScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void }) {
   const { t } = useTranslation();
 
   const chatsData = (t('chats.list') as unknown as Chat[]).map((item) => ({
@@ -109,29 +109,28 @@ export function ChatsScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'co
       />
 
       {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('chats')}>
-          <ChatIcon size={24} color="#666666" />
-          <Text style={[styles.navLabel, styles.navLabelActive]}>
-            {t('navigation.chats')}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('courses')}>
-          <CoursesIcon size={24} color="#000000" />
-          <Text style={styles.navLabel}>{t('navigation.courses')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <SOSIcon size={24} color="#000000" />
-          <Text style={styles.navLabel}>{t('navigation.sos')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <ProfileIcon size={24} color="#000000" />
-          <Text style={styles.navLabel}>{t('navigation.profile')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <HandshakeIcon size={24} color="#000000" />
-          <Text style={styles.navLabel}>{t('navigation.more')}</Text>
-        </TouchableOpacity>
+      <View style={styles.bottomContainer}>
+        <View style={styles.bottomNav}>
+          <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('chats')}>
+            <ChatIcon size={24} color="#666666" />
+            <Text style={[styles.navLabel, styles.navLabelActive]}>
+              {t('navigation.chats')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('courses')}>
+            <CoursesIcon size={24} color="#000000" />
+            <Text style={styles.navLabel}>{t('navigation.courses')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('sos')}>
+            <SOSIcon size={32} color="#000000" />
+            <Text style={styles.navLabel}>{t('navigation.sos')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('profile')}>
+            <ProfileIcon size={24} color="#000000" />
+            <Text style={styles.navLabel}>{t('navigation.profile')}</Text>
+          </TouchableOpacity>
+        </View>
+        <Image source={require('../../assets/icon.png')} style={styles.tincadiaIcon} />
       </View>
     </SafeAreaView>
   );

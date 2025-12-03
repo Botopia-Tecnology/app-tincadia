@@ -5,11 +5,13 @@ import { SplashScreen } from '../components/SplashScreen';
 import { LoginScreen } from '../components/LoginScreen';
 import { ChatsScreen } from '../components/ChatsScreen';
 import { CoursesScreen } from '../components/CoursesScreen';
+import { SOSScreen } from '../components/SOSScreen';
+import { ProfileScreen } from '../components/ProfileScreen';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState<'chats' | 'courses'>('chats');
+  const [currentScreen, setCurrentScreen] = useState<'chats' | 'courses' | 'sos' | 'profile'>('chats');
 
   if (isLoading) {
     return <SplashScreen onFinish={() => setIsLoading(false)} />;
@@ -17,13 +19,16 @@ export default function App() {
 
   try {
     return (
-
       <I18nProvider>
         {isAuthenticated ? (
           currentScreen === 'chats' ? (
             <ChatsScreen onNavigate={setCurrentScreen} />
-          ) : (
+          ) : currentScreen === 'courses' ? (
             <CoursesScreen onNavigate={setCurrentScreen} />
+          ) : currentScreen === 'sos' ? (
+            <SOSScreen onNavigate={setCurrentScreen} />
+          ) : (
+            <ProfileScreen onNavigate={setCurrentScreen} />
           )
         ) : (
           <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />

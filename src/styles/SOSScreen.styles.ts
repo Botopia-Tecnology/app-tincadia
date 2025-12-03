@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-export const coursesScreenStyles = StyleSheet.create({
+export const sosScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#FFFFFF',
@@ -42,67 +42,79 @@ export const coursesScreenStyles = StyleSheet.create({
     },
     content: {
         flex: 1,
-    },
-    scrollContent: {
         padding: 16,
-        paddingBottom: 100, // Space for bottom nav
     },
-    sectionTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#000000',
-        marginTop: 24,
-        marginBottom: 16,
+    descriptionContainer: {
+        marginBottom: 24,
     },
-    courseCard: {
-        flexDirection: 'row',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        padding: 12,
+    descriptionText: {
+        fontSize: 14,
+        color: '#333333',
+        textAlign: 'center',
         marginBottom: 12,
-        alignItems: 'center',
     },
-    courseIconContainer: {
-        width: 60,
-        height: 60,
-        borderRadius: 8,
-        backgroundColor: '#F5F5F5', // Placeholder color
-        marginRight: 12,
+    userTagContainer: {
+        alignSelf: 'center',
+        backgroundColor: '#F5F5F5',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
     },
-    courseInfo: {
-        flex: 1,
-    },
-    courseTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#000000',
-        marginBottom: 4,
-    },
-    courseDescription: {
+    userTagText: {
         fontSize: 12,
         color: '#666666',
-        marginBottom: 8,
-        lineHeight: 16,
     },
-    tagsContainer: {
+    emergencyGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 8,
+        justifyContent: 'space-between',
+        marginBottom: 24,
     },
-    tag: {
+    emergencyButton: {
+        width: '48%',
+        aspectRatio: 1,
+        backgroundColor: '#7FA889',
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+        padding: 16,
+    },
+    emergencyIconContainer: {
+        marginBottom: 12,
+    },
+    emergencyIcon: {
+        fontSize: 48,
+    },
+    emergencyLabel: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+        textAlign: 'center',
+    },
+    locationInfo: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
         paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        backgroundColor: '#FFFFFF',
+        marginBottom: 8,
     },
-    tagText: {
-        fontSize: 10,
-        color: '#666666',
-        fontWeight: '500',
+    locationIcon: {
+        fontSize: 20,
+        marginRight: 8,
+        marginTop: 2,
+    },
+    locationTextContainer: {
+        flex: 1,
+    },
+    locationText: {
+        fontSize: 13,
+        color: '#333333',
+        marginBottom: 4,
+    },
+    emergencyInfoLink: {
+        fontSize: 12,
+        color: '#007AFF',
+        textDecorationLine: 'underline',
     },
     bottomContainer: {
         position: 'absolute',
