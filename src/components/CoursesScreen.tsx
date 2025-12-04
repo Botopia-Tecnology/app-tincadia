@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, Image } from 'r
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
+import { NotificationIcon } from './icons/NavigationIcons';
 
 interface Course {
     id: string;
@@ -84,7 +85,7 @@ export function CoursesScreen({ onNavigate }: { onNavigate: (screen: 'chats' | '
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Cursos</Text>
                 <TouchableOpacity style={styles.notificationButton}>
-                    <Text style={styles.notificationIcon}>🔔</Text>
+                    <NotificationIcon size={24} color="#000000" />
                 </TouchableOpacity>
             </View>
 

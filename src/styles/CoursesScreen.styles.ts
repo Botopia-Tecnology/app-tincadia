@@ -9,7 +9,7 @@ export const coursesScreenStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 10,
+        paddingTop: 50,
         paddingHorizontal: 16,
         paddingBottom: 16,
         borderBottomWidth: 1,
@@ -37,8 +37,10 @@ export const coursesScreenStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    notificationIcon: {
-        fontSize: 24,
+    notificationIconImage: {
+        width: 40,
+        height: 40,
+        resizeMode: 'contain',
     },
     content: {
         flex: 1,

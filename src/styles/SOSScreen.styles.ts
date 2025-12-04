@@ -9,7 +9,7 @@ export const sosScreenStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 10,
+        paddingTop: 50,
         paddingHorizontal: 16,
         paddingBottom: 16,
         borderBottomWidth: 1,
@@ -37,8 +37,10 @@ export const sosScreenStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    notificationIcon: {
-        fontSize: 24,
+    notificationIconImage: {
+        width: 40,
+        height: 40,
+        resizeMode: 'contain',
     },
     content: {
         flex: 1,
@@ -83,8 +85,10 @@ export const sosScreenStyles = StyleSheet.create({
     emergencyIconContainer: {
         marginBottom: 12,
     },
-    emergencyIcon: {
-        fontSize: 48,
+    emergencyIconImage: {
+        width: 64,
+        height: 64,
+        resizeMode: 'contain',
     },
     emergencyLabel: {
         fontSize: 14,
@@ -98,10 +102,12 @@ export const sosScreenStyles = StyleSheet.create({
         paddingHorizontal: 8,
         marginBottom: 8,
     },
-    locationIcon: {
-        fontSize: 20,
+    locationIconImage: {
+        width: 24,
+        height: 24,
         marginRight: 8,
         marginTop: 2,
+        resizeMode: 'contain',
     },
     locationTextContainer: {
         flex: 1,

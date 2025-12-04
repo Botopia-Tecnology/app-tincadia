@@ -3,19 +3,20 @@ import { View, Text, TouchableOpacity, SafeAreaView, ScrollView, Image } from 'r
 import { StatusBar } from 'expo-status-bar';
 import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
+import { NotificationIcon } from './icons/NavigationIcons';
 
 interface EmergencyType {
     id: string;
-    icon: string;
+    image: any;
     label: string;
 }
 
 export function SOSScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void }) {
     const emergencyTypes: EmergencyType[] = [
-        { id: '1', icon: '🔥', label: 'BOMBEROS' },
-        { id: '2', icon: '🚑', label: 'AMBULANCIA' },
-        { id: '3', icon: '👮', label: 'POLICÍA' },
-        { id: '4', icon: '🚨', label: 'OTRA EMERGENCIA' },
+        { id: '1', image: require('../../assets/fire_sos-section.png'), label: 'BOMBEROS' },
+        { id: '2', image: require('../../assets/ambulance_sos-section.png'), label: 'AMBULANCIA' },
+        { id: '3', image: require('../../assets/police_sos-section.png'), label: 'POLICÍA' },
+        { id: '4', image: require('../../assets/emergency_sos-section.png'), label: 'OTRA EMERGENCIA' },
     ];
 
     const handleEmergencyPress = (type: EmergencyType) => {
@@ -34,7 +35,7 @@ export function SOSScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'cour
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>SOS</Text>
                 <TouchableOpacity style={styles.notificationButton}>
-                    <Text style={styles.notificationIcon}>🔔</Text>
+                    <NotificationIcon size={24} color="#000000" />
                 </TouchableOpacity>
             </View>
 
@@ -59,7 +60,7 @@ export function SOSScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'cour
                             onPress={() => handleEmergencyPress(emergency)}
                         >
                             <View style={styles.emergencyIconContainer}>
-                                <Text style={styles.emergencyIcon}>{emergency.icon}</Text>
+                                <Image source={emergency.image} style={styles.emergencyIconImage} />
                             </View>
                             <Text style={styles.emergencyLabel}>{emergency.label}</Text>
                         </TouchableOpacity>
@@ -68,7 +69,7 @@ export function SOSScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'cour
 
                 {/* Location Info */}
                 <View style={styles.locationInfo}>
-                    <Text style={styles.locationIcon}>📍</Text>
+                    <Image source={require('../../assets/location_sos-section.png')} style={styles.locationIconImage} />
                     <View style={styles.locationTextContainer}>
                         <Text style={styles.locationText}>
                             Usaremos tu ubicación actual para enviar la ayuda
