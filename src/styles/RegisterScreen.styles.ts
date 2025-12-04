@@ -22,7 +22,7 @@ export const registerScreenStyles = StyleSheet.create({
     marginLeft: -8,
   },
   backArrow: {
-    fontSize: 24,
+    fontSize: 32,
     color: '#000000',
   },
   progressContainer: {
@@ -38,7 +38,7 @@ export const registerScreenStyles = StyleSheet.create({
     height: 100,
     marginBottom: 16,
     borderRadius: 20,
-    tintColor: '#FF0000', // Red tint as requested
+    tintColor: '#000000', // Black tint as requested
   },
   title: {
     fontSize: 28,

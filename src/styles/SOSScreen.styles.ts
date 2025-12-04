@@ -23,7 +23,7 @@ export const sosScreenStyles = StyleSheet.create({
         justifyContent: 'center',
     },
     backIcon: {
-        fontSize: 24,
+        fontSize: 32,
         color: '#000000',
     },
     headerTitle: {

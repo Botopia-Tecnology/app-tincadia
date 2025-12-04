@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nProvider } from '../contexts/I18nContext';
 import { SplashScreen } from '../components/SplashScreen';
 import { LoginScreen } from '../components/LoginScreen';
@@ -20,23 +21,25 @@ export default function App() {
 
   try {
     return (
-      <I18nProvider>
-        {isAuthenticated ? (
-          <AnimatedScreen key={currentScreen}>
-            {currentScreen === 'chats' ? (
-              <ChatsScreen onNavigate={setCurrentScreen} />
-            ) : currentScreen === 'courses' ? (
-              <CoursesScreen onNavigate={setCurrentScreen} />
-            ) : currentScreen === 'sos' ? (
-              <SOSScreen onNavigate={setCurrentScreen} />
-            ) : (
-              <ProfileScreen onNavigate={setCurrentScreen} />
-            )}
-          </AnimatedScreen>
-        ) : (
-          <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />
-        )}
-      </I18nProvider>
+      <SafeAreaProvider>
+        <I18nProvider>
+          {isAuthenticated ? (
+            <AnimatedScreen key={currentScreen}>
+              {currentScreen === 'chats' ? (
+                <ChatsScreen onNavigate={setCurrentScreen} />
+              ) : currentScreen === 'courses' ? (
+                <CoursesScreen onNavigate={setCurrentScreen} />
+              ) : currentScreen === 'sos' ? (
+                <SOSScreen onNavigate={setCurrentScreen} />
+              ) : (
+                <ProfileScreen onNavigate={setCurrentScreen} />
+              )}
+            </AnimatedScreen>
+          ) : (
+            <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />
+          )}
+        </I18nProvider>
+      </SafeAreaProvider>
     );
   } catch (error) {
     console.error('Error en App:', error);
