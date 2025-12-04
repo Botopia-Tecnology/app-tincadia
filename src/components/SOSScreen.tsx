@@ -2,13 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, ScrollView, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
-import {
-    ChatIcon,
-    CoursesIcon,
-    SOSIcon,
-    ProfileIcon,
-    HandshakeIcon,
-} from './icons/NavigationIcons';
+import { BottomNavigation } from './BottomNavigation';
 
 interface EmergencyType {
     id: string;
@@ -86,28 +80,7 @@ export function SOSScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'cour
                 </View>
             </ScrollView>
 
-            {/* Bottom Navigation */}
-            <View style={styles.bottomContainer}>
-                <View style={styles.bottomNav}>
-                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('chats')}>
-                        <ChatIcon size={24} color="#000000" />
-                        <Text style={styles.navLabel}>Chats</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('courses')}>
-                        <CoursesIcon size={24} color="#000000" />
-                        <Text style={styles.navLabel}>Cursos</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('sos')}>
-                        <SOSIcon size={32} color="#000000" />
-                        <Text style={[styles.navLabel, styles.navLabelActive]}>SOS</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('profile')}>
-                        <ProfileIcon size={24} color="#000000" />
-                        <Text style={styles.navLabel}>Perfil</Text>
-                    </TouchableOpacity>
-                </View>
-                <Image source={require('../../assets/icon.png')} style={styles.tincadiaIcon} />
-            </View>
+            <BottomNavigation currentScreen="sos" onNavigate={onNavigate} />
         </SafeAreaView>
     );
 }

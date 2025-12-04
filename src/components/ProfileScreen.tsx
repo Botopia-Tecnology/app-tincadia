@@ -16,6 +16,7 @@ import {
     InviteIcon,
     ChevronRightIcon,
 } from './icons/NavigationIcons';
+import { BottomNavigation } from './BottomNavigation';
 
 export function ProfileScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void }) {
     return (
@@ -25,7 +26,7 @@ export function ProfileScreen({ onNavigate }: { onNavigate: (screen: 'chats' | '
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('chats')}>
-                    <BackArrowIcon size={24} color="#000000" />
+                    <BackArrowIcon size={32} color="#000000" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Perfil</Text>
                 <TouchableOpacity style={styles.notificationButton}>
@@ -104,28 +105,7 @@ export function ProfileScreen({ onNavigate }: { onNavigate: (screen: 'chats' | '
                 </View>
             </ScrollView>
 
-            {/* Bottom Navigation */}
-            <View style={styles.bottomContainer}>
-                <View style={styles.bottomNav}>
-                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('chats')}>
-                        <ChatIcon size={24} color="#000000" />
-                        <Text style={styles.navLabel}>Chats</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('courses')}>
-                        <CoursesIcon size={24} color="#000000" />
-                        <Text style={styles.navLabel}>Cursos</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('sos')}>
-                        <SOSIcon size={32} color="#000000" />
-                        <Text style={styles.navLabel}>SOS</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.navItem, styles.navItemActive]} onPress={() => onNavigate('profile')}>
-                        <ProfileIcon size={24} color="#000000" />
-                        <Text style={[styles.navLabel, styles.navLabelActive]}>Perfil</Text>
-                    </TouchableOpacity>
-                </View>
-                <Image source={require('../../assets/icon.png')} style={styles.tincadiaIcon} />
-            </View>
+            <BottomNavigation currentScreen="profile" onNavigate={onNavigate} />
         </SafeAreaView>
     );
 }
