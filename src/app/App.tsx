@@ -7,6 +7,7 @@ import { ChatsScreen } from '../components/ChatsScreen';
 import { CoursesScreen } from '../components/CoursesScreen';
 import { SOSScreen } from '../components/SOSScreen';
 import { ProfileScreen } from '../components/ProfileScreen';
+import { AnimatedScreen } from '../components/AnimatedScreen';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -21,15 +22,17 @@ export default function App() {
     return (
       <I18nProvider>
         {isAuthenticated ? (
-          currentScreen === 'chats' ? (
-            <ChatsScreen onNavigate={setCurrentScreen} />
-          ) : currentScreen === 'courses' ? (
-            <CoursesScreen onNavigate={setCurrentScreen} />
-          ) : currentScreen === 'sos' ? (
-            <SOSScreen onNavigate={setCurrentScreen} />
-          ) : (
-            <ProfileScreen onNavigate={setCurrentScreen} />
-          )
+          <AnimatedScreen key={currentScreen}>
+            {currentScreen === 'chats' ? (
+              <ChatsScreen onNavigate={setCurrentScreen} />
+            ) : currentScreen === 'courses' ? (
+              <CoursesScreen onNavigate={setCurrentScreen} />
+            ) : currentScreen === 'sos' ? (
+              <SOSScreen onNavigate={setCurrentScreen} />
+            ) : (
+              <ProfileScreen onNavigate={setCurrentScreen} />
+            )}
+          </AnimatedScreen>
         ) : (
           <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />
         )}
