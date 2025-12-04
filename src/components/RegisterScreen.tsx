@@ -126,21 +126,21 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Header with Back Button and Progress */}
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-              <Text style={styles.backArrow}>←</Text>
-            </TouchableOpacity>
-            <ProgressCircle current={step} total={totalSteps} />
-          </View>
-
           {/* Title Section */}
           <View style={styles.titleContainer}>
-            <Image
-              source={require('../../assets/icon.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+            <View style={styles.logoArea}>
+              <TouchableOpacity style={styles.absoluteBackButton} onPress={handleBack}>
+                <Text style={styles.backArrow}>←</Text>
+              </TouchableOpacity>
+              <Image
+                source={require('../../assets/icon.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
+              <View style={styles.absoluteProgress}>
+                <ProgressCircle current={step} total={totalSteps} />
+              </View>
+            </View>
             <Text style={styles.title}>Bienvenido a Tincadia</Text>
             <Text style={styles.subtitle}>
               Crea tu cuenta y comienza a aprender hoy mismo.

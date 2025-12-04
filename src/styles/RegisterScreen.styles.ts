@@ -8,18 +8,14 @@ export const registerScreenStyles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 20,
     paddingBottom: 40,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 24,
-  },
-  backButton: {
+  absoluteBackButton: {
+    position: 'absolute',
+    left: 0,
+    top: 25,
     padding: 8,
-    marginLeft: -8,
   },
   backArrow: {
     fontSize: 32,
@@ -33,12 +29,23 @@ export const registerScreenStyles = StyleSheet.create({
     marginBottom: 32,
     alignItems: 'center',
   },
+  logoArea: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  absoluteProgress: {
+    position: 'absolute',
+    right: 0,
+    top: 25,
+  },
   logo: {
     width: 100,
     height: 100,
-    marginBottom: 16,
     borderRadius: 20,
-    tintColor: '#000000', // Black tint as requested
+    tintColor: '#000000',
   },
   title: {
     fontSize: 28,
