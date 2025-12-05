@@ -12,8 +12,6 @@ export const coursesScreenStyles = StyleSheet.create({
         paddingTop: 50,
         paddingHorizontal: 16,
         paddingBottom: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
         backgroundColor: '#FFFFFF',
     },
     backButton: {
