@@ -1,0 +1,116 @@
+import { StyleSheet } from 'react-native';
+
+export const forgotPasswordStyles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#FFFFFF',
+    },
+    scrollContent: {
+        flexGrow: 1,
+        paddingHorizontal: 24,
+        paddingTop: 20,
+        paddingBottom: 40,
+        justifyContent: 'center',
+    },
+    absoluteBackButton: {
+        position: 'absolute',
+        left: 16,
+        top: 10,
+        padding: 8,
+        zIndex: 10,
+    },
+    backArrow: {
+        fontSize: 32,
+        color: '#000000',
+    },
+    title: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#000000',
+        marginBottom: 8,
+        textAlign: 'center',
+        marginTop: 60,
+    },
+    subtitle: {
+        fontSize: 16,
+        color: '#666666',
+        textAlign: 'center',
+        marginBottom: 32,
+        paddingHorizontal: 24,
+    },
+    formContainer: {
+        width: '100%',
+        alignItems: 'center',
+    },
+    input: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 30,
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        fontSize: 16,
+        color: '#000000',
+        marginBottom: 24,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        width: '90%',
+        alignSelf: 'center',
+    },
+    recoverButton: {
+        backgroundColor: '#376A3E',
+        borderRadius: 30,
+        paddingVertical: 16,
+        alignItems: 'center',
+        marginBottom: 16,
+        width: '70%',
+    },
+    recoverButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    // Success View Styles
+    successContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 24,
+    },
+    successIconContainer: {
+        width: 100,
+        height: 100,
+        backgroundColor: '#E8F5E9',
+        borderRadius: 50,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 24,
+    },
+    successIcon: {
+        fontSize: 50,
+    },
+    successTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#000000',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    successMessage: {
+        fontSize: 16,
+        color: '#666666',
+        textAlign: 'center',
+        marginBottom: 40,
+        lineHeight: 24,
+    },
+    backToLoginButton: {
+        backgroundColor: '#376A3E',
+        borderRadius: 30,
+        paddingVertical: 16,
+        paddingHorizontal: 32,
+        alignItems: 'center',
+    },
+    backToLoginText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+});
