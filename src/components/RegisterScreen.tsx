@@ -9,6 +9,8 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -42,6 +44,10 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
   const [documentType, setDocumentType] = useState('');
   const [documentNumber, setDocumentNumber] = useState('');
   const [phone, setPhone] = useState('');
+
+  // Document Type Modal State
+  const [modalVisible, setModalVisible] = useState(false);
+  const documentTypes = ['T.I', 'C.C', 'C.E', 'PAS'];
 
   const handleNext = () => {
     if (step < totalSteps) {
@@ -132,11 +138,15 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
               <TouchableOpacity style={styles.absoluteBackButton} onPress={handleBack}>
                 <Text style={styles.backArrow}>←</Text>
               </TouchableOpacity>
-              <Image
-                source={require('../../assets/icon.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
+              {step === 1 ? (
+                <Image
+                  source={require('../../assets/icon.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={{ height: 80 }} />
+              )}
               <View style={styles.absoluteProgress}>
                 <ProgressCircle current={step} total={totalSteps} />
               </View>
@@ -200,21 +210,25 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                   onChangeText={setLastName}
                   autoCapitalize="words"
                 />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Tipo de documento"
-                  placeholderTextColor="#999"
-                  value={documentType}
-                  onChangeText={setDocumentType}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Número de documento"
-                  placeholderTextColor="#999"
-                  value={documentNumber}
-                  onChangeText={setDocumentNumber}
-                  keyboardType="numeric"
-                />
+                <View style={styles.documentRow}>
+                  <TouchableOpacity
+                    style={styles.documentTypeContainer}
+                    onPress={() => setModalVisible(true)}
+                  >
+                    <Text style={[styles.documentTypeText, !documentType && styles.documentTypePlaceholder]}>
+                      {documentType || 'Tipo'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TextInput
+                    style={styles.documentNumberInput}
+                    placeholder="Número de documento"
+                    placeholderTextColor="#999"
+                    value={documentNumber}
+                    onChangeText={setDocumentNumber}
+                    keyboardType="numeric"
+                  />
+                </View>
                 <TextInput
                   style={styles.input}
                   placeholder={t('register.phone')}
@@ -264,6 +278,40 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Document Type Selection Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Selecciona Tipo de Documento</Text>
+            <FlatList
+              data={documentTypes}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setDocumentType(item);
+                    setModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.dropdownItemText}>{item}</Text>
+                </TouchableOpacity>
+              )}
+            />
+            {/* Optional Close Button inside content if needed, tapping outside also closes */}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
