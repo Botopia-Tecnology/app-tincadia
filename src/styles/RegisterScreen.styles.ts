@@ -144,4 +144,78 @@ export const registerScreenStyles = StyleSheet.create({
     color: '#000000',
     textDecorationLine: 'underline',
   },
+  // Document Row Styles
+  documentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '90%',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  documentTypeContainer: {
+    width: '30%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  documentTypeText: {
+    fontSize: 16,
+    color: '#000000',
+  },
+  documentTypePlaceholder: {
+    color: '#999',
+  },
+  documentNumberInput: {
+    width: '65%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontSize: 16,
+    color: '#000000',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '50%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  dropdownItem: {
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  modalCloseButton: {
+    marginTop: 16,
+    padding: 10,
+    alignItems: 'center',
+  },
+  modalCloseText: {
+    color: '#376A3E',
+    fontWeight: 'bold',
+  },
 });
