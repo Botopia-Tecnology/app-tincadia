@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from '../hooks/useTranslation';
 import { GoogleIcon, AppleIcon, MicrosoftIcon } from './icons/SocialIcons';
 import { RegisterScreen } from './RegisterScreen';
+import { ForgotPasswordScreen } from './ForgotPasswordScreen';
 import { loginScreenStyles as styles } from '../styles/LoginScreen.styles';
 
 interface LoginScreenProps {
@@ -26,6 +27,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [password, setPassword] = useState('');
   const [showOtherMethods, setShowOtherMethods] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [country, setCountry] = useState('Colombia');
 
   const handleGoogleLogin = () => {
@@ -34,8 +36,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   };
 
   const handleForgotPassword = () => {
-    // TODO: Implementar recuperar contraseña
-    console.log('Recuperar contraseña');
+    setShowForgotPassword(true);
   };
 
   const handleEmailLogin = () => {
@@ -68,6 +69,10 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
   if (showRegister) {
     return <RegisterScreen onBack={() => setShowRegister(false)} />;
+  }
+
+  if (showForgotPassword) {
+    return <ForgotPasswordScreen onBack={() => setShowForgotPassword(false)} />;
   }
 
   return (
