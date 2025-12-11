@@ -103,11 +103,39 @@ export const authService = {
             const response = await apiClient<AuthResponse>(API_ENDPOINTS.ME, {
                 method: 'GET',
             });
+
+            console.log('🔍 /auth/me raw response:', JSON.stringify(response, null, 2));
+            console.log('🔍 response.isProfileComplete:', response.isProfileComplete);
+            console.log('🔍 response.user?.isProfileComplete:', response.user?.isProfileComplete);
+            console.log('🔍 User profile fields:', {
+                documentTypeId: response.user?.documentTypeId,
+                documentType: response.user?.documentType,
+                documentNumber: response.user?.documentNumber,
+                phone: response.user?.phone,
+            });
+
+            // Use isProfileComplete from response, fallback to user object, then check fields
+            let isComplete = response.isProfileComplete;
+            if (typeof isComplete !== 'boolean') {
+                isComplete = response.user?.isProfileComplete;
+            }
+            if (typeof isComplete !== 'boolean') {
+                // Fallback: check if required fields exist
+                isComplete = !!(
+                    (response.user?.documentTypeId || response.user?.documentType) &&
+                    response.user?.documentNumber &&
+                    response.user?.phone
+                );
+            }
+
+            console.log('🔍 Final isProfileComplete:', isComplete);
+
             return {
                 user: response.user,
-                isProfileComplete: response.isProfileComplete ?? false,
+                isProfileComplete: isComplete,
             };
-        } catch {
+        } catch (error) {
+            console.error('🔍 /auth/me error:', error);
             return null;
         }
     },

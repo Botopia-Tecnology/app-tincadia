@@ -93,11 +93,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(true);
         try {
             const response = await authService.login(credentials);
+            console.log('🔑 Login response:', JSON.stringify(response, null, 2));
+            console.log('🔑 Response isProfileComplete:', response.isProfileComplete);
+            console.log('🔑 User isProfileComplete:', response.user?.isProfileComplete);
+            console.log('🔑 User fields:', {
+                documentTypeId: response.user?.documentTypeId,
+                documentType: response.user?.documentType,
+                documentNumber: response.user?.documentNumber,
+                phone: response.user?.phone,
+            });
+
             // Merge isProfileComplete from response level
-            setUser({
+            const mergedUser = {
                 ...response.user,
                 isProfileComplete: response.isProfileComplete ?? response.user.isProfileComplete,
-            });
+            };
+            console.log('🔑 Merged user isProfileComplete:', mergedUser.isProfileComplete);
+            setUser(mergedUser);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Login failed';
             setError(message);
@@ -167,6 +179,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(true);
         try {
             await authService.logout();
+            // Clear local chat database when logging out
+            try {
+                const { clearChatDatabase } = await import('../database/chatDatabase');
+                clearChatDatabase();
+                console.log('🗑️ Cleared local chat database');
+            } catch (e) {
+                console.warn('Could not clear chat database:', e);
+            }
         } finally {
             setUser(null);
             setError(null);

@@ -36,12 +36,39 @@ interface SendMessageDto {
 }
 
 interface CreateConversationDto {
-    participantIds: string[];
+    userId: string;
+    otherUserId: string;
+}
+
+export interface AvailableUser {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
 }
 
 export const chatService = {
     /**
-     * Create a new conversation
+     * Get all available users to chat with (excludes current user)
+     */
+    async getAvailableUsers(currentUserId: string): Promise<{ users: AvailableUser[] }> {
+        return apiClient(API_ENDPOINTS.AVAILABLE_USERS(currentUserId), {
+            method: 'GET',
+        });
+    },
+
+    /**
+     * Start or get existing conversation with another user
+     */
+    async startConversation(userId: string, otherUserId: string): Promise<{ conversationId: string }> {
+        return apiClient(API_ENDPOINTS.CONVERSATIONS, {
+            method: 'POST',
+            body: JSON.stringify({ userId, otherUserId }),
+        });
+    },
+
+    /**
+     * Create a new conversation (legacy - use startConversation instead)
      */
     async createConversation(data: CreateConversationDto): Promise<{ conversation: Conversation }> {
         return apiClient(API_ENDPOINTS.CONVERSATIONS, {
