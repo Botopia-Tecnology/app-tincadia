@@ -1,0 +1,143 @@
+/**
+ * useConversations Hook
+ * 
+ * Manages the list of chat conversations.
+ * - Loads from local SQLite (instant)
+ * - Syncs with server in background
+ */
+
+import { useEffect, useState, useCallback } from 'react';
+import { getConversations, saveConversation } from '../database/chatDatabase';
+import { chatService, Conversation as ApiConversation } from '../services/chat.service';
+
+export interface Conversation {
+    id: string;
+    otherUserId: string;
+    otherUserName: string;
+    otherUserAvatar: string;
+    lastMessage: string;
+    lastMessageAt: string;
+    unreadCount: number;
+}
+
+interface UseConversationsReturn {
+    conversations: Conversation[];
+    refresh: () => Promise<void>;
+    createConversation: (participantIds: string[]) => Promise<string>;
+    isLoading: boolean;
+    error: string | null;
+}
+
+export function useConversations(userId: string): UseConversationsReturn {
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    // Transform local DB conversation to our interface
+    const transformLocalConversation = (c: {
+        id: string;
+        other_user_id: string;
+        other_user_name: string;
+        other_user_avatar: string;
+        last_message: string;
+        last_message_at: string;
+        unread_count: number;
+    }): Conversation => ({
+        id: c.id,
+        otherUserId: c.other_user_id,
+        otherUserName: c.other_user_name,
+        otherUserAvatar: c.other_user_avatar,
+        lastMessage: c.last_message,
+        lastMessageAt: c.last_message_at,
+        unreadCount: c.unread_count,
+    });
+
+    // Load conversations from local SQLite
+    const loadLocalConversations = useCallback(() => {
+        try {
+            const localConvs = getConversations();
+            setConversations(localConvs.map(transformLocalConversation));
+        } catch (err) {
+            console.error('Error loading local conversations:', err);
+        }
+    }, []);
+
+    // Sync conversations from server
+    const syncFromServer = useCallback(async () => {
+        if (!userId) return;
+
+        try {
+            const { conversations: serverConvs } = await chatService.getConversations(userId);
+
+            // Save each server conversation to local DB
+            serverConvs.forEach((conv: ApiConversation) => {
+                saveConversation({
+                    id: conv.id,
+                    otherUserId: conv.otherUserId,
+                    otherUserName: conv.otherUserName,
+                    otherUserAvatar: conv.otherUserAvatar,
+                    lastMessage: conv.lastMessage,
+                    lastMessageAt: conv.lastMessageAt,
+                    unreadCount: conv.unreadCount,
+                });
+            });
+
+            loadLocalConversations();
+        } catch (err) {
+            console.error('Error syncing conversations:', err);
+            setError('Error al cargar conversaciones');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [userId, loadLocalConversations]);
+
+    // Initial load
+    useEffect(() => {
+        // Load local first (instant)
+        loadLocalConversations();
+        setIsLoading(false);
+
+        // Then sync from server
+        syncFromServer();
+    }, [loadLocalConversations, syncFromServer]);
+
+    // Refresh function
+    const refresh = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        await syncFromServer();
+    }, [syncFromServer]);
+
+    // Create a new conversation
+    const createConversation = useCallback(async (participantIds: string[]): Promise<string> => {
+        try {
+            const { conversation } = await chatService.createConversation({ participantIds });
+
+            // Save to local DB
+            saveConversation({
+                id: conversation.id,
+                otherUserId: conversation.otherUserId,
+                otherUserName: conversation.otherUserName,
+                otherUserAvatar: conversation.otherUserAvatar,
+                lastMessage: '',
+                lastMessageAt: new Date().toISOString(),
+                unreadCount: 0,
+            });
+
+            loadLocalConversations();
+            return conversation.id;
+        } catch (err) {
+            console.error('Error creating conversation:', err);
+            setError('Error al crear conversación');
+            throw err;
+        }
+    }, [loadLocalConversations]);
+
+    return {
+        conversations,
+        refresh,
+        createConversation,
+        isLoading,
+        error,
+    };
+}
