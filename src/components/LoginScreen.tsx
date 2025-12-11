@@ -9,9 +9,12 @@ import {
   Platform,
   ScrollView,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from '../hooks/useTranslation';
+import { useAuth } from '../contexts/AuthContext';
+import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import { GoogleIcon, AppleIcon, MicrosoftIcon } from './icons/SocialIcons';
 import { RegisterScreen } from './RegisterScreen';
 import { ForgotPasswordScreen } from './ForgotPasswordScreen';
@@ -23,28 +26,35 @@ interface LoginScreenProps {
 
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const { t } = useTranslation();
+  const { login, error, clearError, isLoading } = useAuth();
+  const { signInWithGoogle, isReady: googleReady } = useGoogleAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showOtherMethods, setShowOtherMethods] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [country, setCountry] = useState('Colombia');
 
-  const handleGoogleLogin = () => {
-    // TODO: Implementar login con Google
-    console.log('Login con Google');
+  const handleGoogleLogin = async () => {
+    clearError();
+    await signInWithGoogle();
   };
 
   const handleForgotPassword = () => {
     setShowForgotPassword(true);
   };
 
-  const handleEmailLogin = () => {
-    // TODO: Implementar login con email
-    console.log('Login con email:', email);
-    // Por ahora, navegar directamente a la pantalla de chats
-    if (onLoginSuccess) {
-      onLoginSuccess();
+  const handleEmailLogin = async () => {
+    if (!email || !password) {
+      return;
+    }
+
+    clearError();
+    try {
+      await login({ email, password });
+      // onLoginSuccess is no longer needed - AuthContext handles navigation
+    } catch {
+      // Error is handled by AuthContext
     }
   };
 
@@ -97,6 +107,21 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           <Text style={styles.appName}>TINCADIA</Text>
         </View>
 
+        {/* Error message */}
+        {error && (
+          <TouchableOpacity onPress={clearError} style={{
+            backgroundColor: '#FFE5E5',
+            borderRadius: 8,
+            padding: 12,
+            marginHorizontal: 20,
+            marginBottom: 16,
+            borderWidth: 1,
+            borderColor: '#FF4444',
+          }}>
+            <Text style={{ color: '#CC0000', fontSize: 14 }}>{error}</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Formulario de login */}
         <View style={styles.formContainer}>
           <TextInput
@@ -108,6 +133,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            editable={!isLoading}
           />
 
           <TextInput
@@ -119,14 +145,23 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
+            editable={!isLoading}
           />
 
-          <TouchableOpacity onPress={handleForgotPassword}>
+          <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
             <Text style={styles.forgotPassword}>{t('login.forgotPassword')}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.loginButton} onPress={handleEmailLogin}>
-            <Text style={styles.loginButtonText}>{t('login.loginButton')}</Text>
+          <TouchableOpacity
+            style={[styles.loginButton, isLoading && { opacity: 0.7 }]}
+            onPress={handleEmailLogin}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.loginButtonText}>{t('login.loginButton')}</Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.registerContainer}>
@@ -147,22 +182,25 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         {/* Botones sociales */}
         <View style={styles.socialContainer}>
           <TouchableOpacity
-            style={styles.socialButton}
+            style={[styles.socialButton, (!googleReady || isLoading) && { opacity: 0.5 }]}
             onPress={handleGoogleLogin}
+            disabled={!googleReady || isLoading}
           >
             <GoogleIcon size={24} color="#FFFFFF" />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.socialButton}
+            style={[styles.socialButton, isLoading && { opacity: 0.5 }]}
             onPress={handleAppleLogin}
+            disabled={isLoading}
           >
             <AppleIcon size={32} color="#FFFFFF" />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.socialButton}
+            style={[styles.socialButton, isLoading && { opacity: 0.5 }]}
             onPress={handleMicrosoftLogin}
+            disabled={isLoading}
           >
             <MicrosoftIcon size={24} color="#FFFFFF" />
           </TouchableOpacity>
@@ -170,6 +208,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           <TouchableOpacity
             style={styles.socialButton}
             onPress={() => setShowOtherMethods(true)}
+            disabled={isLoading}
           >
             <Text style={styles.moreIcon}>⋯</Text>
           </TouchableOpacity>

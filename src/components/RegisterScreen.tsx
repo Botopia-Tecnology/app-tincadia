@@ -11,23 +11,34 @@ import {
   StyleSheet,
   Modal,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from '../hooks/useTranslation';
+import { useAuth } from '../contexts/AuthContext';
+import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import { GoogleIcon, AppleIcon, MicrosoftIcon } from './icons/SocialIcons';
 import { registerScreenStyles as styles } from '../styles/RegisterScreen.styles';
+import { getDocumentTypeId } from '../types/auth.types';
 import Svg, { Circle } from 'react-native-svg';
 
-export function RegisterScreen({ onBack }: { onBack: () => void }) {
+interface RegisterScreenProps {
+  onBack: () => void;
+  onRegisterSuccess?: () => void;
+}
+
+export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProps) {
   const { t } = useTranslation();
+  const { register, error, clearError, isLoading } = useAuth();
+  const { signInWithGoogle, isReady: googleReady } = useGoogleAuth();
+
   const [step, setStep] = useState(1);
   const totalSteps = 2;
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Auto-scroll to bottom when step changes
   useEffect(() => {
-    // Small delay to ensure layout is complete
     const timer = setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
@@ -49,15 +60,58 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
   const [modalVisible, setModalVisible] = useState(false);
   const documentTypes = ['T.I', 'C.C', 'C.E', 'PAS'];
 
+  // Validation
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const validateStep1 = (): boolean => {
+    if (!email || !password || !confirmPassword) {
+      setValidationError('Por favor completa todos los campos');
+      return false;
+    }
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      setValidationError('Por favor ingresa un email válido');
+      return false;
+    }
+    if (password.length < 6) {
+      setValidationError('La contraseña debe tener al menos 6 caracteres');
+      return false;
+    }
+    if (password !== confirmPassword) {
+      setValidationError('Las contraseñas no coinciden');
+      return false;
+    }
+    setValidationError(null);
+    return true;
+  };
+
+  const validateStep2 = (): boolean => {
+    if (!firstName || !lastName) {
+      setValidationError('Por favor ingresa tu nombre y apellido');
+      return false;
+    }
+    if (!documentType || !documentNumber) {
+      setValidationError('Por favor selecciona el tipo e ingresa el número de documento');
+      return false;
+    }
+    if (!phone || phone.length < 7) {
+      setValidationError('Por favor ingresa un número de teléfono válido');
+      return false;
+    }
+    setValidationError(null);
+    return true;
+  };
+
   const handleNext = () => {
-    if (step < totalSteps) {
-      setStep(step + 1);
-    } else {
+    if (step === 1 && validateStep1()) {
+      setStep(2);
+    } else if (step === 2) {
       handleRegister();
     }
   };
 
   const handleBack = () => {
+    setValidationError(null);
+    clearError();
     if (step > 1) {
       setStep(step - 1);
     } else {
@@ -65,17 +119,34 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const handleRegister = () => {
-    // TODO: Implementar lógica de registro
-    console.log('Register:', {
-      email,
-      password,
-      firstName,
-      lastName,
-      documentType,
-      documentNumber,
-      phone
-    });
+  const handleRegister = async () => {
+    if (!validateStep2()) return;
+
+    const documentTypeId = getDocumentTypeId(documentType);
+    if (!documentTypeId) {
+      setValidationError('Tipo de documento inválido');
+      return;
+    }
+
+    try {
+      await register({
+        email,
+        password,
+        firstName,
+        lastName,
+        documentTypeId,
+        documentNumber,
+        phone,
+      });
+      // Success - AuthContext will handle navigation
+    } catch {
+      // Error is handled by AuthContext
+    }
+  };
+
+  const handleGoogleRegister = async () => {
+    clearError();
+    await signInWithGoogle();
   };
 
   // Progress Circle Component
@@ -119,6 +190,8 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
     );
   };
 
+  const displayError = validationError || error;
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <KeyboardAvoidingView
@@ -135,7 +208,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
           {/* Title Section */}
           <View style={styles.titleContainer}>
             <View style={styles.logoArea}>
-              <TouchableOpacity style={styles.absoluteBackButton} onPress={handleBack}>
+              <TouchableOpacity style={styles.absoluteBackButton} onPress={handleBack} disabled={isLoading}>
                 <Text style={styles.backArrow}>←</Text>
               </TouchableOpacity>
               {step === 1 ? (
@@ -157,6 +230,24 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
             </Text>
           </View>
 
+          {/* Error Message */}
+          {displayError && (
+            <TouchableOpacity
+              onPress={() => { setValidationError(null); clearError(); }}
+              style={{
+                backgroundColor: '#FFE5E5',
+                borderRadius: 8,
+                padding: 12,
+                marginHorizontal: 20,
+                marginBottom: 16,
+                borderWidth: 1,
+                borderColor: '#FF4444',
+              }}
+            >
+              <Text style={{ color: '#CC0000', fontSize: 14 }}>{displayError}</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Form Content */}
           <View style={styles.formContainer}>
             {step === 1 ? (
@@ -171,6 +262,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  editable={!isLoading}
                 />
                 <TextInput
                   style={styles.input}
@@ -180,6 +272,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                   onChangeText={setPassword}
                   secureTextEntry
                   autoCapitalize="none"
+                  editable={!isLoading}
                 />
                 <TextInput
                   style={styles.input}
@@ -189,6 +282,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                   onChangeText={setConfirmPassword}
                   secureTextEntry
                   autoCapitalize="none"
+                  editable={!isLoading}
                 />
               </>
             ) : (
@@ -201,6 +295,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                   value={firstName}
                   onChangeText={setFirstName}
                   autoCapitalize="words"
+                  editable={!isLoading}
                 />
                 <TextInput
                   style={styles.input}
@@ -209,11 +304,13 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                   value={lastName}
                   onChangeText={setLastName}
                   autoCapitalize="words"
+                  editable={!isLoading}
                 />
                 <View style={styles.documentRow}>
                   <TouchableOpacity
                     style={styles.documentTypeContainer}
                     onPress={() => setModalVisible(true)}
+                    disabled={isLoading}
                   >
                     <Text style={[styles.documentTypeText, !documentType && styles.documentTypePlaceholder]}>
                       {documentType || 'Tipo'}
@@ -227,6 +324,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                     value={documentNumber}
                     onChangeText={setDocumentNumber}
                     keyboardType="numeric"
+                    editable={!isLoading}
                   />
                 </View>
                 <TextInput
@@ -236,6 +334,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                   value={phone}
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
+                  editable={!isLoading}
                 />
               </>
             )}
@@ -250,13 +349,17 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
             </View>
 
             <View style={styles.socialButtons}>
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity
+                style={[styles.socialButton, (!googleReady || isLoading) && { opacity: 0.5 }]}
+                onPress={handleGoogleRegister}
+                disabled={!googleReady || isLoading}
+              >
                 <GoogleIcon size={24} color="#FFFFFF" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity style={[styles.socialButton, isLoading && { opacity: 0.5 }]} disabled={isLoading}>
                 <AppleIcon size={24} color="#FFFFFF" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity style={[styles.socialButton, isLoading && { opacity: 0.5 }]} disabled={isLoading}>
                 <MicrosoftIcon size={24} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
@@ -264,10 +367,18 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
 
           {/* Footer */}
           <View style={styles.footer}>
-            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextButtonText}>
-                {step === totalSteps ? t('register.createAccount') : 'Continuar'}
-              </Text>
+            <TouchableOpacity
+              style={[styles.nextButton, isLoading && { opacity: 0.7 }]}
+              onPress={handleNext}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.nextButtonText}>
+                  {step === totalSteps ? t('register.createAccount') : 'Continuar'}
+                </Text>
+              )}
             </TouchableOpacity>
 
             <Text style={styles.termsText}>
@@ -308,7 +419,6 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
                 </TouchableOpacity>
               )}
             />
-            {/* Optional Close Button inside content if needed, tapping outside also closes */}
           </View>
         </TouchableOpacity>
       </Modal>
