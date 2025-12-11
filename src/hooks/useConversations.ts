@@ -64,10 +64,16 @@ export function useConversations(userId: string): UseConversationsReturn {
 
     // Sync conversations from server
     const syncFromServer = useCallback(async () => {
-        if (!userId) return;
+        if (!userId) {
+            console.log('⚠️ No userId provided to useConversations');
+            return;
+        }
+
+        console.log('📡 Fetching conversations for userId:', userId);
 
         try {
             const { conversations: serverConvs } = await chatService.getConversations(userId);
+            console.log('📡 Server returned conversations:', serverConvs?.length || 0);
 
             // Save each server conversation to local DB
             serverConvs.forEach((conv: ApiConversation) => {

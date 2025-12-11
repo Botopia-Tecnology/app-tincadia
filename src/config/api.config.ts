@@ -29,6 +29,7 @@ export const API_ENDPOINTS = {
     LOGOUT: '/auth/logout',
     UPDATE_PROFILE: (userId: string) => `/auth/profile/${userId}`,
     ME: '/auth/me',
+    AVAILABLE_USERS: (userId: string) => `/auth/users/${userId}`,
 
     // Chat endpoints
     CONVERSATIONS: '/chat/conversations',

@@ -182,6 +182,9 @@ export function updateUnreadCount(conversationId: string, count: number) {
  * Clear all chat data (for logout)
  */
 export function clearChatDatabase() {
+    ensureInitialized();
     db.runSync(`DELETE FROM messages`);
     db.runSync(`DELETE FROM conversations`);
+    console.log('🗑️ Chat database cleared');
 }
+

@@ -1,26 +1,32 @@
 /**
  * Chats Screen
  * 
- * Main chat screen that shows conversation list or individual chat.
- * Integrates with local SQLite for instant loading and Supabase for real-time.
+ * Shows either:
+ * 1. List of available users to chat with (new flow)
+ * 2. Individual chat when a user is selected
  */
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../contexts/AuthContext';
-import { useConversations, Conversation } from '../hooks/useConversations';
 import { useChat } from '../hooks/useChat';
+import { chatService, AvailableUser } from '../services/chat.service';
 import { initChatDatabase } from '../database/chatDatabase';
 import { chatsScreenStyles as styles } from '../styles/ChatsScreen.styles';
 import {
   BackArrowIcon,
   VideoCallIcon,
-  VoiceIcon,
-  PhotoIcon,
-  CheckIcon,
 } from './icons/NavigationIcons';
 import { BottomNavigation } from './BottomNavigation';
 import { ChatInput } from './chat/ChatInput';
@@ -30,52 +36,38 @@ interface ChatsScreenProps {
   onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
 }
 
-// Chat List Item Component
-function ChatListItem({
-  conversation,
-  onPress
+// User List Item Component
+function UserListItem({
+  user,
+  onPress,
 }: {
-  conversation: Conversation;
+  user: AvailableUser;
   onPress: () => void;
 }) {
-  // Format time
-  const formatTime = (dateString: string): string => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Ayer';
-    } else {
-      return date.toLocaleDateString('es', { day: '2-digit', month: '2-digit' });
-    }
-  };
-
   return (
     <TouchableOpacity style={styles.chatItem} onPress={onPress}>
-      <Image
-        source={{ uri: conversation.otherUserAvatar || 'https://via.placeholder.com/50' }}
-        style={styles.avatar}
-        defaultSource={require('../../assets/icon.png')}
-      />
+      <View
+        style={[
+          styles.avatar,
+          {
+            backgroundColor: '#4CAF50',
+            justifyContent: 'center',
+            alignItems: 'center',
+          },
+        ]}
+      >
+        <Text style={{ color: '#FFF', fontSize: 18, fontWeight: 'bold' }}>
+          {user.firstName?.[0] || '?'}
+          {user.lastName?.[0] || ''}
+        </Text>
+      </View>
       <View style={styles.chatContent}>
         <View style={styles.chatHeader}>
-          <Text style={styles.chatName}>{conversation.otherUserName || 'Usuario'}</Text>
-          <Text style={styles.timestamp}>{formatTime(conversation.lastMessageAt)}</Text>
-        </View>
-        <View style={styles.messageRow}>
-          <Text style={styles.lastMessage} numberOfLines={1}>
-            {conversation.lastMessage || 'Sin mensajes'}
+          <Text style={styles.chatName}>
+            {user.firstName} {user.lastName}
           </Text>
-          {conversation.unreadCount > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>{conversation.unreadCount}</Text>
-            </View>
-          )}
         </View>
+        <Text style={styles.lastMessage}>{user.phone || 'Tap to chat'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -139,7 +131,9 @@ function ChatView({
           ListEmptyComponent={
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
               <Text style={{ color: '#666', fontSize: 16 }}>No hay mensajes aún</Text>
-              <Text style={{ color: '#999', fontSize: 14, marginTop: 4 }}>¡Envía el primero!</Text>
+              <Text style={{ color: '#999', fontSize: 14, marginTop: 4 }}>
+                ¡Envía el primero!
+              </Text>
             </View>
           }
         />
@@ -157,12 +151,14 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   const { user } = useAuth();
   const userId = user?.id || '';
 
-  const { conversations, refresh, isLoading } = useConversations(userId);
+  const [users, setUsers] = useState<AvailableUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // State for selected conversation
-  const [selectedConversation, setSelectedConversation] = useState<{
-    id: string;
-    name: string;
+  const [selectedChat, setSelectedChat] = useState<{
+    conversationId: string;
+    otherUserName: string;
   } | null>(null);
 
   // Initialize database on mount
@@ -170,20 +166,61 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     initChatDatabase();
   }, []);
 
-  // Handle back from chat
-  const handleBack = () => {
-    setSelectedConversation(null);
-    refresh(); // Refresh list when coming back
+  // Load available users
+  const loadUsers = useCallback(async () => {
+    if (!userId) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      console.log('📡 Fetching available users for:', userId);
+      const response = await chatService.getAvailableUsers(userId);
+      console.log('📡 Got users:', response.users?.length || 0);
+      setUsers(response.users || []);
+    } catch (err) {
+      console.error('Error loading users:', err);
+      setError('Error al cargar usuarios');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  // Handle user tap - start or get conversation
+  const handleUserPress = async (selectedUser: AvailableUser) => {
+    try {
+      console.log('🚀 Starting conversation with:', selectedUser.id);
+      const response = await chatService.startConversation(userId, selectedUser.id);
+      console.log('✅ Got conversationId:', response.conversationId);
+
+      setSelectedChat({
+        conversationId: response.conversationId,
+        otherUserName: `${selectedUser.firstName} ${selectedUser.lastName}`,
+      });
+    } catch (err) {
+      console.error('Error starting conversation:', err);
+      setError('Error al iniciar conversación');
+    }
   };
 
-  // Show individual chat if conversation selected
-  if (selectedConversation) {
+  // Handle back from chat
+  const handleBack = () => {
+    setSelectedChat(null);
+    loadUsers(); // Refresh user list
+  };
+
+  // Show individual chat if selected
+  if (selectedChat) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <StatusBar style="dark" />
         <ChatView
-          conversationId={selectedConversation.id}
-          otherUserName={selectedConversation.name}
+          conversationId={selectedChat.conversationId}
+          otherUserName={selectedChat.otherUserName}
           userId={userId}
           onBack={handleBack}
         />
@@ -191,7 +228,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     );
   }
 
-  // Show conversation list
+  // Show user list
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar style="dark" />
@@ -211,44 +248,47 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
         </View>
       </View>
 
+      {/* Error Message */}
+      {error && (
+        <View style={{ backgroundColor: '#FFE5E5', padding: 12, marginHorizontal: 16, borderRadius: 8 }}>
+          <Text style={{ color: '#CC0000', textAlign: 'center' }}>{error}</Text>
+        </View>
+      )}
+
       {/* Loading State */}
-      {isLoading && conversations.length === 0 && (
+      {isLoading && users.length === 0 && (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={{ marginTop: 12, color: '#666' }}>Cargando conversaciones...</Text>
+          <Text style={{ marginTop: 12, color: '#666' }}>Cargando usuarios...</Text>
         </View>
       )}
 
       {/* Empty State */}
-      {!isLoading && conversations.length === 0 && (
+      {!isLoading && users.length === 0 && !error && (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>💬</Text>
-          <Text style={{ fontSize: 18, fontWeight: '600', color: '#333' }}>No tienes conversaciones</Text>
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>👥</Text>
+          <Text style={{ fontSize: 18, fontWeight: '600', color: '#333' }}>
+            No hay usuarios disponibles
+          </Text>
           <Text style={{ fontSize: 14, color: '#666', textAlign: 'center', marginTop: 8 }}>
-            Inicia un chat con alguien para comenzar a conversar
+            No hay otros usuarios registrados para chatear
           </Text>
         </View>
       )}
 
-      {/* Conversations List */}
+      {/* Users List */}
       <FlatList
-        data={conversations}
+        data={users}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <ChatListItem
-            conversation={item}
-            onPress={() => setSelectedConversation({
-              id: item.id,
-              name: item.otherUserName,
-            })}
-          />
+          <UserListItem user={item} onPress={() => handleUserPress(item)} />
         )}
         contentContainerStyle={styles.listContent}
         style={styles.list}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
-            onRefresh={refresh}
+            onRefresh={loadUsers}
             colors={['#4CAF50']}
             tintColor="#4CAF50"
           />
