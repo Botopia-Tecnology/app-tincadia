@@ -29,4 +29,12 @@ export const API_ENDPOINTS = {
     LOGOUT: '/auth/logout',
     UPDATE_PROFILE: (userId: string) => `/auth/profile/${userId}`,
     ME: '/auth/me',
+
+    // Chat endpoints
+    CONVERSATIONS: '/chat/conversations',
+    USER_CONVERSATIONS: (userId: string) => `/chat/conversations/${userId}`,
+    MESSAGES: '/chat/messages',
+    CONVERSATION_MESSAGES: (conversationId: string) => `/chat/messages/${conversationId}`,
+    MESSAGES_READ: '/chat/messages/read',
+    MESSAGE: (messageId: string) => `/chat/messages/${messageId}`,
 } as const;

@@ -35,7 +35,8 @@
       [
         "expo-web-browser",
         {}
-      ]
+      ],
+      "expo-sqlite"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
