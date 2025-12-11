@@ -31,6 +31,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [showOtherMethods, setShowOtherMethods] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -136,17 +137,33 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             editable={!isLoading}
           />
 
-          <TextInput
-            style={styles.input}
-            placeholder={t('login.password')}
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isLoading}
-          />
+          <View style={{ position: 'relative' }}>
+            <TextInput
+              style={styles.input}
+              placeholder={t('login.password')}
+              placeholderTextColor="#999"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isLoading}
+            />
+            <TouchableOpacity
+              style={{
+                position: 'absolute',
+                right: 16,
+                top: 0,
+                bottom: 0,
+                justifyContent: 'center',
+              }}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <Text style={{ fontSize: 20, color: '#666' }}>
+                {showPassword ? '👁️' : '👁️‍🗨️'}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
             <Text style={styles.forgotPassword}>{t('login.forgotPassword')}</Text>

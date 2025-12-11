@@ -121,8 +121,8 @@ function ChatView({
   return (
     <KeyboardAvoidingView
       style={chatStyles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
     >
       {/* Header */}
       <View style={chatStyles.header}>

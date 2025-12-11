@@ -49,6 +49,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -264,26 +266,58 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   autoCorrect={false}
                   editable={!isLoading}
                 />
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('register.password')}
-                  placeholderTextColor="#999"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  editable={!isLoading}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('register.confirmPassword')}
-                  placeholderTextColor="#999"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  editable={!isLoading}
-                />
+                <View style={{ position: 'relative' }}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder={t('register.password')}
+                    placeholderTextColor="#999"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    editable={!isLoading}
+                  />
+                  <TouchableOpacity
+                    style={{
+                      position: 'absolute',
+                      right: 16,
+                      top: 0,
+                      bottom: 0,
+                      justifyContent: 'center',
+                    }}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Text style={{ fontSize: 20, color: '#666' }}>
+                      {showPassword ? '👁️' : '👁️‍🗨️'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ position: 'relative' }}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder={t('register.confirmPassword')}
+                    placeholderTextColor="#999"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    editable={!isLoading}
+                  />
+                  <TouchableOpacity
+                    style={{
+                      position: 'absolute',
+                      right: 16,
+                      top: 0,
+                      bottom: 0,
+                      justifyContent: 'center',
+                    }}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Text style={{ fontSize: 20, color: '#666' }}>
+                      {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </>
             ) : (
               <>

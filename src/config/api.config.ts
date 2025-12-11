@@ -9,7 +9,16 @@ import { Platform } from 'react-native';
 
 // Get base URL with platform-specific localhost handling
 const getApiBaseUrl = (): string => {
-    const configuredUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+    let configuredUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+    // Add https:// if no protocol is specified (and not localhost)
+    if (!configuredUrl.startsWith('http://') && !configuredUrl.startsWith('https://')) {
+        if (!configuredUrl.includes('localhost') && !configuredUrl.includes('10.0.2.2')) {
+            configuredUrl = `https://${configuredUrl}`;
+        } else {
+            configuredUrl = `http://${configuredUrl}`;
+        }
+    }
 
     // Android emulator needs special IP for localhost
     if (Platform.OS === 'android' && configuredUrl.includes('localhost')) {
