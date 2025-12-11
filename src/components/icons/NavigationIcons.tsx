@@ -203,3 +203,46 @@ export function ChevronRightIcon({ size = 24, color = '#000000' }: IconProps) {
   );
 }
 
+export function CameraIcon({ size = 24, color = '#666666' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 15.2c1.767 0 3.2-1.433 3.2-3.2S13.767 8.8 12 8.8 8.8 10.233 8.8 12s1.433 3.2 3.2 3.2zM9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+export function MicrophoneIcon({ size = 24, color = '#666666' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15a.998.998 0 00-.98-.85c-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+export function SendIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+export function PlusIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
