@@ -47,4 +47,5 @@ export const API_ENDPOINTS = {
     CONVERSATION_MESSAGES: (conversationId: string) => `/chat/messages/${conversationId}`,
     MESSAGES_READ: '/chat/messages/read',
     MESSAGE: (messageId: string) => `/chat/messages/${messageId}`,
+    CORRECT_TEXT: '/chat/correct-text',
 } as const;

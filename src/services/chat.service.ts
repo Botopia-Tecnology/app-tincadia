@@ -138,25 +138,9 @@ export const chatService = {
      * Correct a message text using AI
      */
     async correctMessage(text: string): Promise<{ correctedText: string }> {
-        // TODO: Replace with actual backend endpoint when ready: POST /chat/correct-text
-        // return apiClient(API_ENDPOINTS.CORRECT_TEXT, {
-        //     method: 'POST',
-        //     body: JSON.stringify({ text }),
-        // });
-
-        // Mock implementation for UI verification
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                // Simple mock logic: capitalize first letter and add period if missing
-                let corrected = text.trim();
-                if (corrected.length > 0) {
-                    corrected = corrected.charAt(0).toUpperCase() + corrected.slice(1);
-                    if (!corrected.endsWith('.') && !corrected.endsWith('!') && !corrected.endsWith('?')) {
-                        corrected += '.';
-                    }
-                }
-                resolve({ correctedText: corrected });
-            }, 800); // Simulate network delay
+        return apiClient(API_ENDPOINTS.CORRECT_TEXT, {
+            method: 'POST',
+            body: JSON.stringify({ text }),
         });
     },
 };

@@ -68,8 +68,7 @@ export const registerScreenStyles = StyleSheet.create({
   input: {
     backgroundColor: '#FFFFFF',
     borderRadius: 30, // Matched LoginScreen
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
     fontSize: 16,
     color: '#000000',
     marginBottom: 16,
@@ -77,6 +76,20 @@ export const registerScreenStyles = StyleSheet.create({
     borderColor: '#E0E0E0',
     width: '90%', // Matched LoginScreen
     alignSelf: 'center',
+    height: 56, // Fixed height for consistency
+    justifyContent: 'center',
+    // Shadows
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   socialSection: {
     marginTop: 32,
@@ -96,6 +109,17 @@ export const registerScreenStyles = StyleSheet.create({
     backgroundColor: '#83A98A', // Matched LoginScreen
     alignItems: 'center',
     justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   separator: {
     flexDirection: 'row',
@@ -127,6 +151,19 @@ export const registerScreenStyles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
     width: '70%', // Matched LoginScreen
+    height: 56,
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#376A3E',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   nextButtonText: {
     color: '#FFFFFF',
@@ -160,7 +197,18 @@ export const registerScreenStyles = StyleSheet.create({
     borderColor: '#E0E0E0',
     justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    height: 56,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   documentTypeText: {
     fontSize: 16,
@@ -175,10 +223,21 @@ export const registerScreenStyles = StyleSheet.create({
     borderRadius: 30,
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
     fontSize: 16,
     color: '#000000',
+    height: 56,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   // Modal Styles
   modalOverlay: {
