@@ -91,7 +91,8 @@ export function ChatInput({ onSend, disabled = false, placeholder = 'Escribe un 
                     {isCorrecting ? (
                         <ActivityIndicator size="small" color="#FF69B4" />
                     ) : (
-                        <MagicPencilIcon size={24} />
+                        // Debug: Simple square to test visibility
+                        <View style={{ width: 24, height: 24, backgroundColor: '#FF69B4' }} />
                     )}
                 </TouchableOpacity>
             )}

@@ -18,15 +18,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Animated,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { useChat } from '../hooks/useChat';
 import { chatService, AvailableUser } from '../services/chat.service';
 import { initChatDatabase } from '../database/chatDatabase';
 import { BottomNavigation } from './BottomNavigation';
-import { ChatInput } from './chat/ChatInput';
+import { MagicPencilIcon } from './icons/ActionIcons'; // Check path is correct
+// import { ChatInput } from './chat/ChatInput'; // Unused now
 import { MessageBubble } from './chat/MessageBubble';
 import {
   BackArrowIcon,
@@ -92,13 +96,74 @@ function ChatView({
 }) {
   const { messages, sendMessage, isLoading } = useChat(conversationId, userId);
   const [messageText, setMessageText] = useState('');
+  const [isCorrecting, setIsCorrecting] = useState(false);
+  const [correctionOpacity] = useState(new Animated.Value(0));
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollViewRef = React.useRef<any>(null);
+
+  // Listen to keyboard events
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const handleSend = async () => {
     if (!messageText.trim()) return;
     const content = messageText.trim();
     setMessageText('');
     await sendMessage(content);
+  };
+
+  // Create animated component for LinearGradient
+  const AnimatedGradient = Animated.createAnimatedComponent(LinearGradient);
+
+  const handleCorrection = async () => {
+    if (!messageText.trim() || isCorrecting || isLoading) return;
+
+    setIsCorrecting(true);
+    // Start gradient animation loop
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(correctionOpacity, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(correctionOpacity, {
+          toValue: 0.5,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    try {
+      // Use the actual service
+      const result = await chatService.correctMessage(messageText);
+      console.log('Correction result:', result); // Debug log
+
+      if (result && typeof result.correctedText === 'string' && result.correctedText !== messageText) {
+        setMessageText(result.correctedText);
+        // Success flash (yellow) is handled by a different anim if needed, 
+        // but user requested gradient "loading" effect. 
+        // We stop the loading animation in finally block.
+      }
+    } catch (error) {
+      console.error('Correction failed:', error);
+    } finally {
+      setIsCorrecting(false);
+      correctionOpacity.setValue(0); // Reset animation
+    }
   };
 
   const formatTime = (dateString: string) => {
@@ -121,8 +186,8 @@ function ChatView({
   return (
     <KeyboardAvoidingView
       style={chatStyles.container}
-      behavior="padding"
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0} // Not relying on this anymore
     >
       {/* Header */}
       <View style={chatStyles.header}>
@@ -194,28 +259,63 @@ function ChatView({
         </ScrollView>
       )}
 
-      {/* Input Area */}
-      <View style={chatStyles.inputContainer}>
+      {/* Input Area - with dynamic bottom margin when keyboard is visible */}
+      <View style={[chatStyles.inputContainer, { marginBottom: keyboardHeight }]}>
         <View style={chatStyles.inputRow}>
           {/* Camera Button */}
           <TouchableOpacity style={chatStyles.mediaButton}>
             <CameraIcon size={22} color="#6B7280" />
           </TouchableOpacity>
 
-          {/* Text Input */}
-          <TextInput
-            style={chatStyles.textInput}
-            placeholder="Escribe un mensaje..."
-            placeholderTextColor="#9CA3AF"
-            value={messageText}
-            onChangeText={setMessageText}
-            multiline
-            maxLength={500}
-          />
+          {/* Input Wrapper with Pencil inside */}
+          <View style={[chatStyles.inputWrapper, { overflow: 'hidden' }]}>
+            {/* Gradient Overlay when correcting */}
+            <AnimatedGradient
+              colors={['rgba(255, 215, 0, 0.3)', 'rgba(255, 105, 180, 0.3)', 'rgba(0, 191, 255, 0.3)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[
+                StyleSheet.absoluteFill,
+                { opacity: correctionOpacity }
+              ]}
+            />
+
+            <TextInput
+              style={chatStyles.textInput}
+              placeholder="Escribe un mensaje..."
+              placeholderTextColor="#9CA3AF"
+              value={messageText}
+              onChangeText={setMessageText}
+              multiline
+              maxLength={500}
+            />
+
+            {/* Magic Pencil - shows when text exists */}
+            {messageText && messageText.length > 0 && (
+              <TouchableOpacity
+                style={chatStyles.pencilButton}
+                onPress={handleCorrection}
+                disabled={isCorrecting}
+              >
+                {isCorrecting ? (
+                  <ActivityIndicator size="small" color="#FF69B4" />
+                ) : (
+                  <MagicPencilIcon size={24} />
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Correction Flash Overlay - REMOVED, passing logic to gradient inside inputWrapper */}
+          {/* <Animated.View ... /> */}
 
           {/* Mic or Send Button */}
           {messageText.trim() ? (
-            <TouchableOpacity style={chatStyles.sendButton} onPress={handleSend}>
+            <TouchableOpacity
+              style={[chatStyles.sendButton, isCorrecting && { backgroundColor: '#9CA3AF' }]}
+              onPress={handleSend}
+              disabled={isCorrecting}
+            >
               <SendIcon size={20} color="#FFFFFF" />
             </TouchableOpacity>
           ) : (
@@ -367,15 +467,38 @@ const chatStyles = StyleSheet.create({
   mediaIcon: {
     fontSize: 20,
   },
-  textInput: {
+  inputWrapper: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#F3F4F6',
     borderRadius: 24,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12, // Reduced padding to accommodate icon
+    minHeight: 40,
+  },
+  textInput: {
+    flex: 1,
     paddingVertical: 10,
     fontSize: 16,
     maxHeight: 100,
     color: '#111827',
+  },
+  pencilButton: {
+    marginLeft: 4,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  correctionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 235, 59, 0.2)', // Yellow flash
+    borderRadius: 24,
+    // Adjust position to match the inputWrapper (which is the middle child of inputRow)
+    top: 12,
+    bottom: 12,
+    left: 64, // 16 pad + 40 media + 8 gap. Approx.
+    right: 64, // 16 pad + 40 send + 8 gap.
   },
   sendButton: {
     width: 40,
