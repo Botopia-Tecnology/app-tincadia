@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "^2.87.1",
     "expo": "~54.0.25",
     "expo-auth-session": "^7.0.10",
+    "expo-build-properties": "^1.0.10",
     "expo-crypto": "^15.0.8",
     "expo-secure-store": "^15.0.8",
     "expo-sqlite": "~16.0.10",

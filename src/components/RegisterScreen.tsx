@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
@@ -266,9 +267,9 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   autoCorrect={false}
                   editable={!isLoading}
                 />
-                <View style={{ position: 'relative' }}>
+                <View style={{ width: '100%', position: 'relative' }}>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { paddingRight: 50 }]}
                     placeholder={t('register.password')}
                     placeholderTextColor="#999"
                     value={password}
@@ -281,20 +282,20 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                     style={{
                       position: 'absolute',
                       right: 16,
-                      top: 0,
-                      bottom: 0,
-                      justifyContent: 'center',
+                      top: 16,
                     }}
                     onPress={() => setShowPassword(!showPassword)}
                   >
-                    <Text style={{ fontSize: 20, color: '#666' }}>
-                      {showPassword ? '👁️' : '👁️‍🗨️'}
-                    </Text>
+                    <Ionicons
+                      name={showPassword ? 'eye' : 'eye-off'}
+                      size={22}
+                      color="#666"
+                    />
                   </TouchableOpacity>
                 </View>
-                <View style={{ position: 'relative' }}>
+                <View style={{ width: '100%', position: 'relative' }}>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { paddingRight: 50 }]}
                     placeholder={t('register.confirmPassword')}
                     placeholderTextColor="#999"
                     value={confirmPassword}
@@ -307,15 +308,15 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                     style={{
                       position: 'absolute',
                       right: 16,
-                      top: 0,
-                      bottom: 0,
-                      justifyContent: 'center',
+                      top: 16,
                     }}
                     onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                   >
-                    <Text style={{ fontSize: 20, color: '#666' }}>
-                      {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
-                    </Text>
+                    <Ionicons
+                      name={showConfirmPassword ? 'eye' : 'eye-off'}
+                      size={22}
+                      color="#666"
+                    />
                   </TouchableOpacity>
                 </View>
               </>

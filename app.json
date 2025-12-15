@@ -19,7 +19,8 @@
       "buildNumber": "4",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "package": "com.tincadia.app",
@@ -37,7 +38,8 @@
         "expo-web-browser",
         {}
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withModularHeaders"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
