@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
@@ -137,9 +138,9 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             editable={!isLoading}
           />
 
-          <View style={{ position: 'relative' }}>
+          <View style={{ width: '90%', alignSelf: 'center', position: 'relative' }}>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { width: '100%', marginBottom: 16, paddingRight: 50 }]}
               placeholder={t('login.password')}
               placeholderTextColor="#999"
               value={password}
@@ -153,15 +154,15 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               style={{
                 position: 'absolute',
                 right: 16,
-                top: 0,
-                bottom: 0,
-                justifyContent: 'center',
+                top: 16,
               }}
               onPress={() => setShowPassword(!showPassword)}
             >
-              <Text style={{ fontSize: 20, color: '#666' }}>
-                {showPassword ? '👁️' : '👁️‍🗨️'}
-              </Text>
+              <Ionicons
+                name={showPassword ? 'eye' : 'eye-off'}
+                size={22}
+                color="#666"
+              />
             </TouchableOpacity>
           </View>
 
