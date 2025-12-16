@@ -26,7 +26,8 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { useChat } from '../hooks/useChat';
-import { chatService, AvailableUser } from '../services/chat.service';
+import { chatService } from '../services/chat.service';
+import { contactService, Contact } from '../services/contact.service';
 import { initChatDatabase } from '../database/chatDatabase';
 import { BottomNavigation } from './BottomNavigation';
 import { MagicPencilIcon } from './icons/ActionIcons'; // Check path is correct
@@ -41,40 +42,48 @@ import {
   SendIcon,
   PlusIcon,
 } from './icons/NavigationIcons';
+import { AddContactModal } from './AddContactModal';
 
 interface ChatsScreenProps {
   onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
 }
 
-// User List Item Component
-function UserListItem({
-  user,
+// Contact List Item Component
+function ContactListItem({
+  contact,
   onPress,
 }: {
-  user: AvailableUser;
+  contact: Contact;
   onPress: () => void;
 }) {
+  // Use alias if available, otherwise use custom names or fallback
+  const displayName = contact.alias ||
+    `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
+    contact.phone;
+
+  const initials = displayName
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '?';
+
   return (
     <TouchableOpacity style={styles.chatItem} onPress={onPress}>
       {/* Avatar with initials */}
       <View style={styles.avatarContainer}>
-        <Text style={styles.avatarText}>
-          {user.firstName?.[0] || '?'}
-          {user.lastName?.[0] || ''}
-        </Text>
+        <Text style={styles.avatarText}>{initials}</Text>
       </View>
 
-      {/* User Info */}
+      {/* Contact Info */}
       <View style={styles.chatContent}>
         <View style={styles.chatHeader}>
-          <Text style={styles.chatName}>
-            {user.firstName} {user.lastName}
-          </Text>
-          <Text style={styles.timestamp}>Nuevo</Text>
+          <Text style={styles.chatName}>{displayName}</Text>
+          <Text style={styles.timestamp}>Contacto</Text>
         </View>
         <View style={styles.messageRow}>
           <Text style={styles.lastMessage} numberOfLines={1}>
-            {user.phone || 'Toca para chatear'}
+            {contact.phone}
           </Text>
         </View>
       </View>
@@ -527,47 +536,49 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   const { user } = useAuth();
   const userId = user?.id || '';
 
-  const [users, setUsers] = useState<AvailableUser[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<AvailableUser[]>([]);
+  const [users, setUsers] = useState<Contact[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<Contact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // State for selected conversation
   const [selectedChat, setSelectedChat] = useState<{
     conversationId: string;
     otherUserName: string;
   } | null>(null);
+
+  // Modal state
+  const [showAddContactModal, setShowAddContactModal] = useState(false);
 
   // Initialize database on mount
   useEffect(() => {
     initChatDatabase();
   }, []);
 
-  // Load available users
-  const loadUsers = useCallback(async () => {
+  // Load contacts (not all users anymore)
+  const loadContacts = useCallback(async () => {
     if (!userId) return;
 
     setIsLoading(true);
     setError(null);
 
     try {
-      console.log('📡 Fetching available users for:', userId);
-      const response = await chatService.getAvailableUsers(userId);
-      console.log('📡 Got users:', response.users?.length || 0);
-      setUsers(response.users || []);
-      setFilteredUsers(response.users || []);
+      console.log('📡 Fetching contacts for user:', userId);
+      const response = await contactService.getContacts();
+      console.log('📡 Got contacts:', response.contacts?.length || 0);
+      setUsers(response.contacts || []);
+      setFilteredUsers(response.contacts || []);
     } catch (err) {
-      console.error('Error loading users:', err);
-      setError('Error al cargar usuarios');
+      console.error('Error loading contacts:', err);
+      setError('Error al cargar contactos');
     } finally {
       setIsLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
+    loadContacts();
+  }, [loadContacts]);
 
   // Handle search
   const handleSearch = (text: string) => {
@@ -578,23 +589,29 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     }
     const filtered = users.filter(
       (u) =>
-        u.firstName?.toLowerCase().includes(text.toLowerCase()) ||
-        u.lastName?.toLowerCase().includes(text.toLowerCase()) ||
+        u.alias?.toLowerCase().includes(text.toLowerCase()) ||
+        u.customFirstName?.toLowerCase().includes(text.toLowerCase()) ||
+        u.customLastName?.toLowerCase().includes(text.toLowerCase()) ||
         u.phone?.includes(text)
     );
     setFilteredUsers(filtered);
   };
 
-  // Handle user tap - start or get conversation
-  const handleUserPress = async (selectedUser: AvailableUser) => {
+  // Handle contact tap - start or get conversation
+  const handleContactPress = async (contact: Contact) => {
     try {
-      console.log('🚀 Starting conversation with:', selectedUser.id);
-      const response = await chatService.startConversation(userId, selectedUser.id);
+      console.log('🚀 Starting conversation with contact:', contact.contactUserId);
+      const response = await chatService.startConversation(userId, contact.contactUserId);
       console.log('✅ Got conversationId:', response.conversationId);
+
+      // Use alias or custom name for chat header
+      const displayName = contact.alias ||
+        `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
+        contact.phone;
 
       setSelectedChat({
         conversationId: response.conversationId,
-        otherUserName: `${selectedUser.firstName} ${selectedUser.lastName}`,
+        otherUserName: displayName,
       });
     } catch (err) {
       console.error('Error starting conversation:', err);
@@ -605,7 +622,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   // Handle back from chat
   const handleBack = () => {
     setSelectedChat(null);
-    loadUsers();
+    loadContacts();
   };
 
   // Show individual chat if selected
@@ -661,40 +678,48 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       {isLoading && users.length === 0 && (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#7FA889" />
-          <Text style={styles.loadingText}>Cargando usuarios...</Text>
+          <Text style={styles.loadingText}>Cargando contactos...</Text>
         </View>
       )}
 
       {/* Empty State */}
       {!isLoading && filteredUsers.length === 0 && !error && (
         <View style={styles.centerContainer}>
-          <Text style={styles.emptyStateText}>No se encontraron chats</Text>
+          <Text style={styles.emptyStateText}>No tienes contactos aún</Text>
+          <Text style={styles.emptyStateSubtext}>Toca + para agregar uno</Text>
         </View>
       )}
 
-      {/* Users List */}
+      {/* Contacts List */}
       <FlatList
         data={filteredUsers}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <UserListItem user={item} onPress={() => handleUserPress(item)} />
+          <ContactListItem contact={item} onPress={() => handleContactPress(item)} />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
-            onRefresh={loadUsers}
+            onRefresh={loadContacts}
             colors={['#7FA889']}
             tintColor="#7FA889"
           />
         }
       />
 
-      {/* New Chat Floating Button */}
-      <TouchableOpacity style={styles.newChatButton} onPress={loadUsers}>
+      {/* New Contact Floating Button */}
+      <TouchableOpacity style={styles.newChatButton} onPress={() => setShowAddContactModal(true)}>
         <PlusIcon size={24} color="#FFFFFF" />
       </TouchableOpacity>
+
+      {/* Add Contact Modal */}
+      <AddContactModal
+        visible={showAddContactModal}
+        onClose={() => setShowAddContactModal(false)}
+        onContactAdded={loadContacts}
+      />
 
       <BottomNavigation currentScreen="chats" onNavigate={onNavigate} />
     </SafeAreaView>
@@ -848,6 +873,11 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 16,
     color: '#6B7280',
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 4,
   },
 
   // New Chat Button
