@@ -22,6 +22,7 @@ export interface Conversation {
     participants: string[];
     otherUserId: string;
     otherUserName?: string;
+    otherUserPhone?: string;
     otherUserAvatar?: string;
     lastMessage?: string;
     lastMessageAt?: string;
@@ -106,12 +107,12 @@ export const chatService = {
     },
 
     /**
-     * Mark messages as read
+     * Mark messages in a conversation as read
      */
-    async markAsRead(messageIds: string[]): Promise<void> {
+    async markAsRead(conversationId: string, userId: string): Promise<{ success: boolean }> {
         return apiClient(API_ENDPOINTS.MESSAGES_READ, {
             method: 'POST',
-            body: JSON.stringify({ messageIds }),
+            body: JSON.stringify({ conversationId, userId }),
         });
     },
 

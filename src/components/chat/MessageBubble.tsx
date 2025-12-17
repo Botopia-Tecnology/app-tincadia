@@ -1,7 +1,7 @@
 /**
  * Message Bubble Component
  * 
- * Displays a single chat message.
+ * Displays a single chat message with read receipts.
  */
 
 import React from 'react';
@@ -12,14 +12,33 @@ interface MessageBubbleProps {
     time: string;
     isMine: boolean;
     isSynced?: boolean;
+    isRead?: boolean; // true = blue checkmarks, false = gray checkmarks
 }
 
-export function MessageBubble({ content, time, isMine, isSynced = true }: MessageBubbleProps) {
+export function MessageBubble({ content, time, isMine, isSynced = true, isRead = false }: MessageBubbleProps) {
     // Format time (e.g., "14:30")
     const formatTime = (dateString: string): string => {
         if (!dateString) return '';
         const date = new Date(dateString);
         return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    // Render checkmarks for sent messages
+    const renderCheckmarks = () => {
+        if (!isMine) return null;
+
+        if (!isSynced) {
+            // Message not synced yet
+            return <Text style={styles.pending}>⏳</Text>;
+        }
+
+        // Double checkmarks - color based on read status
+        const checkmarkColor = isRead ? '#34B7F1' : 'rgba(255, 255, 255, 0.6)';
+        return (
+            <Text style={[styles.checkmarks, { color: checkmarkColor }]}>
+                ✓✓
+            </Text>
+        );
     };
 
     return (
@@ -32,12 +51,7 @@ export function MessageBubble({ content, time, isMine, isSynced = true }: Messag
                     <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
                         {formatTime(time)}
                     </Text>
-                    {isMine && !isSynced && (
-                        <Text style={styles.pending}>⏳</Text>
-                    )}
-                    {isMine && isSynced && (
-                        <Text style={styles.sent}>✓</Text>
-                    )}
+                    {renderCheckmarks()}
                 </View>
             </View>
         </View>
@@ -98,9 +112,10 @@ const styles = StyleSheet.create({
         fontSize: 10,
         marginLeft: 4,
     },
-    sent: {
+    checkmarks: {
         fontSize: 12,
         marginLeft: 4,
-        color: 'rgba(255, 255, 255, 0.9)',
+        fontWeight: '600',
     },
 });
+
