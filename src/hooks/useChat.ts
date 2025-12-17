@@ -3,12 +3,11 @@
  * 
  * Manages chat messages for a specific conversation.
  * - Loads messages from local SQLite (instant)
- * - Subscribes to real-time updates via Supabase
- * - Optimistic message sending
+ * - Syncs from backend API
+ * - Polls for new messages periodically
  */
 
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
     getMessages,
     saveMessage,
@@ -25,6 +24,7 @@ export interface Message {
     createdAt: string;
     isMine: boolean;
     isSynced: boolean;
+    isRead?: boolean; // true if the recipient has read this message
 }
 
 interface UseChatReturn {
@@ -40,6 +40,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Transform local DB message to our Message interface
     const transformLocalMessage = useCallback((m: {
@@ -60,6 +61,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         createdAt: m.created_at,
         isMine: m.is_mine === 1,
         isSynced: m.is_synced === 1,
+        isRead: false, // Will be updated from server
     }), []);
 
     // Load messages from local SQLite
@@ -77,20 +79,15 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         try {
             const { messages: serverMessages } = await chatService.getMessages(conversationId);
 
-            // Save each server message to local DB
-            // Handle both camelCase and snake_case field names from API
+            // Transform server messages to our format with isRead
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            serverMessages.forEach((msg: any) => {
-                const msgConversationId = msg.conversationId || (msg as Record<string, unknown>).conversation_id as string;
-                const msgSenderId = msg.senderId || (msg as Record<string, unknown>).sender_id as string;
-                const msgCreatedAt = msg.createdAt || (msg as Record<string, unknown>).created_at as string;
+            const transformedMessages: Message[] = serverMessages.map((msg: any) => {
+                const msgConversationId = msg.conversationId || msg.conversation_id;
+                const msgSenderId = msg.senderId || msg.sender_id;
+                const msgCreatedAt = msg.createdAt || msg.created_at;
+                const msgReadAt = msg.readAt || msg.read_at;
 
-                // Skip if required fields are missing
-                if (!msg.id || !msgConversationId || !msgSenderId) {
-                    console.warn('Skipping message with missing fields:', msg);
-                    return;
-                }
-
+                // Save to local DB for offline support
                 saveMessage({
                     id: msg.id,
                     conversationId: msgConversationId,
@@ -101,14 +98,37 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     isMine: msgSenderId === userId,
                     isSynced: true,
                 });
+
+                return {
+                    id: msg.id,
+                    conversationId: msgConversationId,
+                    senderId: msgSenderId,
+                    content: msg.content,
+                    type: msg.type || 'text',
+                    createdAt: msgCreatedAt || new Date().toISOString(),
+                    isMine: msgSenderId === userId,
+                    isSynced: true,
+                    isRead: !!msgReadAt, // Has read_at = is read
+                };
             });
 
-            loadLocalMessages();
+            // Set messages directly from server (includes isRead status)
+            setMessages(transformedMessages);
         } catch (err) {
             console.error('Error syncing messages from server:', err);
             setError('Error al cargar mensajes');
         }
-    }, [conversationId, userId, loadLocalMessages]);
+    }, [conversationId, userId]);
+
+    // Mark messages as read when user enters the chat
+    const markMessagesAsRead = useCallback(async () => {
+        try {
+            await chatService.markAsRead(conversationId, userId);
+            console.log('✓ Messages marked as read');
+        } catch (err) {
+            console.error('Error marking messages as read:', err);
+        }
+    }, [conversationId, userId]);
 
     useEffect(() => {
         // 1. Load local messages immediately (instant)
@@ -116,45 +136,22 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         setIsLoading(false);
 
         // 2. Sync from server in background
-        syncFromServer();
+        syncFromServer().then(() => {
+            // 3. Mark messages as read after loading
+            markMessagesAsRead();
+        });
 
-        // 3. Subscribe to real-time updates via Supabase
-        const channel = supabase
-            .channel(`conversation:${conversationId}`)
-            .on('broadcast', { event: 'message' }, ({ payload }) => {
-                console.log('📩 Received real-time message:', payload);
-                const msg: Message = {
-                    id: payload.id,
-                    conversationId: payload.conversation_id || payload.conversationId,
-                    senderId: payload.sender_id || payload.senderId,
-                    content: payload.content,
-                    type: payload.type || 'text',
-                    createdAt: payload.created_at || payload.createdAt,
-                    isMine: (payload.sender_id || payload.senderId) === userId,
-                    isSynced: true,
-                };
-
-                // Save to local DB and refresh
-                saveMessage({
-                    id: msg.id,
-                    conversationId: msg.conversationId,
-                    senderId: msg.senderId,
-                    content: msg.content,
-                    type: msg.type,
-                    createdAt: msg.createdAt,
-                    isMine: msg.isMine,
-                    isSynced: true,
-                });
-                loadLocalMessages();
-            })
-            .subscribe((status) => {
-                console.log('📡 Supabase channel status:', status);
-            });
+        // 4. Poll for new messages every 10 seconds (instead of Supabase realtime)
+        pollingIntervalRef.current = setInterval(() => {
+            syncFromServer();
+        }, 10000);
 
         return () => {
-            channel.unsubscribe();
+            if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+            }
         };
-    }, [conversationId, userId, loadLocalMessages, syncFromServer]);
+    }, [conversationId, userId, loadLocalMessages, syncFromServer, markMessagesAsRead]);
 
     // Send a message with optimistic update
     const sendMessage = useCallback(async (content: string) => {

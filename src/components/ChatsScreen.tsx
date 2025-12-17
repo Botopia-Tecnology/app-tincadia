@@ -48,6 +48,21 @@ interface ChatsScreenProps {
   onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
 }
 
+// Unified chat list item - can be contact or unknown conversation
+interface ChatListItem {
+  id: string;
+  type: 'contact' | 'unknown';
+  displayName: string;
+  phone: string;
+  otherUserId: string;
+  conversationId: string;
+  unreadCount: number;
+  // From contact
+  alias?: string;
+  customFirstName?: string;
+  customLastName?: string;
+}
+
 // Contact List Item Component
 function ContactListItem({
   contact,
@@ -95,19 +110,27 @@ function ContactListItem({
 function ChatView({
   conversationId,
   otherUserName,
+  otherUserPhone,
+  isUnknown,
   userId,
   onBack,
+  onAddContact,
 }: {
   conversationId: string;
   otherUserName: string;
+  otherUserPhone?: string;
+  isUnknown?: boolean;
   userId: string;
   onBack: () => void;
+  onAddContact?: () => void;
 }) {
   const { messages, sendMessage, isLoading } = useChat(conversationId, userId);
   const [messageText, setMessageText] = useState('');
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [correctionOpacity] = useState(new Animated.Value(0));
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [contactSaved, setContactSaved] = useState(false);
   const scrollViewRef = React.useRef<any>(null);
 
   // Listen to keyboard events
@@ -202,14 +225,21 @@ function ChatView({
         <TouchableOpacity onPress={onBack} style={chatStyles.backBtn}>
           <BackArrowIcon size={24} color="#7FA889" />
         </TouchableOpacity>
-        <View style={chatStyles.avatarSmall}>
+        <View style={[chatStyles.avatarSmall, isUnknown && { backgroundColor: '#9CA3AF' }]}>
           <Text style={chatStyles.avatarSmallText}>{initials}</Text>
         </View>
         <View style={chatStyles.headerInfo}>
           <Text style={chatStyles.headerName}>{otherUserName}</Text>
-          <Text style={chatStyles.headerStatus}>En línea</Text>
+          <Text style={chatStyles.headerStatus}>{isUnknown ? 'Desconocido' : 'En línea'}</Text>
         </View>
       </View>
+
+      {/* Floating Add Contact box for unknown users */}
+      {isUnknown && !contactSaved && (
+        <TouchableOpacity onPress={() => setShowAddContactModal(true)} style={chatStyles.addContactFloatingBox}>
+          <Text style={chatStyles.addContactFloatingText}>Añadir contacto</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Messages */}
       {isLoading && messages.length === 0 ? (
@@ -252,15 +282,24 @@ function ChatView({
                     {msg.content}
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    chatStyles.messageTime,
-                    msg.isMine ? chatStyles.myTime : chatStyles.theirTime,
-                  ]}
-                >
-                  {formatTime(msg.createdAt)}
-                  {msg.isMine && !msg.isSynced && ' ⏳'}
-                </Text>
+                <View style={chatStyles.messageFooter}>
+                  <Text
+                    style={[
+                      chatStyles.messageTime,
+                      msg.isMine ? chatStyles.myTime : chatStyles.theirTime,
+                    ]}
+                  >
+                    {formatTime(msg.createdAt)}
+                  </Text>
+                  {msg.isMine && (
+                    <Text style={[
+                      chatStyles.checkmarks,
+                      { color: msg.isRead ? '#34B7F1' : 'rgba(255, 255, 255, 0.6)' }
+                    ]}>
+                      {msg.isSynced ? '✓✓' : '⏳'}
+                    </Text>
+                  )}
+                </View>
               </View>
             ))
           )}
@@ -333,6 +372,20 @@ function ChatView({
           )}
         </View>
       </View>
+
+      {/* Add Contact Modal for unknown users */}
+      {isUnknown && (
+        <AddContactModal
+          visible={showAddContactModal}
+          onClose={() => setShowAddContactModal(false)}
+          onContactAdded={() => {
+            setShowAddContactModal(false);
+            setContactSaved(true); // Hide floating box after saving
+          }}
+          userId={userId}
+          initialPhone={otherUserPhone || ''}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -381,6 +434,26 @@ const chatStyles = StyleSheet.create({
   headerStatus: {
     fontSize: 14,
     color: '#10B981',
+  },
+  addContactFloatingBox: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addContactFloatingText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
@@ -441,9 +514,15 @@ const chatStyles = StyleSheet.create({
   theirMessageText: {
     color: '#111827',
   },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+    gap: 4,
+  },
   messageTime: {
     fontSize: 12,
-    marginTop: 4,
     color: '#6B7280',
   },
   myTime: {
@@ -451,6 +530,10 @@ const chatStyles = StyleSheet.create({
   },
   theirTime: {
     textAlign: 'left',
+  },
+  checkmarks: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   inputContainer: {
     paddingHorizontal: 16,
@@ -535,8 +618,8 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   const { user } = useAuth();
   const userId = user?.id || '';
 
-  const [users, setUsers] = useState<Contact[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<Contact[]>([]);
+  const [chatItems, setChatItems] = useState<ChatListItem[]>([]);
+  const [filteredItems, setFilteredItems] = useState<ChatListItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -544,73 +627,135 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   const [selectedChat, setSelectedChat] = useState<{
     conversationId: string;
     otherUserName: string;
+    otherUserPhone?: string;
+    isUnknown?: boolean;
   } | null>(null);
 
   // Modal state
   const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [prefillPhone, setPrefillPhone] = useState('');
 
   // Initialize database on mount
   useEffect(() => {
     initChatDatabase();
   }, []);
 
-  // Load contacts (not all users anymore)
-  const loadContacts = useCallback(async () => {
+  // Load contacts AND conversations, merging them
+  const loadChats = useCallback(async () => {
     if (!userId) return;
 
     setIsLoading(true);
     setError(null);
 
     try {
-      console.log('📡 Fetching contacts for user:', userId);
-      const response = await contactService.getContacts(userId);
-      console.log('📡 Got contacts:', response.contacts?.length || 0);
-      setUsers(response.contacts || []);
-      setFilteredUsers(response.contacts || []);
+      console.log('📡 Fetching contacts and conversations for user:', userId);
+
+      // Fetch both in parallel
+      const [contactsResponse, conversationsResponse] = await Promise.all([
+        contactService.getContacts(userId),
+        chatService.getConversations(userId),
+      ]);
+
+      const contacts = contactsResponse.contacts || [];
+      const conversations = conversationsResponse.conversations || [];
+
+      console.log('📡 Got contacts:', contacts.length);
+      console.log('📡 Got conversations:', conversations.length);
+
+      // Create a map of contacts by their userId for quick lookup
+      const contactsByUserId = new Map(contacts.map(c => [c.contactUserId, c]));
+
+      // Create a map of conversations by otherUserId
+      const conversationsByUserId = new Map(
+        conversations.map(conv => [conv.otherUserId, conv])
+      );
+
+      // Only show conversations (with contact info if available)
+      const chatListItems: ChatListItem[] = conversations.map(conv => {
+        const contact = contactsByUserId.get(conv.otherUserId);
+
+        if (contact) {
+          // Known contact with conversation
+          return {
+            id: conv.id,
+            type: 'contact' as const,
+            displayName: contact.alias ||
+              `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
+              contact.phone,
+            phone: contact.phone,
+            otherUserId: conv.otherUserId,
+            conversationId: conv.id,
+            unreadCount: conv.unreadCount || 0,
+            alias: contact.alias,
+            customFirstName: contact.customFirstName,
+            customLastName: contact.customLastName,
+          };
+        } else {
+          // Unknown contact with conversation
+          return {
+            id: conv.id,
+            type: 'unknown' as const,
+            displayName: conv.otherUserPhone || 'Usuario desconocido',
+            phone: conv.otherUserPhone || '',
+            otherUserId: conv.otherUserId,
+            conversationId: conv.id,
+            unreadCount: conv.unreadCount || 0,
+          };
+        }
+      });
+
+      console.log('📡 Chat items:', chatListItems.length);
+
+      setChatItems(chatListItems);
+      setFilteredItems(chatListItems);
     } catch (err) {
-      console.error('Error loading contacts:', err);
-      setError('Error al cargar contactos');
+      console.error('Error loading chats:', err);
+      setError('Error al cargar chats');
     } finally {
       setIsLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
-    loadContacts();
-  }, [loadContacts]);
+    loadChats();
+  }, [loadChats]);
 
   // Handle search
   const handleSearch = (text: string) => {
     setSearchQuery(text);
     if (!text.trim()) {
-      setFilteredUsers(users);
+      setFilteredItems(chatItems);
       return;
     }
-    const filtered = users.filter(
-      (u) =>
-        u.alias?.toLowerCase().includes(text.toLowerCase()) ||
-        u.customFirstName?.toLowerCase().includes(text.toLowerCase()) ||
-        u.customLastName?.toLowerCase().includes(text.toLowerCase()) ||
-        u.phone?.includes(text)
+    const filtered = chatItems.filter(
+      (item) =>
+        item.displayName?.toLowerCase().includes(text.toLowerCase()) ||
+        item.phone?.includes(text)
     );
-    setFilteredUsers(filtered);
+    setFilteredItems(filtered);
   };
 
-  // Handle contact tap - start or get conversation
-  const handleContactPress = async (contact: Contact) => {
+  // Handle chat item tap - start or get conversation
+  const handleItemPress = async (item: ChatListItem) => {
     try {
-      console.log('🚀 Starting conversation with contact:', contact.contactUserId);
-      const response = await chatService.startConversation(userId, contact.contactUserId);
-      console.log('✅ Got conversationId:', response.conversationId);
+      let conversationId: string;
 
-      // Use alias or custom name for chat header
-      const displayName = contact.alias ||
-        `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
-        contact.phone;
+      if (item.type === 'unknown' && item.conversationId) {
+        // Unknown contact - already has conversation
+        conversationId = item.conversationId;
+      } else {
+        // Contact - need to start/get conversation
+        console.log('🚀 Starting conversation with:', item.otherUserId);
+        const response = await chatService.startConversation(userId, item.otherUserId);
+        conversationId = response.conversationId;
+        console.log('✅ Got conversationId:', conversationId);
+      }
 
       setSelectedChat({
-        conversationId: response.conversationId,
-        otherUserName: displayName,
+        conversationId,
+        otherUserName: item.displayName,
+        otherUserPhone: item.phone,
+        isUnknown: item.type === 'unknown',
       });
     } catch (err) {
       console.error('Error starting conversation:', err);
@@ -621,7 +766,15 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   // Handle back from chat
   const handleBack = () => {
     setSelectedChat(null);
-    loadContacts();
+    loadChats();
+  };
+
+  // Handle adding unknown contact
+  const handleAddUnknownContact = () => {
+    if (selectedChat?.otherUserPhone) {
+      setPrefillPhone(selectedChat.otherUserPhone);
+      setShowAddContactModal(true);
+    }
   };
 
   // Show individual chat if selected
@@ -632,8 +785,11 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
         <ChatView
           conversationId={selectedChat.conversationId}
           otherUserName={selectedChat.otherUserName}
+          otherUserPhone={selectedChat.otherUserPhone}
+          isUnknown={selectedChat.isUnknown}
           userId={userId}
           onBack={handleBack}
+          onAddContact={handleAddUnknownContact}
         />
       </SafeAreaView>
     );
@@ -674,34 +830,71 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       )}
 
       {/* Loading State */}
-      {isLoading && users.length === 0 && (
+      {isLoading && chatItems.length === 0 && (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#7FA889" />
-          <Text style={styles.loadingText}>Cargando contactos...</Text>
+          <Text style={styles.loadingText}>Cargando chats...</Text>
         </View>
       )}
 
       {/* Empty State */}
-      {!isLoading && filteredUsers.length === 0 && !error && (
+      {!isLoading && filteredItems.length === 0 && !error && (
         <View style={styles.centerContainer}>
-          <Text style={styles.emptyStateText}>No tienes contactos aún</Text>
-          <Text style={styles.emptyStateSubtext}>Toca + para agregar uno</Text>
+          <Text style={styles.emptyStateText}>No tienes chats aún</Text>
+          <Text style={styles.emptyStateSubtext}>Toca + para agregar un contacto</Text>
         </View>
       )}
 
-      {/* Contacts List */}
+      {/* Chats List */}
       <FlatList
-        data={filteredUsers}
+        data={filteredItems}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <ContactListItem contact={item} onPress={() => handleContactPress(item)} />
-        )}
+        renderItem={({ item }) => {
+          const initials = item.displayName
+            .split(' ')
+            .map((n) => n[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase() || '?';
+
+          return (
+            <TouchableOpacity style={styles.chatItem} onPress={() => handleItemPress(item)}>
+              {/* Avatar with initials */}
+              <View style={[styles.avatarContainer, item.type === 'unknown' && { backgroundColor: '#9CA3AF' }]}>
+                <Text style={styles.avatarText}>{initials}</Text>
+              </View>
+
+              {/* Chat Info */}
+              <View style={styles.chatContent}>
+                <View style={styles.chatHeader}>
+                  <Text style={styles.chatName}>{item.displayName}</Text>
+                  <Text style={styles.timestamp}>
+                    {item.type === 'unknown' ? 'Desconocido' : 'Contacto'}
+                  </Text>
+                </View>
+                <View style={styles.messageRow}>
+                  <Text style={styles.lastMessage} numberOfLines={1}>
+                    {item.phone}
+                  </Text>
+                  {/* Unread count badge */}
+                  {item.unreadCount > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadBadgeText}>
+                        {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
-            onRefresh={loadContacts}
+            onRefresh={loadChats}
             colors={['#7FA889']}
             tintColor="#7FA889"
           />
@@ -716,9 +909,10 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       {/* Add Contact Modal */}
       <AddContactModal
         visible={showAddContactModal}
-        onClose={() => setShowAddContactModal(false)}
-        onContactAdded={loadContacts}
+        onClose={() => { setShowAddContactModal(false); setPrefillPhone(''); }}
+        onContactAdded={loadChats}
         userId={userId}
+        initialPhone={prefillPhone}
       />
 
       <BottomNavigation currentScreen="chats" onNavigate={onNavigate} />
@@ -824,17 +1018,18 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   unreadBadge: {
-    backgroundColor: '#7FA889',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
+    backgroundColor: '#3B82F6', // Blue color per user request
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  unreadText: {
+  unreadBadgeText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 
   // List

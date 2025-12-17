@@ -24,10 +24,11 @@ interface AddContactModalProps {
     onClose: () => void;
     onContactAdded: () => void;
     userId: string;
+    initialPhone?: string;
 }
 
-export function AddContactModal({ visible, onClose, onContactAdded, userId }: AddContactModalProps) {
-    const [phone, setPhone] = useState('');
+export function AddContactModal({ visible, onClose, onContactAdded, userId, initialPhone = '' }: AddContactModalProps) {
+    const [phone, setPhone] = useState(initialPhone);
     const [alias, setAlias] = useState('');
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
