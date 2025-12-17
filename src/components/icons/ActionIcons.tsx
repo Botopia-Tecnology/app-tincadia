@@ -16,17 +16,30 @@ export function MagicPencilIcon({ size = 24, style }: IconProps) {
                     <Stop offset="100%" stopColor="#00BFFF" />
                 </LinearGradient>
             </Defs>
+            {/* Horizontal lines representing text being corrected */}
             <Path
-                d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                fill="url(#pencilGradient)"
+                d="M2 4h10"
+                stroke="url(#pencilGradient)"
+                strokeWidth="2"
+                strokeLinecap="round"
             />
             <Path
-                d="M17.81 9.94L14.06 6.19 14.06 6.19 3 17.25V21h3.75L17.81 9.94z"
-                stroke="#FFFFFF"
-                strokeWidth="1"
+                d="M2 8h7"
+                stroke="url(#pencilGradient)"
+                strokeWidth="2"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={0.3}
+                opacity={0.6}
+            />
+            {/* Pencil */}
+            <Path
+                d="M14.06 3.19l3.75 3.75L7.81 16.94H4.06v-3.75L14.06 3.19zM16.47 1.47c.39-.39 1.02-.39 1.41 0l2.34 2.34c.39.39.39 1.02 0 1.41l-1.83 1.83-3.75-3.75 1.83-1.83z"
+                fill="url(#pencilGradient)"
+            />
+            {/* Sparkle effect for "magic" touch */}
+            <Path
+                d="M19 12l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"
+                fill="#FFD700"
+                opacity={0.8}
             />
         </Svg>
     );

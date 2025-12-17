@@ -5,7 +5,7 @@
  */
 
 import { apiClient } from '../lib/api-client';
-import { API_ENDPOINTS } from '../config/api.config';
+import { API_ENDPOINTS, API_URL } from '../config/api.config';
 
 export interface Message {
     id: string;
@@ -141,6 +141,124 @@ export const chatService = {
         return apiClient(API_ENDPOINTS.CORRECT_TEXT, {
             method: 'POST',
             body: JSON.stringify({ text }),
+        });
+    },
+
+    /**
+     * Correct a message text using AI with streaming (real-time updates)
+     * Uses XMLHttpRequest because React Native doesn't support fetch ReadableStream
+     */
+    async correctMessageStream(
+        text: string,
+        onChunk: (partialText: string) => void
+    ): Promise<string> {
+        const url = `${API_URL}${API_ENDPOINTS.CORRECT_TEXT_STREAM}`;
+        console.log('🔧 [CORRECTION] Starting stream correction');
+        console.log('🔧 [CORRECTION] URL:', url);
+        console.log('🔧 [CORRECTION] Text to correct:', text);
+
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            let fullText = '';
+            let lastProcessedIndex = 0;
+
+            xhr.open('POST', url, true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+
+            // Track progress for streaming
+            xhr.onprogress = () => {
+                const newData = xhr.responseText.substring(lastProcessedIndex);
+                lastProcessedIndex = xhr.responseText.length;
+
+                console.log('🔧 [CORRECTION] Progress data:', newData);
+
+                const lines = newData.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim();
+                        console.log('🔧 [CORRECTION] Data line:', data);
+
+                        if (data === '[DONE]') {
+                            console.log('🔧 [CORRECTION] Got [DONE]');
+                            continue;
+                        }
+
+                        try {
+                            const parsed = JSON.parse(data);
+                            console.log('🔧 [CORRECTION] Parsed:', parsed);
+
+                            // Check if backend returned an error
+                            if (parsed.error) {
+                                console.error('🔧 [CORRECTION] Backend error:', parsed.error);
+                                // Don't reject here, let it complete and show alert
+                                return;
+                            }
+
+                            // Support both {chunk: "..."} and {text: "..."} formats
+                            const textChunk = parsed.chunk || parsed.text || '';
+                            if (textChunk) {
+                                fullText += textChunk;
+                                console.log('🔧 [CORRECTION] Updated fullText:', fullText);
+                                onChunk(fullText);
+                            }
+                        } catch (parseError) {
+                            // Ignore parse errors for incomplete chunks
+                            console.log('🔧 [CORRECTION] Parse skipped:', line);
+                        }
+                    }
+                }
+            };
+
+            xhr.onload = () => {
+                console.log('🔧 [CORRECTION] XHR completed, status:', xhr.status);
+                console.log('🔧 [CORRECTION] Final fullText:', fullText);
+
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    // If no streaming happened, try to get the full response
+                    if (!fullText && xhr.responseText) {
+                        console.log('🔧 [CORRECTION] No streaming, parsing full response');
+                        try {
+                            // Try parsing as JSON (non-streaming fallback)
+                            const json = JSON.parse(xhr.responseText);
+                            fullText = json.correctedText || json.text || '';
+                            if (fullText) {
+                                onChunk(fullText);
+                            }
+                        } catch {
+                            // Try parsing SSE format from full response
+                            const lines = xhr.responseText.split('\n');
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const data = line.slice(6).trim();
+                                    if (data && data !== '[DONE]') {
+                                        try {
+                                            const parsed = JSON.parse(data);
+                                            const chunk = parsed.chunk || parsed.text || '';
+                                            if (chunk) {
+                                                fullText += chunk;
+                                            }
+                                        } catch { }
+                                    }
+                                }
+                            }
+                            if (fullText) {
+                                onChunk(fullText);
+                            }
+                        }
+                    }
+                    resolve(fullText);
+                } else {
+                    console.error('🔧 [CORRECTION] XHR error status:', xhr.status);
+                    reject(new Error('Error en corrección streaming'));
+                }
+            };
+
+            xhr.onerror = () => {
+                console.error('🔧 [CORRECTION] XHR network error');
+                reject(new Error('Error de red en corrección'));
+            };
+
+            xhr.send(JSON.stringify({ text }));
         });
     },
 };

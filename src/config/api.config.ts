@@ -48,9 +48,10 @@ export const API_ENDPOINTS = {
     MESSAGES_READ: '/chat/messages/read',
     MESSAGE: (messageId: string) => `/chat/messages/${messageId}`,
     CORRECT_TEXT: '/chat/correct-text',
+    CORRECT_TEXT_STREAM: '/chat/correct-text/stream',
 
     // Contact endpoints
-    CONTACTS: '/chat/contacts',
+    CONTACTS: (userId: string) => `/chat/contacts/${userId}`,
     CONTACT: (contactId: string) => `/chat/contacts/${contactId}`,
-    ADD_CONTACT: '/chat/contacts/add',
+    ADD_CONTACT: '/chat/contacts',
 } as const;
