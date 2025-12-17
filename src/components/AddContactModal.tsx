@@ -23,9 +23,10 @@ interface AddContactModalProps {
     visible: boolean;
     onClose: () => void;
     onContactAdded: () => void;
+    userId: string;
 }
 
-export function AddContactModal({ visible, onClose, onContactAdded }: AddContactModalProps) {
+export function AddContactModal({ visible, onClose, onContactAdded, userId }: AddContactModalProps) {
     const [phone, setPhone] = useState('');
     const [alias, setAlias] = useState('');
     const [firstName, setFirstName] = useState('');
@@ -57,6 +58,7 @@ export function AddContactModal({ visible, onClose, onContactAdded }: AddContact
 
         try {
             await contactService.addContact({
+                ownerId: userId,
                 phone: phone.trim(),
                 alias: alias.trim() || undefined,
                 customFirstName: firstName.trim() || undefined,

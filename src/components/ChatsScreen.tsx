@@ -157,16 +157,15 @@ function ChatView({
     ).start();
 
     try {
-      // Use the actual service
-      const result = await chatService.correctMessage(messageText);
-      console.log('Correction result:', result); // Debug log
-
-      if (result && typeof result.correctedText === 'string' && result.correctedText !== messageText) {
-        setMessageText(result.correctedText);
-        // Success flash (yellow) is handled by a different anim if needed, 
-        // but user requested gradient "loading" effect. 
-        // We stop the loading animation in finally block.
-      }
+      // Use streaming correction for real-time typing effect
+      await chatService.correctMessageStream(
+        messageText,
+        (partialText) => {
+          // Update the input field as text streams in
+          setMessageText(partialText);
+        }
+      );
+      console.log('Correction streaming completed');
     } catch (error) {
       console.error('Correction failed:', error);
     } finally {
@@ -564,7 +563,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
 
     try {
       console.log('📡 Fetching contacts for user:', userId);
-      const response = await contactService.getContacts();
+      const response = await contactService.getContacts(userId);
       console.log('📡 Got contacts:', response.contacts?.length || 0);
       setUsers(response.contacts || []);
       setFilteredUsers(response.contacts || []);
@@ -719,6 +718,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
         visible={showAddContactModal}
         onClose={() => setShowAddContactModal(false)}
         onContactAdded={loadContacts}
+        userId={userId}
       />
 
       <BottomNavigation currentScreen="chats" onNavigate={onNavigate} />

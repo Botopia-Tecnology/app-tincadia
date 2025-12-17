@@ -19,6 +19,7 @@ export interface Contact {
 }
 
 export interface AddContactDto {
+    ownerId: string;
     phone: string;
     alias?: string;
     customFirstName?: string;
@@ -33,10 +34,10 @@ export interface UpdateContactDto {
 
 export const contactService = {
     /**
-     * Get all contacts for the current user
+     * Get all contacts for a specific user
      */
-    async getContacts(): Promise<{ contacts: Contact[] }> {
-        return apiClient(API_ENDPOINTS.CONTACTS, {
+    async getContacts(userId: string): Promise<{ contacts: Contact[] }> {
+        return apiClient(API_ENDPOINTS.CONTACTS(userId), {
             method: 'GET',
         });
     },
