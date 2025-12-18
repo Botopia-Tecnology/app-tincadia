@@ -12,22 +12,25 @@ const TOKEN_KEY = 'tincadia_accessToken';
 const USER_KEY = 'tincadia_user';
 
 // Web fallback using localStorage (less secure, but SecureStore doesn't work on web)
+// NOTE: This project is typed for React Native (no DOM lib), so we must not reference `window` directly.
+const getWebLocalStorage = (): any | null => {
+    const g: any = globalThis as any;
+    return g && g.localStorage ? g.localStorage : null;
+};
+
 const webStorage = {
     async getItem(key: string): Promise<string | null> {
-        if (typeof window !== 'undefined' && window.localStorage) {
-            return window.localStorage.getItem(key);
-        }
+        const ls = getWebLocalStorage();
+        if (ls) return ls.getItem(key);
         return null;
     },
     async setItem(key: string, value: string): Promise<void> {
-        if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem(key, value);
-        }
+        const ls = getWebLocalStorage();
+        if (ls) ls.setItem(key, value);
     },
     async deleteItem(key: string): Promise<void> {
-        if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.removeItem(key);
-        }
+        const ls = getWebLocalStorage();
+        if (ls) ls.removeItem(key);
     },
 };
 

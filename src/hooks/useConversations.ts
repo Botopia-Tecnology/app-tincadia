@@ -23,7 +23,7 @@ export interface Conversation {
 interface UseConversationsReturn {
     conversations: Conversation[];
     refresh: () => Promise<void>;
-    createConversation: (participantIds: string[]) => Promise<string>;
+    createConversation: (otherUserId: string) => Promise<string>;
     isLoading: boolean;
     error: string | null;
 }
@@ -114,30 +114,22 @@ export function useConversations(userId: string): UseConversationsReturn {
         await syncFromServer();
     }, [syncFromServer]);
 
-    // Create a new conversation
-    const createConversation = useCallback(async (participantIds: string[]): Promise<string> => {
+    // Create (or get) a conversation with another user
+    const createConversation = useCallback(async (otherUserId: string): Promise<string> => {
         try {
-            const { conversation } = await chatService.createConversation({ participantIds });
+            if (!userId) {
+                throw new Error('No userId provided');
+            }
 
-            // Save to local DB
-            saveConversation({
-                id: conversation.id,
-                otherUserId: conversation.otherUserId,
-                otherUserName: conversation.otherUserName,
-                otherUserAvatar: conversation.otherUserAvatar,
-                lastMessage: '',
-                lastMessageAt: new Date().toISOString(),
-                unreadCount: 0,
-            });
-
-            loadLocalConversations();
-            return conversation.id;
+            const { conversationId } = await chatService.startConversation(userId, otherUserId);
+            // Local DB will be updated on next sync; returning id is enough for navigation.
+            return conversationId;
         } catch (err) {
             console.error('Error creating conversation:', err);
             setError('Error al crear conversación');
             throw err;
         }
-    }, [loadLocalConversations]);
+    }, [userId]);
 
     return {
         conversations,

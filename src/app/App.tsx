@@ -8,8 +8,8 @@
  * - Main app screens for fully authenticated users
  */
 
-import React, { useState } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler, Platform, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nProvider } from '../contexts/I18nContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
@@ -26,7 +26,61 @@ type ScreenName = 'chats' | 'courses' | 'sos' | 'profile';
 
 function AppContent() {
   const { isAuthenticated, profileComplete, isLoading } = useAuth();
-  const [currentScreen, setCurrentScreen] = useState<ScreenName>('chats');
+
+  // Simple navigation stack (no react-navigation). This lets Android "back" go to the previous screen.
+  const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
+  const currentScreen = useMemo(
+    () => screenStack[screenStack.length - 1] ?? 'chats',
+    [screenStack]
+  );
+
+  const navigate = useCallback((next: ScreenName) => {
+    setScreenStack((prev) => {
+      const last = prev[prev.length - 1];
+      if (last === next) return prev;
+      return [...prev, next];
+    });
+  }, []);
+
+  const goBack = useCallback(() => {
+    setScreenStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  }, []);
+
+  // Keep a ref so the BackHandler can be registered once and still see latest state.
+  const backStateRef = useRef({
+    isAuthenticated,
+    profileComplete,
+    stackLength: screenStack.length,
+  });
+  useEffect(() => {
+    backStateRef.current = {
+      isAuthenticated,
+      profileComplete,
+      stackLength: screenStack.length,
+    };
+  }, [isAuthenticated, profileComplete, screenStack.length]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // If we have something to go back to in the "main" app, do it.
+      if (backStateRef.current.isAuthenticated && backStateRef.current.profileComplete) {
+        if (backStateRef.current.stackLength > 1) {
+          goBack();
+        }
+        // Always consume so it doesn't close/minimize the app.
+        return true;
+      }
+
+      // For login / profile completion flows, also consume (so it doesn't exit the app).
+      // Nested screens (e.g. register / forgot password) can register their own BackHandler
+      // and will take priority over this one.
+      return true;
+    });
+
+    return () => sub.remove();
+  }, [goBack]);
 
   // Show loading while auth state is being determined
   if (isLoading) {
@@ -52,13 +106,13 @@ function AppContent() {
   return (
     <AnimatedScreen key={currentScreen}>
       {currentScreen === 'chats' ? (
-        <ChatsScreen onNavigate={setCurrentScreen} />
+        <ChatsScreen onNavigate={navigate} />
       ) : currentScreen === 'courses' ? (
-        <CoursesScreen onNavigate={setCurrentScreen} />
+        <CoursesScreen onNavigate={navigate} onBack={goBack} />
       ) : currentScreen === 'sos' ? (
-        <SOSScreen onNavigate={setCurrentScreen} />
+        <SOSScreen onNavigate={navigate} onBack={goBack} />
       ) : (
-        <ProfileScreen onNavigate={setCurrentScreen} />
+        <ProfileScreen onNavigate={navigate} onBack={goBack} />
       )}
     </AnimatedScreen>
   );
