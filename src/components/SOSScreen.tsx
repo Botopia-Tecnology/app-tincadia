@@ -11,7 +11,13 @@ interface EmergencyType {
     label: string;
 }
 
-export function SOSScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void }) {
+export function SOSScreen({
+    onNavigate,
+    onBack,
+}: {
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onBack: () => void;
+}) {
     const emergencyTypes: EmergencyType[] = [
         { id: '1', image: require('../../assets/fire_sos-section.png'), label: 'BOMBEROS' },
         { id: '2', image: require('../../assets/ambulance_sos-section.png'), label: 'AMBULANCIA' },
@@ -30,7 +36,7 @@ export function SOSScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'cour
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('chats')}>
+                <TouchableOpacity style={styles.backButton} onPress={onBack}>
                     <Text style={styles.backIcon}>←</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>SOS</Text>

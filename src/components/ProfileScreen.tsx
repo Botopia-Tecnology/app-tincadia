@@ -19,7 +19,13 @@ import {
 } from './icons/NavigationIcons';
 import { BottomNavigation } from './BottomNavigation';
 
-export function ProfileScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void }) {
+export function ProfileScreen({
+    onNavigate,
+    onBack,
+}: {
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onBack: () => void;
+}) {
     const { user, logout, isLoading } = useAuth();
 
     const handleLogout = () => {
@@ -49,7 +55,7 @@ export function ProfileScreen({ onNavigate }: { onNavigate: (screen: 'chats' | '
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('chats')}>
+                <TouchableOpacity style={styles.backButton} onPress={onBack}>
                     <BackArrowIcon size={32} color="#000000" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Perfil</Text>

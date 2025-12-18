@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -8,6 +8,7 @@ import {
     Platform,
     ScrollView,
     SafeAreaView,
+    BackHandler,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { forgotPasswordStyles as styles } from '../styles/ForgotPasswordScreen.styles';
@@ -19,6 +20,18 @@ interface ForgotPasswordScreenProps {
 export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
     const [email, setEmail] = useState('');
     const [isSuccess, setIsSuccess] = useState(false);
+
+    // Android hardware back: always go back to previous screen instead of exiting the app.
+    useEffect(() => {
+        if (Platform.OS !== 'android') return;
+
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+            onBack();
+            return true;
+        });
+
+        return () => sub.remove();
+    }, [onBack]);
 
     const handleRecover = () => {
         if (email.trim().length === 0) {

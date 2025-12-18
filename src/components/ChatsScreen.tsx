@@ -20,6 +20,7 @@ import {
   ScrollView,
   Animated,
   Keyboard,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -764,10 +765,23 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   };
 
   // Handle back from chat
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     setSelectedChat(null);
     loadChats();
-  };
+  }, [loadChats]);
+
+  // Android hardware back: if inside a chat, go back to chat list instead of exiting the app.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!selectedChat) return;
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+
+    return () => sub.remove();
+  }, [selectedChat, handleBack]);
 
   // Handle adding unknown contact
   const handleAddUnknownContact = () => {

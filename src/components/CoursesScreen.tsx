@@ -18,7 +18,13 @@ interface CourseCategory {
     courses: Course[];
 }
 
-export function CoursesScreen({ onNavigate }: { onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void }) {
+export function CoursesScreen({
+    onNavigate,
+    onBack,
+}: {
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onBack: () => void;
+}) {
     const categories: CourseCategory[] = [
         {
             title: 'Desarrollo web',
@@ -80,7 +86,7 @@ export function CoursesScreen({ onNavigate }: { onNavigate: (screen: 'chats' | '
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('chats')}>
+                <TouchableOpacity style={styles.backButton} onPress={onBack}>
                     <Text style={styles.backIcon}>←</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Cursos</Text>

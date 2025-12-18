@@ -12,6 +12,7 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -121,6 +122,24 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
       onBack();
     }
   };
+
+  // Android hardware back:
+  // - Close the document type modal if it's open
+  // - Otherwise behave like the UI back button (step back / go back to login)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (modalVisible) {
+        setModalVisible(false);
+        return true;
+      }
+      handleBack();
+      return true;
+    });
+
+    return () => sub.remove();
+  }, [modalVisible, step]);
 
   const handleRegister = async () => {
     if (!validateStep2()) return;
