@@ -4,7 +4,7 @@
  * Modern chat list design with search and floating new chat button.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,8 +25,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useChat } from '../hooks/useChat';
+import { useContactsSync } from '../hooks/useContactsSync';
 import { chatService } from '../services/chat.service';
 import { contactService, Contact } from '../services/contact.service';
 import { initChatDatabase } from '../database/chatDatabase';
@@ -49,15 +52,40 @@ interface ChatsScreenProps {
   onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
 }
 
-// Unified chat list item - can be contact or unknown conversation
+// Format message time for display
+const formatMessageTime = (dateString: string): string => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    } else if (diffDays === 1) {
+      return 'Ayer';
+    } else if (diffDays < 7) {
+      return date.toLocaleDateString('es', { weekday: 'short' });
+    } else {
+      return date.toLocaleDateString('es', { day: '2-digit', month: '2-digit' });
+    }
+  } catch {
+    return '';
+  }
+};
+
+// Unified chat list item - can be contact, unknown conversation, or synced contact
 interface ChatListItem {
   id: string;
-  type: 'contact' | 'unknown';
+  type: 'contact' | 'unknown' | 'synced';
   displayName: string;
   phone: string;
   otherUserId: string;
-  conversationId: string;
+  conversationId?: string;
   unreadCount: number;
+  lastMessage?: string;
+  lastMessageTime?: string;
   // From contact
   alias?: string;
   customFirstName?: string;
@@ -124,6 +152,7 @@ function ChatView({
   userId: string;
   onBack: () => void;
   onAddContact?: () => void;
+  onContactUpdate?: (contact: any) => void;
 }) {
   const { messages, sendMessage, isLoading } = useChat(conversationId, userId);
   const [messageText, setMessageText] = useState('');
@@ -379,9 +408,12 @@ function ChatView({
         <AddContactModal
           visible={showAddContactModal}
           onClose={() => setShowAddContactModal(false)}
-          onContactAdded={() => {
+          onContactAdded={(contact) => {
             setShowAddContactModal(false);
             setContactSaved(true); // Hide floating box after saving
+            if (onContactUpdate && contact) {
+              onContactUpdate(contact);
+            }
           }}
           userId={userId}
           initialPhone={otherUserPhone || ''}
@@ -635,11 +667,40 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   // Modal state
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [prefillPhone, setPrefillPhone] = useState('');
+  const [prefillFirstName, setPrefillFirstName] = useState('');
+  const [prefillLastName, setPrefillLastName] = useState('');
+
+  // Contacts sync
+  const { isSyncing, progress, matches, error: syncError, startSync } = useContactsSync();
+  const [showSyncBanner, setShowSyncBanner] = useState(true);
+  const [syncResult, setSyncResult] = useState<{ found: number; total: number } | null>(null);
+  const [syncedContacts, setSyncedContacts] = useState<ChatListItem[]>([]);
+
+  const SYNCED_CONTACTS_KEY = `@synced_contacts_${userId}`;
 
   // Initialize database on mount
   useEffect(() => {
     initChatDatabase();
   }, []);
+
+  // Load synced contacts from storage on mount
+  useEffect(() => {
+    const loadSyncedContacts = async () => {
+      if (!userId) return;
+      try {
+        const stored = await AsyncStorage.getItem(SYNCED_CONTACTS_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setSyncedContacts(parsed);
+          setShowSyncBanner(false);
+          console.log('📱 Loaded synced contacts from storage:', parsed.length);
+        }
+      } catch (err) {
+        console.error('Error loading synced contacts:', err);
+      }
+    };
+    loadSyncedContacts();
+  }, [userId, SYNCED_CONTACTS_KEY]);
 
   // Load contacts AND conversations, merging them
   const loadChats = useCallback(async () => {
@@ -687,6 +748,8 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
             otherUserId: conv.otherUserId,
             conversationId: conv.id,
             unreadCount: conv.unreadCount || 0,
+            lastMessage: conv.lastMessage,
+            lastMessageTime: conv.lastMessageAt,
             alias: contact.alias,
             customFirstName: contact.customFirstName,
             customLastName: contact.customLastName,
@@ -701,6 +764,8 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
             otherUserId: conv.otherUserId,
             conversationId: conv.id,
             unreadCount: conv.unreadCount || 0,
+            lastMessage: conv.lastMessage,
+            lastMessageTime: conv.lastMessageAt,
           };
         }
       });
@@ -708,7 +773,6 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       console.log('📡 Chat items:', chatListItems.length);
 
       setChatItems(chatListItems);
-      setFilteredItems(chatListItems);
     } catch (err) {
       console.error('Error loading chats:', err);
       setError('Error al cargar chats');
@@ -721,14 +785,65 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     loadChats();
   }, [loadChats]);
 
+  // Subscribe to real-time message updates
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel('messages-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          const newMessage = payload.new as {
+            conversation_id: string;
+            sender_id: string;
+          };
+
+          // Only reload if message is for this user (not sent by them)
+          // and user is not currently in that chat
+          if (newMessage.sender_id !== userId && selectedChat?.conversationId !== newMessage.conversation_id) {
+            console.log('📩 New message received, refreshing chat list');
+            loadChats();
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Realtime subscription status:', status);
+      });
+
+    return () => {
+      console.log('🔌 Unsubscribing from realtime');
+      supabase.removeChannel(channel);
+    };
+  }, [userId, selectedChat, loadChats]);
+
+  // Combine chat items with synced contacts (excluding duplicates)
+  const allItems = useMemo(() => {
+    const existingUserIds = new Set(chatItems.map(c => c.otherUserId));
+    const uniqueSynced = syncedContacts.filter(s => !existingUserIds.has(s.otherUserId));
+    return [...chatItems, ...uniqueSynced];
+  }, [chatItems, syncedContacts]);
+
+  // Update filtered items when allItems changes
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredItems(allItems);
+    }
+  }, [allItems, searchQuery]);
+
   // Handle search
   const handleSearch = (text: string) => {
     setSearchQuery(text);
     if (!text.trim()) {
-      setFilteredItems(chatItems);
+      setFilteredItems(allItems);
       return;
     }
-    const filtered = chatItems.filter(
+    const filtered = allItems.filter(
       (item) =>
         item.displayName?.toLowerCase().includes(text.toLowerCase()) ||
         item.phone?.includes(text)
@@ -741,11 +856,11 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     try {
       let conversationId: string;
 
-      if (item.type === 'unknown' && item.conversationId) {
-        // Unknown contact - already has conversation
+      if (item.conversationId) {
+        // Already has conversation
         conversationId = item.conversationId;
       } else {
-        // Contact - need to start/get conversation
+        // Need to start/get conversation (synced contact or contact without chat)
         console.log('🚀 Starting conversation with:', item.otherUserId);
         const response = await chatService.startConversation(userId, item.otherUserId);
         conversationId = response.conversationId;
@@ -791,6 +906,40 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     }
   };
 
+  // Handle contacts sync
+  const handleSyncContacts = async () => {
+    setSyncResult(null);
+    setSyncedContacts([]);
+    const results = await startSync();
+    // Filter: must be on Tincadia, have userId, and NOT be the current user
+    const foundContacts = results.filter(m => m.isOnTincadia && m.userId && m.userId !== userId);
+    setSyncResult({ found: foundContacts.length, total: results.length });
+    setShowSyncBanner(false);
+
+    // Convert matches to ChatListItems
+    const syncedItems: ChatListItem[] = foundContacts.map((match, index) => ({
+      id: `synced-${match.userId}-${index}`,
+      type: 'synced' as const,
+      displayName: match.contact, // Phone number for now
+      phone: match.contact,
+      otherUserId: match.userId!,
+      unreadCount: 0,
+    }));
+
+    console.log('📱 Synced contacts (excluding self):', syncedItems.length);
+    setSyncedContacts(syncedItems);
+
+    // Save to AsyncStorage for persistence
+    try {
+      await AsyncStorage.setItem(SYNCED_CONTACTS_KEY, JSON.stringify(syncedItems));
+      console.log('📱 Saved synced contacts to storage');
+    } catch (err) {
+      console.error('Error saving synced contacts:', err);
+    }
+
+    loadChats();
+  };
+
   // Show individual chat if selected
   if (selectedChat) {
     return (
@@ -804,6 +953,21 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           userId={userId}
           onBack={handleBack}
           onAddContact={handleAddUnknownContact}
+          onContactUpdate={(contact) => {
+            // Update selected chat immediately with new contact info
+            const displayName = contact.alias ||
+              `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
+              contact.phone;
+
+            setSelectedChat(prev => prev ? ({
+              ...prev,
+              otherUserName: displayName,
+              isUnknown: false
+            }) : null);
+
+            // Reload list in background to sync state
+            loadChats();
+          }}
         />
       </SafeAreaView>
     );
@@ -835,6 +999,46 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           />
         </View>
       </View>
+
+      {/* Sync Contacts Banner */}
+      {showSyncBanner && !isSyncing && !syncResult && (
+        <TouchableOpacity style={styles.syncBanner} onPress={handleSyncContacts}>
+          <View style={styles.syncBannerContent}>
+            <Text style={styles.syncBannerIcon}>📱</Text>
+            <View style={styles.syncBannerText}>
+              <Text style={styles.syncBannerTitle}>Encontrar amigos en Tincadia</Text>
+              <Text style={styles.syncBannerSubtitle}>Sincroniza tus contactos</Text>
+            </View>
+          </View>
+          <Text style={styles.syncBannerArrow}>→</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Syncing Progress */}
+      {isSyncing && (
+        <View style={styles.syncProgress}>
+          <ActivityIndicator size="small" color="#7FA889" />
+          <Text style={styles.syncProgressText}>
+            Sincronizando... {progress?.percentage || 0}%
+          </Text>
+        </View>
+      )}
+
+      {/* Sync Result */}
+      {syncResult && (
+        <View style={styles.syncResult}>
+          <Text style={styles.syncResultText}>
+            ✓ {syncResult.found} contactos encontrados en Tincadia
+          </Text>
+        </View>
+      )}
+
+      {/* Sync Error */}
+      {syncError && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{syncError}</Text>
+        </View>
+      )}
 
       {/* Error Message */}
       {error && (
@@ -872,35 +1076,62 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
             .toUpperCase() || '?';
 
           return (
-            <TouchableOpacity style={styles.chatItem} onPress={() => handleItemPress(item)}>
-              {/* Avatar with initials */}
-              <View style={[styles.avatarContainer, item.type === 'unknown' && { backgroundColor: '#9CA3AF' }]}>
-                <Text style={styles.avatarText}>{initials}</Text>
-              </View>
+            <View style={styles.chatItemRow}>
+              <TouchableOpacity style={styles.chatItem} onPress={() => handleItemPress(item)}>
+                {/* Avatar with initials */}
+                <View style={[
+                  styles.avatarContainer,
+                  item.type === 'unknown' && { backgroundColor: '#9CA3AF' },
+                  item.type === 'synced' && { backgroundColor: '#3B82F6' }
+                ]}>
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </View>
 
-              {/* Chat Info */}
-              <View style={styles.chatContent}>
-                <View style={styles.chatHeader}>
-                  <Text style={styles.chatName}>{item.displayName}</Text>
-                  <Text style={styles.timestamp}>
-                    {item.type === 'unknown' ? 'Desconocido' : 'Contacto'}
-                  </Text>
+                {/* Chat Info */}
+                <View style={styles.chatContent}>
+                  <View style={styles.chatHeader}>
+                    <Text style={styles.chatName}>{item.displayName}</Text>
+                    <Text style={[styles.timestamp, item.type === 'synced' && { color: '#3B82F6' }]}>
+                      {item.type === 'synced'
+                        ? '✓ En Tincadia'
+                        : item.lastMessageTime
+                          ? formatMessageTime(item.lastMessageTime)
+                          : item.type === 'unknown' ? 'Desconocido' : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.messageRow}>
+                    <Text style={styles.lastMessage} numberOfLines={1}>
+                      {item.lastMessage || item.phone}
+                    </Text>
+                    {/* Unread count badge - green */}
+                    {item.unreadCount > 0 && (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadBadgeText}>
+                          {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
-                <View style={styles.messageRow}>
-                  <Text style={styles.lastMessage} numberOfLines={1}>
-                    {item.phone}
-                  </Text>
-                  {/* Unread count badge */}
-                  {item.unreadCount > 0 && (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadBadgeText}>
-                        {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+
+              {/* Add contact button for synced contacts */}
+              {item.type === 'synced' && (
+                <TouchableOpacity
+                  style={styles.addContactButton}
+                  onPress={() => {
+                    setPrefillPhone(item.phone);
+                    // Try to split displayName into first and last name
+                    const nameParts = (item.displayName || '').split(' ');
+                    setPrefillFirstName(nameParts[0] || '');
+                    setPrefillLastName(nameParts.slice(1).join(' ') || '');
+                    setShowAddContactModal(true);
+                  }}
+                >
+                  <PlusIcon size={20} color="#3B82F6" />
+                </TouchableOpacity>
+              )}
+            </View>
           );
         }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -923,10 +1154,17 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       {/* Add Contact Modal */}
       <AddContactModal
         visible={showAddContactModal}
-        onClose={() => { setShowAddContactModal(false); setPrefillPhone(''); }}
+        onClose={() => {
+          setShowAddContactModal(false);
+          setPrefillPhone('');
+          setPrefillFirstName('');
+          setPrefillLastName('');
+        }}
         onContactAdded={loadChats}
         userId={userId}
         initialPhone={prefillPhone}
+        initialFirstName={prefillFirstName}
+        initialLastName={prefillLastName}
       />
 
       <BottomNavigation currentScreen="chats" onNavigate={onNavigate} />
@@ -981,12 +1219,27 @@ const styles = StyleSheet.create({
   },
 
   // Chat Item
+  chatItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
   chatItem: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#FFFFFF',
+  },
+  addContactButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EBF5FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   avatarContainer: {
     width: 56,
@@ -1032,7 +1285,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   unreadBadge: {
-    backgroundColor: '#3B82F6', // Blue color per user request
+    backgroundColor: '#22C55E', // Green color for new messages
     borderRadius: 12,
     minWidth: 24,
     height: 24,
@@ -1087,6 +1340,77 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
     marginTop: 4,
+  },
+
+  // Sync Banner
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EEF7F0',
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#7FA889',
+  },
+  syncBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  syncBannerIcon: {
+    fontSize: 28,
+    marginRight: 12,
+  },
+  syncBannerText: {
+    flex: 1,
+  },
+  syncBannerTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  syncBannerSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  syncBannerArrow: {
+    fontSize: 20,
+    color: '#7FA889',
+    fontWeight: '600',
+  },
+  syncProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  syncProgressText: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  syncResult: {
+    backgroundColor: '#D1FAE5',
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  syncResultText: {
+    fontSize: 14,
+    color: '#065F46',
+    fontWeight: '500',
+    textAlign: 'center',
   },
 
   // New Chat Button
