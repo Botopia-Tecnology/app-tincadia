@@ -300,7 +300,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   <TouchableOpacity
                     style={{
                       position: 'absolute',
-                      right: 16,
+                      right: 28,
                       top: 16,
                     }}
                     onPress={() => setShowPassword(!showPassword)}
@@ -326,7 +326,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   <TouchableOpacity
                     style={{
                       position: 'absolute',
-                      right: 16,
+                      right: 28,
                       top: 16,
                     }}
                     onPress={() => setShowConfirmPassword(!showConfirmPassword)}

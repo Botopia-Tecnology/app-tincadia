@@ -18,7 +18,8 @@
       "bundleIdentifier": "com.tincadia.app",
       "buildNumber": "5",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación."
       },
       "googleServicesFile": "./GoogleService-Info.plist"
     },
@@ -31,12 +32,19 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": ["android.permission.READ_CONTACTS"]
     },
     "plugins": [
       [
         "expo-web-browser",
         {}
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app."
+        }
       ],
       "expo-sqlite",
       "./plugins/withModularHeaders"

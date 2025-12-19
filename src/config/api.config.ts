@@ -54,4 +54,10 @@ export const API_ENDPOINTS = {
     CONTACTS: (userId: string) => `/chat/contacts/${userId}`,
     CONTACT: (contactId: string) => `/chat/contacts/${contactId}`,
     ADD_CONTACT: '/chat/contacts',
+
+    // Contacts Sync endpoints
+    CONTACTS_SYNC_STATE: '/contacts/sync/state',
+    CONTACTS_SYNC_START: '/contacts/sync/start',
+    CONTACTS_SYNC_CHUNK: '/contacts/sync/chunk',
+    CONTACTS_SYNC_COMPLETE: '/contacts/sync/complete',
 } as const;
