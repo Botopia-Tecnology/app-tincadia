@@ -5,7 +5,8 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text } from 'react-native';
+import { messageBubbleStyles as styles } from '../../styles/ChatComponents.styles';
 
 interface MessageBubbleProps {
     content: string;
@@ -57,65 +58,3 @@ export function MessageBubble({ content, time, isMine, isSynced = true, isRead =
         </View>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-    },
-    containerMine: {
-        alignItems: 'flex-end',
-    },
-    containerOther: {
-        alignItems: 'flex-start',
-    },
-    bubble: {
-        maxWidth: '80%',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 20,
-    },
-    bubbleMine: {
-        backgroundColor: '#4CAF50',
-        borderBottomRightRadius: 4,
-    },
-    bubbleOther: {
-        backgroundColor: '#E5E5EA',
-        borderBottomLeftRadius: 4,
-    },
-    content: {
-        fontSize: 16,
-        lineHeight: 22,
-    },
-    contentMine: {
-        color: '#FFFFFF',
-    },
-    contentOther: {
-        color: '#000000',
-    },
-    footer: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        alignItems: 'center',
-        marginTop: 4,
-    },
-    time: {
-        fontSize: 11,
-    },
-    timeMine: {
-        color: 'rgba(255, 255, 255, 0.7)',
-    },
-    timeOther: {
-        color: '#999999',
-    },
-    pending: {
-        fontSize: 10,
-        marginLeft: 4,
-    },
-    checkmarks: {
-        fontSize: 12,
-        marginLeft: 4,
-        fontWeight: '600',
-    },
-});
-

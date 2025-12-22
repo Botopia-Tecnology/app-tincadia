@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Platform, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { BackHandler, Platform, Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nProvider } from '../contexts/I18nContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
@@ -21,20 +21,26 @@ import { CoursesScreen } from '../components/CoursesScreen';
 import { SOSScreen } from '../components/SOSScreen';
 import { ProfileScreen } from '../components/ProfileScreen';
 import { AnimatedScreen } from '../components/AnimatedScreen';
+import { CallScreen } from '../screens/CallScreen';
+import { appStyles as styles } from '../styles/App.styles';
 
-type ScreenName = 'chats' | 'courses' | 'sos' | 'profile';
+type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call';
 
 function AppContent() {
   const { isAuthenticated, profileComplete, isLoading } = useAuth();
 
   // Simple navigation stack (no react-navigation). This lets Android "back" go to the previous screen.
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
+  const [callParams, setCallParams] = useState<{ roomName: string; username: string; conversationId?: string; userId?: string } | null>(null);
   const currentScreen = useMemo(
     () => screenStack[screenStack.length - 1] ?? 'chats',
     [screenStack]
   );
 
-  const navigate = useCallback((next: ScreenName) => {
+  const navigate = useCallback((next: ScreenName, params?: any) => {
+    if (next === 'call' && params) {
+      setCallParams(params);
+    }
     setScreenStack((prev) => {
       const last = prev[prev.length - 1];
       if (last === next) return prev;
@@ -111,6 +117,14 @@ function AppContent() {
         <CoursesScreen onNavigate={navigate} onBack={goBack} />
       ) : currentScreen === 'sos' ? (
         <SOSScreen onNavigate={navigate} onBack={goBack} />
+      ) : currentScreen === 'call' ? (
+        <CallScreen
+          roomName={callParams?.roomName || 'default'}
+          username={callParams?.username || 'user'}
+          conversationId={callParams?.conversationId}
+          userId={callParams?.userId}
+          onBack={goBack}
+        />
       ) : (
         <ProfileScreen onNavigate={navigate} onBack={goBack} />
       )}
@@ -144,28 +158,3 @@ export default function App() {
     );
   }
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#666',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    color: '#CC0000',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-});

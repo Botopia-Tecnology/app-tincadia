@@ -10,46 +10,42 @@ import {
   Text,
   TouchableOpacity,
   FlatList,
-  Image,
   TextInput,
   ActivityIndicator,
   RefreshControl,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Animated,
-  Keyboard,
   BackHandler,
+  Platform,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { chatsListStyles } from '../styles/ChatsScreen.styles';
 import { useAuth } from '../contexts/AuthContext';
-import { useChat } from '../hooks/useChat';
 import { useContactsSync } from '../hooks/useContactsSync';
 import { chatService } from '../services/chat.service';
 import { contactService, Contact } from '../services/contact.service';
-import { initChatDatabase } from '../database/chatDatabase';
-import { BottomNavigation } from './BottomNavigation';
-import { MagicPencilIcon } from './icons/ActionIcons'; // Check path is correct
-// import { ChatInput } from './chat/ChatInput'; // Unused now
-import { MessageBubble } from './chat/MessageBubble';
 import {
-  BackArrowIcon,
+  initChatDatabase,
+  getConversations as getLocalConversations,
+  saveConversation,
+  getLocalContacts,
+  saveContact,
+  shouldSync,
+  updateSyncTime,
+} from '../database/chatDatabase';
+import { BottomNavigation } from './BottomNavigation';
+import { ChatView } from './chat/ChatView';
+import {
   NotificationIcon,
   SearchIcon,
-  CameraIcon,
-  MicrophoneIcon,
-  SendIcon,
   PlusIcon,
 } from './icons/NavigationIcons';
 import { AddContactModal } from './AddContactModal';
 
 interface ChatsScreenProps {
-  onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+  onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call', params?: { roomName?: string; username?: string; conversationId?: string; userId?: string }) => void;
 }
 
 // Format message time for display
@@ -135,517 +131,6 @@ function ContactListItem({
   );
 }
 
-// Individual Chat View
-function ChatView({
-  conversationId,
-  otherUserName,
-  otherUserPhone,
-  isUnknown,
-  userId,
-  onBack,
-  onAddContact,
-}: {
-  conversationId: string;
-  otherUserName: string;
-  otherUserPhone?: string;
-  isUnknown?: boolean;
-  userId: string;
-  onBack: () => void;
-  onAddContact?: () => void;
-  onContactUpdate?: (contact: any) => void;
-}) {
-  const { messages, sendMessage, isLoading } = useChat(conversationId, userId);
-  const [messageText, setMessageText] = useState('');
-  const [isCorrecting, setIsCorrecting] = useState(false);
-  const [correctionOpacity] = useState(new Animated.Value(0));
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [showAddContactModal, setShowAddContactModal] = useState(false);
-  const [contactSaved, setContactSaved] = useState(false);
-  const scrollViewRef = React.useRef<any>(null);
-
-  // Listen to keyboard events
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => setKeyboardHeight(e.endCoordinates.height)
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardHeight(0)
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  const handleSend = async () => {
-    if (!messageText.trim()) return;
-    const content = messageText.trim();
-    setMessageText('');
-    await sendMessage(content);
-  };
-
-  // Create animated component for LinearGradient
-  const AnimatedGradient = Animated.createAnimatedComponent(LinearGradient);
-
-  const handleCorrection = async () => {
-    if (!messageText.trim() || isCorrecting || isLoading) return;
-
-    setIsCorrecting(true);
-    // Start gradient animation loop
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(correctionOpacity, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(correctionOpacity, {
-          toValue: 0.5,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    try {
-      // Use streaming correction for real-time typing effect
-      await chatService.correctMessageStream(
-        messageText,
-        (partialText) => {
-          // Update the input field as text streams in
-          setMessageText(partialText);
-        }
-      );
-      console.log('Correction streaming completed');
-    } catch (error) {
-      console.error('Correction failed:', error);
-    } finally {
-      setIsCorrecting(false);
-      correctionOpacity.setValue(0); // Reset animation
-    }
-  };
-
-  const formatTime = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return '';
-    }
-  };
-
-  // Get initials for avatar
-  const initials = otherUserName
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-
-  return (
-    <KeyboardAvoidingView
-      style={chatStyles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={0} // Not relying on this anymore
-    >
-      {/* Header */}
-      <View style={chatStyles.header}>
-        <TouchableOpacity onPress={onBack} style={chatStyles.backBtn}>
-          <BackArrowIcon size={24} color="#7FA889" />
-        </TouchableOpacity>
-        <View style={[chatStyles.avatarSmall, isUnknown && { backgroundColor: '#9CA3AF' }]}>
-          <Text style={chatStyles.avatarSmallText}>{initials}</Text>
-        </View>
-        <View style={chatStyles.headerInfo}>
-          <Text style={chatStyles.headerName}>{otherUserName}</Text>
-          <Text style={chatStyles.headerStatus}>{isUnknown ? 'Desconocido' : 'En línea'}</Text>
-        </View>
-      </View>
-
-      {/* Floating Add Contact box for unknown users */}
-      {isUnknown && !contactSaved && (
-        <TouchableOpacity onPress={() => setShowAddContactModal(true)} style={chatStyles.addContactFloatingBox}>
-          <Text style={chatStyles.addContactFloatingText}>Añadir contacto</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Messages */}
-      {isLoading && messages.length === 0 ? (
-        <View style={chatStyles.loadingContainer}>
-          <ActivityIndicator size="large" color="#7FA889" />
-        </View>
-      ) : (
-        <ScrollView
-          ref={scrollViewRef}
-          style={chatStyles.messagesContainer}
-          contentContainerStyle={chatStyles.messagesContent}
-          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-        >
-          {messages.length === 0 ? (
-            <View style={chatStyles.emptyContainer}>
-              <Text style={chatStyles.emptyText}>No hay mensajes aún</Text>
-              <Text style={chatStyles.emptySubtext}>¡Envía el primero!</Text>
-            </View>
-          ) : (
-            messages.map((msg) => (
-              <View
-                key={msg.id}
-                style={[
-                  chatStyles.messageBubbleContainer,
-                  msg.isMine ? chatStyles.myMessage : chatStyles.theirMessage,
-                ]}
-              >
-                <View
-                  style={[
-                    chatStyles.messageBubble,
-                    msg.isMine ? chatStyles.myBubble : chatStyles.theirBubble,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      chatStyles.messageText,
-                      msg.isMine ? chatStyles.myMessageText : chatStyles.theirMessageText,
-                    ]}
-                  >
-                    {msg.content}
-                  </Text>
-                </View>
-                <View style={chatStyles.messageFooter}>
-                  <Text
-                    style={[
-                      chatStyles.messageTime,
-                      msg.isMine ? chatStyles.myTime : chatStyles.theirTime,
-                    ]}
-                  >
-                    {formatTime(msg.createdAt)}
-                  </Text>
-                  {msg.isMine && (
-                    <Text style={[
-                      chatStyles.checkmarks,
-                      { color: msg.isRead ? '#34B7F1' : 'rgba(255, 255, 255, 0.6)' }
-                    ]}>
-                      {msg.isSynced ? '✓✓' : '⏳'}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            ))
-          )}
-        </ScrollView>
-      )}
-
-      {/* Input Area - with dynamic bottom margin when keyboard is visible */}
-      <View style={[chatStyles.inputContainer, { marginBottom: keyboardHeight }]}>
-        <View style={chatStyles.inputRow}>
-          {/* Camera Button */}
-          <TouchableOpacity style={chatStyles.mediaButton}>
-            <CameraIcon size={22} color="#6B7280" />
-          </TouchableOpacity>
-
-          {/* Input Wrapper with Pencil inside */}
-          <View style={[chatStyles.inputWrapper, { overflow: 'hidden' }]}>
-            {/* Gradient Overlay when correcting */}
-            <AnimatedGradient
-              colors={['rgba(255, 215, 0, 0.3)', 'rgba(255, 105, 180, 0.3)', 'rgba(0, 191, 255, 0.3)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={[
-                StyleSheet.absoluteFill,
-                { opacity: correctionOpacity }
-              ]}
-            />
-
-            <TextInput
-              style={chatStyles.textInput}
-              placeholder="Escribe un mensaje..."
-              placeholderTextColor="#9CA3AF"
-              value={messageText}
-              onChangeText={setMessageText}
-              multiline
-              maxLength={500}
-            />
-
-            {/* Magic Pencil - shows when text exists */}
-            {messageText && messageText.length > 0 && (
-              <TouchableOpacity
-                style={chatStyles.pencilButton}
-                onPress={handleCorrection}
-                disabled={isCorrecting}
-              >
-                {isCorrecting ? (
-                  <ActivityIndicator size="small" color="#FF69B4" />
-                ) : (
-                  <MagicPencilIcon size={24} />
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Correction Flash Overlay - REMOVED, passing logic to gradient inside inputWrapper */}
-          {/* <Animated.View ... /> */}
-
-          {/* Mic or Send Button */}
-          {messageText.trim() ? (
-            <TouchableOpacity
-              style={[chatStyles.sendButton, isCorrecting && { backgroundColor: '#9CA3AF' }]}
-              onPress={handleSend}
-              disabled={isCorrecting}
-            >
-              <SendIcon size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={chatStyles.micButton}>
-              <MicrophoneIcon size={22} color="#6B7280" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Add Contact Modal for unknown users */}
-      {isUnknown && (
-        <AddContactModal
-          visible={showAddContactModal}
-          onClose={() => setShowAddContactModal(false)}
-          onContactAdded={(contact) => {
-            setShowAddContactModal(false);
-            setContactSaved(true); // Hide floating box after saving
-            if (onContactUpdate && contact) {
-              onContactUpdate(contact);
-            }
-          }}
-          userId={userId}
-          initialPhone={otherUserPhone || ''}
-        />
-      )}
-    </KeyboardAvoidingView>
-  );
-}
-
-// Chat View Styles
-const chatStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  backBtn: {
-    marginRight: 12,
-    padding: 4,
-  },
-  avatarSmall: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#7FA889',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarSmallText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  headerInfo: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  headerName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  headerStatus: {
-    fontSize: 14,
-    color: '#10B981',
-  },
-  addContactFloatingBox: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 4,
-    alignSelf: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  addContactFloatingText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  messagesContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  messagesContent: {
-    paddingVertical: 16,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 100,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  messageBubbleContainer: {
-    marginBottom: 8,
-    maxWidth: '80%',
-  },
-  myMessage: {
-    alignSelf: 'flex-end',
-  },
-  theirMessage: {
-    alignSelf: 'flex-start',
-  },
-  messageBubble: {
-    padding: 12,
-    borderRadius: 16,
-  },
-  myBubble: {
-    backgroundColor: '#7FA889',
-    borderTopRightRadius: 4,
-  },
-  theirBubble: {
-    backgroundColor: '#F3F4F6',
-    borderTopLeftRadius: 4,
-  },
-  messageText: {
-    fontSize: 16,
-  },
-  myMessageText: {
-    color: '#FFFFFF',
-  },
-  theirMessageText: {
-    color: '#111827',
-  },
-  messageFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: 4,
-    gap: 4,
-  },
-  messageTime: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  myTime: {
-    textAlign: 'right',
-  },
-  theirTime: {
-    textAlign: 'left',
-  },
-  checkmarks: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  inputContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  mediaButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mediaIcon: {
-    fontSize: 20,
-  },
-  inputWrapper: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 24,
-    paddingHorizontal: 12, // Reduced padding to accommodate icon
-    minHeight: 40,
-  },
-  textInput: {
-    flex: 1,
-    paddingVertical: 10,
-    fontSize: 16,
-    maxHeight: 100,
-    color: '#111827',
-  },
-  pencilButton: {
-    marginLeft: 4,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  correctionOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 235, 59, 0.2)', // Yellow flash
-    borderRadius: 24,
-    // Adjust position to match the inputWrapper (which is the middle child of inputRow)
-    top: 12,
-    bottom: 12,
-    left: 64, // 16 pad + 40 media + 8 gap. Approx.
-    right: 64, // 16 pad + 40 send + 8 gap.
-  },
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#7FA889',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendIcon: {
-    fontSize: 18,
-    color: '#FFFFFF',
-  },
-  micButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
-
 // Main Chats Screen
 export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   const { user } = useAuth();
@@ -702,17 +187,131 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     loadSyncedContacts();
   }, [userId, SYNCED_CONTACTS_KEY]);
 
-  // Load contacts AND conversations, merging them
-  const loadChats = useCallback(async () => {
+  // Helper to transform local/server data to ChatListItem[]
+  const transformToItems = useCallback((
+    contacts: Contact[],
+    conversations: { id: string; otherUserId: string; otherUserPhone?: string; lastMessage?: string; lastMessageAt?: string; unreadCount?: number }[]
+  ): ChatListItem[] => {
+    const contactsByUserId = new Map(contacts.map(c => [c.contactUserId, c]));
+    const conversationsByUserId = new Map(conversations.map(conv => [conv.otherUserId, conv]));
+
+    // Conversations with contact info
+    const items: ChatListItem[] = conversations.map(conv => {
+      const contact = contactsByUserId.get(conv.otherUserId);
+      if (contact) {
+        return {
+          id: conv.id,
+          type: 'contact' as const,
+          displayName: contact.alias ||
+            `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
+            contact.phone,
+          phone: contact.phone,
+          otherUserId: conv.otherUserId,
+          conversationId: conv.id,
+          unreadCount: conv.unreadCount || 0,
+          lastMessage: conv.lastMessage,
+          lastMessageTime: conv.lastMessageAt,
+          alias: contact.alias,
+          customFirstName: contact.customFirstName,
+          customLastName: contact.customLastName,
+        };
+      } else {
+        return {
+          id: conv.id,
+          type: 'unknown' as const,
+          displayName: conv.otherUserPhone || 'Usuario desconocido',
+          phone: conv.otherUserPhone || '',
+          otherUserId: conv.otherUserId,
+          conversationId: conv.id,
+          unreadCount: conv.unreadCount || 0,
+          lastMessage: conv.lastMessage,
+          lastMessageTime: conv.lastMessageAt,
+        };
+      }
+    });
+
+    // Contacts without conversations
+    contacts.forEach(contact => {
+      if (!conversationsByUserId.has(contact.contactUserId) && contact.contactUserId) {
+        items.push({
+          id: `contact-${contact.id}`,
+          type: 'contact' as const,
+          displayName: contact.alias ||
+            `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
+            contact.phone,
+          phone: contact.phone,
+          otherUserId: contact.contactUserId,
+          conversationId: undefined,
+          unreadCount: 0,
+          lastMessage: undefined,
+          lastMessageTime: undefined,
+          alias: contact.alias,
+          customFirstName: contact.customFirstName,
+          customLastName: contact.customLastName,
+        });
+      }
+    });
+
+    return items;
+  }, []);
+
+  // Load from local cache (instant)
+  const loadFromLocalCache = useCallback(() => {
     if (!userId) return;
 
-    setIsLoading(true);
+    try {
+      // Get cached conversations
+      const localConvs = getLocalConversations();
+      const localContacts = getLocalContacts(userId);
+
+      if (localConvs.length > 0 || localContacts.length > 0) {
+        // Transform local data
+        const contacts: Contact[] = localContacts.map(c => ({
+          id: c.id,
+          ownerId: c.owner_id,
+          contactUserId: c.contact_user_id,
+          phone: c.phone,
+          alias: c.alias || undefined,
+          customFirstName: c.custom_first_name || undefined,
+          customLastName: c.custom_last_name || undefined,
+          createdAt: c.updated_at || new Date().toISOString(),
+        }));
+
+        const conversations = localConvs.map(c => ({
+          id: c.id,
+          otherUserId: c.other_user_id,
+          otherUserPhone: c.other_user_phone,
+          lastMessage: c.last_message,
+          lastMessageAt: c.last_message_at,
+          unreadCount: c.unread_count,
+        }));
+
+        const items = transformToItems(contacts, conversations);
+        setChatItems(items);
+        console.log('⚡ Loaded from cache:', items.length, 'items');
+        return true;
+      }
+    } catch (err) {
+      console.error('Error loading from cache:', err);
+    }
+    return false;
+  }, [userId, transformToItems]);
+
+  // Sync from server and update cache
+  const syncFromServer = useCallback(async (showLoading = false) => {
+    if (!userId) return;
+
+    // Skip if synced recently (< 5 seconds)
+    if (!shouldSync(`chats-${userId}`, 5000)) {
+      console.log('⏭️ Skipping sync (too recent)');
+      return;
+    }
+
+    if (showLoading) setIsLoading(true);
     setError(null);
 
     try {
-      console.log('📡 Fetching contacts and conversations for user:', userId);
-
-      // Fetch both in parallel
+      console.log('📡 Syncing from server...');
       const [contactsResponse, conversationsResponse] = await Promise.all([
         contactService.getContacts(userId),
         chatService.getConversations(userId),
@@ -721,69 +320,79 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       const contacts = contactsResponse.contacts || [];
       const conversations = conversationsResponse.conversations || [];
 
-      console.log('📡 Got contacts:', contacts.length);
-      console.log('📡 Got conversations:', conversations.length);
-
-      // Create a map of contacts by their userId for quick lookup
-      const contactsByUserId = new Map(contacts.map(c => [c.contactUserId, c]));
-
-      // Create a map of conversations by otherUserId
-      const conversationsByUserId = new Map(
-        conversations.map(conv => [conv.otherUserId, conv])
-      );
-
-      // Only show conversations (with contact info if available)
-      const chatListItems: ChatListItem[] = conversations.map(conv => {
-        const contact = contactsByUserId.get(conv.otherUserId);
-
-        if (contact) {
-          // Known contact with conversation
-          return {
-            id: conv.id,
-            type: 'contact' as const,
-            displayName: contact.alias ||
-              `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
-              contact.phone,
-            phone: contact.phone,
-            otherUserId: conv.otherUserId,
-            conversationId: conv.id,
-            unreadCount: conv.unreadCount || 0,
-            lastMessage: conv.lastMessage,
-            lastMessageTime: conv.lastMessageAt,
-            alias: contact.alias,
-            customFirstName: contact.customFirstName,
-            customLastName: contact.customLastName,
-          };
-        } else {
-          // Unknown contact with conversation
-          return {
-            id: conv.id,
-            type: 'unknown' as const,
-            displayName: conv.otherUserPhone || 'Usuario desconocido',
-            phone: conv.otherUserPhone || '',
-            otherUserId: conv.otherUserId,
-            conversationId: conv.id,
-            unreadCount: conv.unreadCount || 0,
-            lastMessage: conv.lastMessage,
-            lastMessageTime: conv.lastMessageAt,
-          };
+      // Save to local cache for future instant loads
+      contacts.forEach(c => {
+        // Only save if we have valid ownerId (use userId as fallback)
+        const ownerId = c.ownerId || userId;
+        if (ownerId && c.id && c.contactUserId) {
+          saveContact({
+            id: c.id,
+            ownerId,
+            contactUserId: c.contactUserId,
+            phone: c.phone || '',
+            alias: c.alias,
+            customFirstName: c.customFirstName,
+            customLastName: c.customLastName,
+          });
         }
       });
 
-      console.log('📡 Chat items:', chatListItems.length);
+      conversations.forEach(conv => saveConversation({
+        id: conv.id,
+        otherUserId: conv.otherUserId,
+        otherUserPhone: conv.otherUserPhone,
+        lastMessage: conv.lastMessage,
+        lastMessageAt: conv.lastMessageAt,
+        unreadCount: conv.unreadCount,
+      }));
 
-      setChatItems(chatListItems);
+      updateSyncTime(`chats-${userId}`);
+
+      // Update UI with fresh data
+      const items = transformToItems(contacts, conversations);
+      setChatItems(items);
+      console.log('✅ Synced:', items.length, 'items');
     } catch (err) {
-      console.error('Error loading chats:', err);
-      setError('Error al cargar chats');
+      console.error('Error syncing chats:', err);
+      if (showLoading) setError('Error al cargar chats');
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
-  }, [userId]);
+  }, [userId, transformToItems]);
+
+  // Main load function: local-first, then background sync
+  const loadChats = useCallback(async () => {
+    if (!userId) return;
+
+    // 1. Load from cache instantly (no loading spinner)
+    const hasCached = loadFromLocalCache();
+
+    if (hasCached) {
+      // 2. Sync in background (no loading state)
+      setIsLoading(false);
+      syncFromServer(false);
+    } else {
+      // 3. No cache - show loading and fetch from server
+      setIsLoading(true);
+      await syncFromServer(true);
+    }
+  }, [userId, loadFromLocalCache, syncFromServer]);
 
   useEffect(() => {
     loadChats();
   }, [loadChats]);
+
+  // Sync when app comes to foreground (smart refresh)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        console.log('📱 App came to foreground, syncing...');
+        syncFromServer(false);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [syncFromServer]);
 
   // Subscribe to real-time message updates
   useEffect(() => {
@@ -951,9 +560,23 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           otherUserPhone={selectedChat.otherUserPhone}
           isUnknown={selectedChat.isUnknown}
           userId={userId}
+          currentUser={user}
           onBack={handleBack}
           onAddContact={handleAddUnknownContact}
           onContactUpdate={(contact) => {
+            // Save contact to local cache immediately
+            if (contact && userId) {
+              saveContact({
+                id: contact.id,
+                ownerId: contact.ownerId || userId,
+                contactUserId: contact.contactUserId,
+                phone: contact.phone || '',
+                alias: contact.alias,
+                customFirstName: contact.customFirstName,
+                customLastName: contact.customLastName,
+              });
+            }
+
             // Update selected chat immediately with new contact info
             const displayName = contact.alias ||
               `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
@@ -965,9 +588,10 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
               isUnknown: false
             }) : null);
 
-            // Reload list in background to sync state
-            loadChats();
+            // Force server sync (bypass throttle by updating sync time first)
+            syncFromServer(false);
           }}
+          onNavigateCall={(roomName, username, conversationId, passedUserId) => onNavigate('call', { roomName, username, conversationId, userId: passedUserId })}
         />
       </SafeAreaView>
     );
@@ -1172,311 +796,5 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-
-  // Header
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  notificationButton: {
-    padding: 8,
-  },
-
-  // Search
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 40,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 16,
-    color: '#111827',
-  },
-
-  // Chat Item
-  chatItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  chatItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-  },
-  addContactButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#EBF5FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#7FA889',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  chatContent: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  chatName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  timestamp: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  messageRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  lastMessage: {
-    fontSize: 14,
-    color: '#6B7280',
-    flex: 1,
-    marginRight: 8,
-  },
-  unreadBadge: {
-    backgroundColor: '#22C55E', // Green color for new messages
-    borderRadius: 12,
-    minWidth: 24,
-    height: 24,
-    paddingHorizontal: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  unreadBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  // List
-  listContent: {
-    paddingBottom: 100,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: '#F3F4F6',
-  },
-
-  // States
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  errorContainer: {
-    backgroundColor: '#FEE2E2',
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 8,
-  },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 4,
-  },
-
-  // Sync Banner
-  syncBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#EEF7F0',
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#7FA889',
-  },
-  syncBannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  syncBannerIcon: {
-    fontSize: 28,
-    marginRight: 12,
-  },
-  syncBannerText: {
-    flex: 1,
-  },
-  syncBannerTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  syncBannerSubtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  syncBannerArrow: {
-    fontSize: 20,
-    color: '#7FA889',
-    fontWeight: '600',
-  },
-  syncProgress: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  syncProgressText: {
-    fontSize: 14,
-    color: '#374151',
-  },
-  syncResult: {
-    backgroundColor: '#D1FAE5',
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-  },
-  syncResultText: {
-    fontSize: 14,
-    color: '#065F46',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-
-  // New Chat Button
-  newChatButton: {
-    position: 'absolute',
-    bottom: 100,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#7FA889',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  newChatIcon: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '300',
-  },
-
-  // Chat View
-  chatViewContainer: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  chatViewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  backButton: {
-    padding: 8,
-  },
-  chatViewTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  messagesList: {
-    padding: 16,
-    flexGrow: 1,
-  },
-  emptyMessages: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-});
+// Use styles from external file
+const styles = chatsListStyles;

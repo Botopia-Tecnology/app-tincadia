@@ -11,6 +11,10 @@
                 "simulator": false
             }
         },
-        "production": {}
+        "production": {},
+        "development": {
+            "developmentClient": true,
+            "distribution": "internal"
+        }
     }
 }

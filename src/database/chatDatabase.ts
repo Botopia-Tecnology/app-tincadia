@@ -2,7 +2,10 @@
  * Chat Local Database
  * 
  * SQLite database for offline chat storage.
- * Stores conversations and messages locally for instant loading.
+ * Implements WhatsApp-style local-first architecture:
+ * - Messages stored locally first (source of truth)
+ * - Sync with server in background
+ * - Message states: pending → sent → delivered → read
  */
 
 import * as SQLite from 'expo-sqlite';
@@ -11,6 +14,12 @@ const db = SQLite.openDatabaseSync('chat.db');
 
 // Flag to track if database is initialized
 let isInitialized = false;
+
+// Track last sync times for smart polling
+const lastSyncTimes: Record<string, number> = {};
+
+// Message status enum (WhatsApp-style)
+export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read';
 
 /**
  * Initialize database tables (called automatically on first use)
@@ -25,24 +34,42 @@ export function initChatDatabase() {
       other_user_id TEXT NOT NULL,
       other_user_name TEXT,
       other_user_avatar TEXT,
+      other_user_phone TEXT,
       last_message TEXT,
       last_message_at TEXT,
-      unread_count INTEGER DEFAULT 0
+      unread_count INTEGER DEFAULT 0,
+      updated_at TEXT
     );
     
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
+      server_id TEXT,
       conversation_id TEXT NOT NULL,
       sender_id TEXT NOT NULL,
       content TEXT NOT NULL,
       type TEXT DEFAULT 'text',
+      status TEXT DEFAULT 'pending',
       created_at TEXT NOT NULL,
+      updated_at TEXT,
+      read_at TEXT,
       is_mine INTEGER DEFAULT 0,
-      is_read INTEGER DEFAULT 0,
-      is_synced INTEGER DEFAULT 1
+      deleted_at TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS contacts (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      contact_user_id TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      alias TEXT,
+      custom_first_name TEXT,
+      custom_last_name TEXT,
+      updated_at TEXT
     );
     
     CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_id);
   `);
         isInitialized = true;
         console.log('✅ Chat database initialized');
@@ -60,57 +87,183 @@ function ensureInitialized() {
     }
 }
 
+// ==================== MESSAGES (WhatsApp Model) ====================
+
+export interface LocalMessage {
+    id: string;
+    serverId?: string;
+    conversationId: string;
+    senderId: string;
+    content: string;
+    type: string;
+    status: MessageStatus;
+    createdAt: string;
+    updatedAt?: string;
+    readAt?: string;
+    isMine: boolean;
+    deletedAt?: string;
+}
+
 /**
- * Save or update a message
+ * Save or update a message (optimistic update)
  */
 export function saveMessage(msg: {
     id: string;
+    serverId?: string;
     conversationId: string;
     senderId: string;
     content: string;
     type?: string;
+    status?: MessageStatus;
     createdAt: string;
+    updatedAt?: string;
+    readAt?: string;
     isMine: boolean;
-    isSynced?: boolean;
+    deletedAt?: string;
 }) {
     ensureInitialized();
     db.runSync(
         `INSERT OR REPLACE INTO messages 
-     (id, conversation_id, sender_id, content, type, created_at, is_mine, is_synced)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, server_id, conversation_id, sender_id, content, type, status, created_at, updated_at, read_at, is_mine, deleted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             msg.id,
+            msg.serverId || null,
             msg.conversationId,
             msg.senderId,
             msg.content,
             msg.type || 'text',
+            msg.status || 'pending',
             msg.createdAt,
+            msg.updatedAt || null,
+            msg.readAt || null,
             msg.isMine ? 1 : 0,
-            msg.isSynced !== false ? 1 : 0,
+            msg.deletedAt || null,
         ]
+    );
+}
+
+/**
+ * Update message status (pending → sent → delivered → read)
+ */
+export function updateMessageStatus(messageId: string, status: MessageStatus, serverId?: string) {
+    ensureInitialized();
+    if (serverId) {
+        db.runSync(
+            `UPDATE messages SET status = ?, server_id = ?, updated_at = ? WHERE id = ?`,
+            [status, serverId, new Date().toISOString(), messageId]
+        );
+    } else {
+        db.runSync(
+            `UPDATE messages SET status = ?, updated_at = ? WHERE id = ?`,
+            [status, new Date().toISOString(), messageId]
+        );
+    }
+}
+
+/**
+ * Mark message as read (update read_at timestamp)
+ */
+export function markMessageAsRead(messageId: string) {
+    ensureInitialized();
+    const now = new Date().toISOString();
+    db.runSync(
+        `UPDATE messages SET status = 'read', read_at = ?, updated_at = ? WHERE id = ?`,
+        [now, now, messageId]
     );
 }
 
 /**
  * Get all messages for a conversation
  */
-export function getMessages(conversationId: string) {
+export function getMessages(conversationId: string): LocalMessage[] {
     ensureInitialized();
-    return db.getAllSync<{
+    const rows = db.getAllSync<{
         id: string;
+        server_id: string | null;
         conversation_id: string;
         sender_id: string;
         content: string;
         type: string;
+        status: string;
         created_at: string;
+        updated_at: string | null;
+        read_at: string | null;
         is_mine: number;
-        is_synced: number;
+        deleted_at: string | null;
     }>(
         `SELECT * FROM messages 
-     WHERE conversation_id = ? 
+     WHERE conversation_id = ? AND deleted_at IS NULL
      ORDER BY created_at ASC`,
         [conversationId]
     );
+
+    return rows.map(row => ({
+        id: row.id,
+        serverId: row.server_id || undefined,
+        conversationId: row.conversation_id,
+        senderId: row.sender_id,
+        content: row.content,
+        type: row.type,
+        status: row.status as MessageStatus,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at || undefined,
+        readAt: row.read_at || undefined,
+        isMine: row.is_mine === 1,
+        deletedAt: row.deleted_at || undefined,
+    }));
+}
+
+/**
+ * Get last message timestamp for incremental sync
+ */
+export function getLastMessageTimestamp(conversationId: string): string | null {
+    ensureInitialized();
+    const result = db.getFirstSync<{ max_created: string | null }>(
+        `SELECT MAX(created_at) as max_created FROM messages WHERE conversation_id = ? AND server_id IS NOT NULL`,
+        [conversationId]
+    );
+    return result?.max_created || null;
+}
+
+/**
+ * Get pending messages (not yet synced to server)
+ */
+export function getPendingMessages(conversationId: string): LocalMessage[] {
+    ensureInitialized();
+    const rows = db.getAllSync<{
+        id: string;
+        server_id: string | null;
+        conversation_id: string;
+        sender_id: string;
+        content: string;
+        type: string;
+        status: string;
+        created_at: string;
+        updated_at: string | null;
+        read_at: string | null;
+        is_mine: number;
+        deleted_at: string | null;
+    }>(
+        `SELECT * FROM messages 
+     WHERE conversation_id = ? AND status = 'pending' AND deleted_at IS NULL
+     ORDER BY created_at ASC`,
+        [conversationId]
+    );
+    return rows.map(row => ({
+        id: row.id,
+        serverId: row.server_id || undefined,
+        conversationId: row.conversation_id,
+        senderId: row.sender_id,
+        content: row.content,
+        type: row.type,
+        status: row.status as MessageStatus,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at || undefined,
+        readAt: row.read_at || undefined,
+        isMine: row.is_mine === 1,
+        deletedAt: row.deleted_at || undefined,
+    }));
 }
 
 /**
@@ -122,6 +275,19 @@ export function deleteMessage(messageId: string) {
 }
 
 /**
+ * Soft delete a message (mark as deleted)
+ */
+export function softDeleteMessage(messageId: string) {
+    ensureInitialized();
+    db.runSync(
+        `UPDATE messages SET deleted_at = ? WHERE id = ?`,
+        [new Date().toISOString(), messageId]
+    );
+}
+
+// ==================== CONVERSATIONS ====================
+
+/**
  * Save or update a conversation
  */
 export function saveConversation(conv: {
@@ -129,23 +295,27 @@ export function saveConversation(conv: {
     otherUserId: string;
     otherUserName?: string;
     otherUserAvatar?: string;
+    otherUserPhone?: string;
     lastMessage?: string;
     lastMessageAt?: string;
     unreadCount?: number;
 }) {
     ensureInitialized();
+    const now = new Date().toISOString();
     db.runSync(
         `INSERT OR REPLACE INTO conversations 
-     (id, other_user_id, other_user_name, other_user_avatar, last_message, last_message_at, unread_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     (id, other_user_id, other_user_name, other_user_avatar, other_user_phone, last_message, last_message_at, unread_count, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             conv.id,
             conv.otherUserId,
             conv.otherUserName || '',
             conv.otherUserAvatar || '',
+            conv.otherUserPhone || '',
             conv.lastMessage || '',
             conv.lastMessageAt || '',
             conv.unreadCount || 0,
+            now,
         ]
     );
 }
@@ -160,9 +330,11 @@ export function getConversations() {
         other_user_id: string;
         other_user_name: string;
         other_user_avatar: string;
+        other_user_phone: string;
         last_message: string;
         last_message_at: string;
         unread_count: number;
+        updated_at: string;
     }>(
         `SELECT * FROM conversations ORDER BY last_message_at DESC`
     );
@@ -178,6 +350,111 @@ export function updateUnreadCount(conversationId: string, count: number) {
     );
 }
 
+// ==================== CONTACTS ====================
+
+/**
+ * Save or update a contact
+ */
+export function saveContact(contact: {
+    id: string;
+    ownerId: string;
+    contactUserId: string;
+    phone: string;
+    alias?: string;
+    customFirstName?: string;
+    customLastName?: string;
+}) {
+    // Validate required fields to prevent NOT NULL constraint errors
+    if (!contact.id || !contact.ownerId || !contact.contactUserId || !contact.phone) {
+        console.warn('⚠️ saveContact: Missing required field(s), skipping', {
+            hasId: !!contact.id,
+            hasOwnerId: !!contact.ownerId,
+            hasContactUserId: !!contact.contactUserId,
+            hasPhone: !!contact.phone,
+        });
+        return;
+    }
+
+    ensureInitialized();
+    const now = new Date().toISOString();
+    db.runSync(
+        `INSERT OR REPLACE INTO contacts 
+     (id, owner_id, contact_user_id, phone, alias, custom_first_name, custom_last_name, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            contact.id,
+            contact.ownerId,
+            contact.contactUserId,
+            contact.phone,
+            contact.alias || '',
+            contact.customFirstName || '',
+            contact.customLastName || '',
+            now,
+        ]
+    );
+}
+
+/**
+ * Get all contacts for a user
+ */
+export function getLocalContacts(ownerId: string) {
+    ensureInitialized();
+    return db.getAllSync<{
+        id: string;
+        owner_id: string;
+        contact_user_id: string;
+        phone: string;
+        alias: string;
+        custom_first_name: string;
+        custom_last_name: string;
+        updated_at: string;
+    }>(
+        `SELECT * FROM contacts WHERE owner_id = ? ORDER BY custom_first_name ASC`,
+        [ownerId]
+    );
+}
+
+/**
+ * Delete a contact by ID
+ */
+export function deleteContact(contactId: string) {
+    ensureInitialized();
+    db.runSync(`DELETE FROM contacts WHERE id = ?`, [contactId]);
+}
+
+// ==================== SYNC UTILITIES ====================
+
+/**
+ * Check if we should sync (avoid rapid repeated syncs)
+ */
+export function shouldSync(key: string, minIntervalMs: number = 5000): boolean {
+    const now = Date.now();
+    const lastSync = lastSyncTimes[key] || 0;
+
+    if (now - lastSync < minIntervalMs) {
+        return false; // Too soon, skip sync
+    }
+
+    lastSyncTimes[key] = now;
+    return true;
+}
+
+/**
+ * Get last sync time for a key
+ */
+export function getLastSyncTime(key: string): number {
+    return lastSyncTimes[key] || 0;
+}
+
+/**
+ * Update last sync time for a key
+ */
+export function updateSyncTime(key: string) {
+    lastSyncTimes[key] = Date.now();
+}
+
+// ==================== CLEANUP ====================
+
 /**
  * Clear all chat data (for logout)
  */
@@ -185,6 +462,14 @@ export function clearChatDatabase() {
     ensureInitialized();
     db.runSync(`DELETE FROM messages`);
     db.runSync(`DELETE FROM conversations`);
+    db.runSync(`DELETE FROM contacts`);
     console.log('🗑️ Chat database cleared');
 }
 
+/**
+ * Clear only contacts (for re-sync)
+ */
+export function clearContacts(ownerId: string) {
+    ensureInitialized();
+    db.runSync(`DELETE FROM contacts WHERE owner_id = ?`, [ownerId]);
+}
