@@ -60,7 +60,7 @@ export function initChatDatabase() {
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL,
       contact_user_id TEXT NOT NULL,
-      phone TEXT NOT NULL,
+      phone TEXT,
       alias TEXT,
       custom_first_name TEXT,
       custom_last_name TEXT,
@@ -359,18 +359,17 @@ export function saveContact(contact: {
     id: string;
     ownerId: string;
     contactUserId: string;
-    phone: string;
+    phone?: string;
     alias?: string;
     customFirstName?: string;
     customLastName?: string;
 }) {
-    // Validate required fields to prevent NOT NULL constraint errors
-    if (!contact.id || !contact.ownerId || !contact.contactUserId || !contact.phone) {
+    // Validate only truly required fields (phone can be empty)
+    if (!contact.id || !contact.ownerId || !contact.contactUserId) {
         console.warn('⚠️ saveContact: Missing required field(s), skipping', {
             hasId: !!contact.id,
             hasOwnerId: !!contact.ownerId,
             hasContactUserId: !!contact.contactUserId,
-            hasPhone: !!contact.phone,
         });
         return;
     }
@@ -385,7 +384,7 @@ export function saveContact(contact: {
             contact.id,
             contact.ownerId,
             contact.contactUserId,
-            contact.phone,
+            contact.phone || '',
             contact.alias || '',
             contact.customFirstName || '',
             contact.customLastName || '',
