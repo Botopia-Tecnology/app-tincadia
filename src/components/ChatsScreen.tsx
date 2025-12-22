@@ -301,8 +301,8 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   const syncFromServer = useCallback(async (showLoading = false) => {
     if (!userId) return;
 
-    // Skip if synced recently (< 5 seconds)
-    if (!shouldSync(`chats-${userId}`, 5000)) {
+    // Skip if synced recently (< 30 seconds) - rely on cache for instant load
+    if (!shouldSync(`chats-${userId}`, 30000)) {
       console.log('⏭️ Skipping sync (too recent)');
       return;
     }
@@ -488,11 +488,14 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     }
   };
 
-  // Handle back from chat
+  // Handle back from chat - load cache immediately, sync later
   const handleBack = useCallback(() => {
     setSelectedChat(null);
-    loadChats();
-  }, [loadChats]);
+    // Load from cache immediately (synchronous)
+    loadFromLocalCache();
+    // Sync from server in background (don't wait)
+    syncFromServer(false);
+  }, [loadFromLocalCache, syncFromServer]);
 
   // Android hardware back: if inside a chat, go back to chat list instead of exiting the app.
   useEffect(() => {
