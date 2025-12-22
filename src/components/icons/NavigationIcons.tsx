@@ -246,3 +246,14 @@ export function PlusIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
     </Svg>
   );
 }
+
+export function PhoneIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-2.2 2.2a15.17 15.17 0 01-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1.01A11.36 11.36 0 01 8.59 3.91c0-.55-.45-1-1-1H4.39c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.21c0-.55-.45-1-1-1z"
+        fill={color}
+      />
+    </Svg>
+  );
+}

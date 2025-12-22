@@ -5,9 +5,10 @@
  */
 
 import React, { useState } from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Animated } from 'react-native';
+import { View, TextInput, TouchableOpacity, Text, ActivityIndicator, Animated } from 'react-native';
 import { MagicPencilIcon } from '../icons/ActionIcons';
 import { chatService } from '../../services/chat.service';
+import { chatInputStyles as styles } from '../../styles/ChatComponents.styles';
 
 interface ChatInputProps {
     onSend: (message: string) => void;
@@ -120,57 +121,3 @@ export function ChatInput({ onSend, disabled = false, placeholder = 'Escribe un 
         </View>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        padding: 8,
-        backgroundColor: '#FFFFFF',
-        borderTopWidth: 1,
-        borderTopColor: '#E0E0E0',
-    },
-    input: {
-        flex: 1,
-        minHeight: 40,
-        maxHeight: 120,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        fontSize: 16,
-        backgroundColor: '#F8F8F8',
-    },
-    sendButton: {
-        marginLeft: 8,
-        backgroundColor: '#4CAF50',
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-        minWidth: 70,
-        height: 40,
-    },
-    sendButtonDisabled: {
-        backgroundColor: '#CCCCCC',
-    },
-    sendText: {
-        color: '#FFFFFF',
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    actionButton: {
-        marginLeft: 8,
-        width: 40,
-        height: 40,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    correctionOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(255, 235, 59, 0.2)', // Yellow flash
-        borderRadius: 20,
-    },
-});

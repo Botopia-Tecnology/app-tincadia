@@ -12,7 +12,7 @@ export interface Message {
     conversationId: string;
     senderId: string;
     content: string;
-    type: 'text' | 'image' | 'audio';
+    type: 'text' | 'image' | 'audio' | 'call' | 'call_ended';
     createdAt: string;
     isRead: boolean;
 }
@@ -33,7 +33,7 @@ interface SendMessageDto {
     conversationId: string;
     senderId: string;
     content: string;
-    type?: 'text' | 'image' | 'audio';
+    type: 'text' | 'image' | 'audio' | 'call' | 'call_ended';
 }
 
 interface CreateConversationDto {

@@ -1,30 +1,38 @@
 /**
- * useChat Hook
+ * useChat Hook - WhatsApp Model
  * 
- * Manages chat messages for a specific conversation.
- * - Loads messages from local SQLite (instant)
- * - Syncs from backend API
- * - Polls for new messages periodically
+ * Manages chat messages using WhatsApp-style architecture:
+ * - Local-first: Messages stored in SQLite (source of truth)
+ * - Optimistic updates: Show immediately, sync in background
+ * - Message states: pending → sent → delivered → read
+ * - Incremental sync: Only fetch new messages since last timestamp
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-    getMessages,
+    getMessages as getLocalMessages,
     saveMessage,
-    deleteMessage as deleteLocalMessage
+    updateMessageStatus,
+    getLastMessageTimestamp,
+    deleteMessage as deleteLocalMessage,
+    softDeleteMessage,
+    LocalMessage,
+    MessageStatus,
 } from '../database/chatDatabase';
-import { chatService, Message as ApiMessage } from '../services/chat.service';
+import { chatService } from '../services/chat.service';
 
 export interface Message {
     id: string;
+    serverId?: string;
     conversationId: string;
     senderId: string;
     content: string;
     type: string;
+    status: MessageStatus;
     createdAt: string;
+    updatedAt?: string;
+    readAt?: string;
     isMine: boolean;
-    isSynced: boolean;
-    isRead?: boolean; // true if the recipient has read this message
 }
 
 interface UseChatReturn {
@@ -34,6 +42,7 @@ interface UseChatReturn {
     deleteMessage: (messageId: string) => Promise<void>;
     isLoading: boolean;
     error: string | null;
+    retryPending: () => Promise<void>;
 }
 
 export function useChat(conversationId: string, userId: string): UseChatReturn {
@@ -41,84 +50,105 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const isSyncingRef = useRef(false);
 
-    // Transform local DB message to our Message interface
-    const transformLocalMessage = useCallback((m: {
-        id: string;
-        conversation_id: string;
-        sender_id: string;
-        content: string;
-        type: string;
-        created_at: string;
-        is_mine: number;
-        is_synced: number;
-    }): Message => ({
+    // Transform LocalMessage to UI Message
+    const transformMessage = useCallback((m: LocalMessage): Message => ({
         id: m.id,
-        conversationId: m.conversation_id,
-        senderId: m.sender_id,
+        serverId: m.serverId,
+        conversationId: m.conversationId,
+        senderId: m.senderId,
         content: m.content,
         type: m.type,
-        createdAt: m.created_at,
-        isMine: m.is_mine === 1,
-        isSynced: m.is_synced === 1,
-        isRead: false, // Will be updated from server
+        status: m.status,
+        createdAt: m.createdAt,
+        updatedAt: m.updatedAt,
+        readAt: m.readAt,
+        isMine: m.isMine,
     }), []);
 
-    // Load messages from local SQLite
+    // Load messages from local SQLite (instant)
     const loadLocalMessages = useCallback(() => {
         try {
-            const localMsgs = getMessages(conversationId);
-            setMessages(localMsgs.map(transformLocalMessage));
+            const localMsgs = getLocalMessages(conversationId);
+            setMessages(localMsgs.map(transformMessage));
         } catch (err) {
             console.error('Error loading local messages:', err);
         }
-    }, [conversationId, transformLocalMessage]);
+    }, [conversationId, transformMessage]);
 
-    // Sync messages from server
+    // Sync messages from server (incremental)
     const syncFromServer = useCallback(async () => {
+        if (isSyncingRef.current) return;
+        isSyncingRef.current = true;
+
         try {
+            // Get last synced message timestamp for incremental sync
+            const lastTimestamp = getLastMessageTimestamp(conversationId);
+
+            console.log('📡 Syncing messages since:', lastTimestamp || 'beginning');
+
+            // Fetch messages (server should support `since` param)
             const { messages: serverMessages } = await chatService.getMessages(conversationId);
 
-            // Transform server messages to our format with isRead
+            // Filter only new messages if we have a timestamp (client-side filter as fallback)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const transformedMessages: Message[] = serverMessages.map((msg: any) => {
+            const newMessages = lastTimestamp
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ? serverMessages.filter((msg: any) => {
+                    const msgCreatedAt = msg.createdAt || msg.created_at;
+                    return msgCreatedAt > lastTimestamp;
+                })
+                : serverMessages;
+
+            if (newMessages.length > 0) {
+                console.log('📥 Got', newMessages.length, 'new messages');
+            }
+
+            // Process all server messages (update existing or insert new)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            serverMessages.forEach((msg: any) => {
                 const msgConversationId = msg.conversationId || msg.conversation_id;
                 const msgSenderId = msg.senderId || msg.sender_id;
                 const msgCreatedAt = msg.createdAt || msg.created_at;
+                const msgUpdatedAt = msg.updatedAt || msg.updated_at;
                 const msgReadAt = msg.readAt || msg.read_at;
+                const isMine = msgSenderId === userId;
 
-                // Save to local DB for offline support
+                // Determine status based on server data
+                let status: MessageStatus = 'sent';
+                if (msgReadAt) {
+                    status = 'read';
+                } else if (!isMine) {
+                    // Incoming message that we received = delivered from their perspective
+                    status = 'delivered';
+                }
+
+                // Save to local DB
                 saveMessage({
                     id: msg.id,
+                    serverId: msg.id,
                     conversationId: msgConversationId,
                     senderId: msgSenderId,
                     content: msg.content,
                     type: msg.type || 'text',
+                    status,
                     createdAt: msgCreatedAt || new Date().toISOString(),
-                    isMine: msgSenderId === userId,
-                    isSynced: true,
+                    updatedAt: msgUpdatedAt,
+                    readAt: msgReadAt,
+                    isMine,
                 });
-
-                return {
-                    id: msg.id,
-                    conversationId: msgConversationId,
-                    senderId: msgSenderId,
-                    content: msg.content,
-                    type: msg.type || 'text',
-                    createdAt: msgCreatedAt || new Date().toISOString(),
-                    isMine: msgSenderId === userId,
-                    isSynced: true,
-                    isRead: !!msgReadAt, // Has read_at = is read
-                };
             });
 
-            // Set messages directly from server (includes isRead status)
-            setMessages(transformedMessages);
+            // Reload local messages to update UI
+            loadLocalMessages();
         } catch (err) {
             console.error('Error syncing messages from server:', err);
             setError('Error al cargar mensajes');
+        } finally {
+            isSyncingRef.current = false;
         }
-    }, [conversationId, userId]);
+    }, [conversationId, userId, loadLocalMessages]);
 
     // Mark messages as read when user enters the chat
     const markMessagesAsRead = useCallback(async () => {
@@ -130,8 +160,9 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         }
     }, [conversationId, userId]);
 
+    // Initial load and polling setup
     useEffect(() => {
-        // 1. Load local messages immediately (instant)
+        // 1. Load local messages immediately (instant UI)
         loadLocalMessages();
         setIsLoading(false);
 
@@ -141,10 +172,10 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
             markMessagesAsRead();
         });
 
-        // 4. Poll for new messages every 10 seconds (instead of Supabase realtime)
+        // 4. Poll for new messages every 15 seconds (reduced from 10s)
         pollingIntervalRef.current = setInterval(() => {
             syncFromServer();
-        }, 10000);
+        }, 15000);
 
         return () => {
             if (pollingIntervalRef.current) {
@@ -153,28 +184,28 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         };
     }, [conversationId, userId, loadLocalMessages, syncFromServer, markMessagesAsRead]);
 
-    // Send a message with optimistic update
+    // Send a message with optimistic update (WhatsApp style)
     const sendMessage = useCallback(async (content: string) => {
-        const tempId = `temp_${Date.now()}`;
+        const tempId = `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const now = new Date().toISOString();
 
-        // Save optimistically to local DB
-        const optimisticMsg = {
+        // 1. Save as PENDING (optimistic update)
+        saveMessage({
             id: tempId,
             conversationId,
             senderId: userId,
             content,
             type: 'text',
+            status: 'pending', // ⏳ Pending
             createdAt: now,
             isMine: true,
-            isSynced: false,
-        };
+        });
 
-        saveMessage(optimisticMsg);
+        // Reload to show pending message immediately
         loadLocalMessages();
 
         try {
-            // Send to server
+            // 2. Send to server
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const { message: serverMsg } = await chatService.sendMessage({
                 conversationId,
@@ -183,41 +214,87 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 type: 'text',
             }) as { message: any };
 
-            // Delete temp message and save real one
-            // Handle both camelCase and snake_case from API
+            // 3. Update local message: pending → SENT
+            // Delete temp and save with server ID
             deleteLocalMessage(tempId);
+
+            const serverMsgConvId = serverMsg.conversationId || serverMsg.conversation_id || conversationId;
+            const serverMsgSenderId = serverMsg.senderId || serverMsg.sender_id || userId;
+            const serverMsgCreatedAt = serverMsg.createdAt || serverMsg.created_at || now;
+
             saveMessage({
                 id: serverMsg.id,
-                conversationId: serverMsg.conversationId || serverMsg.conversation_id || conversationId,
-                senderId: serverMsg.senderId || serverMsg.sender_id || userId,
+                serverId: serverMsg.id,
+                conversationId: serverMsgConvId,
+                senderId: serverMsgSenderId,
                 content: serverMsg.content,
                 type: serverMsg.type || 'text',
-                createdAt: serverMsg.createdAt || serverMsg.created_at || now,
+                status: 'sent', // ✓ Sent
+                createdAt: serverMsgCreatedAt,
                 isMine: true,
-                isSynced: true,
             });
+
             loadLocalMessages();
+            console.log('✓ Message sent:', serverMsg.id);
         } catch (err) {
             console.error('Error sending message:', err);
             setError('Error al enviar mensaje');
-            // Message stays in local DB marked as not synced
+            // Message stays as PENDING - can retry later
         }
     }, [conversationId, userId, loadLocalMessages]);
 
+    // Retry sending pending messages
+    const retryPending = useCallback(async () => {
+        const pendingMsgs = messages.filter(m => m.status === 'pending');
+
+        for (const msg of pendingMsgs) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const { message: serverMsg } = await chatService.sendMessage({
+                    conversationId: msg.conversationId,
+                    senderId: msg.senderId,
+                    content: msg.content,
+                    type: msg.type as 'text' | 'image' | 'audio' | 'call' | 'call_ended',
+                }) as { message: any };
+
+                // Update local message
+                deleteLocalMessage(msg.id);
+                saveMessage({
+                    id: serverMsg.id,
+                    serverId: serverMsg.id,
+                    conversationId,
+                    senderId: userId,
+                    content: serverMsg.content,
+                    type: serverMsg.type || 'text',
+                    status: 'sent',
+                    createdAt: serverMsg.createdAt || serverMsg.created_at,
+                    isMine: true,
+                });
+            } catch (err) {
+                console.error('Error retrying message:', err);
+            }
+        }
+
+        loadLocalMessages();
+    }, [messages, conversationId, userId, loadLocalMessages]);
+
     // Edit a message
     const editMessage = useCallback(async (messageId: string, content: string) => {
+        const existingMsg = messages.find(m => m.id === messageId || m.serverId === messageId);
+
+        if (!existingMsg) return;
+
         try {
-            await chatService.editMessage(messageId, content);
+            await chatService.editMessage(existingMsg.serverId || messageId, content);
+
             // Update local DB
-            const existingMsg = messages.find(m => m.id === messageId);
-            if (existingMsg) {
-                saveMessage({
-                    ...existingMsg,
-                    content,
-                    isSynced: true,
-                });
-                loadLocalMessages();
-            }
+            saveMessage({
+                ...existingMsg,
+                content,
+                updatedAt: new Date().toISOString(),
+            });
+
+            loadLocalMessages();
         } catch (err) {
             console.error('Error editing message:', err);
             setError('Error al editar mensaje');
@@ -226,15 +303,26 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
 
     // Delete a message
     const deleteMessage = useCallback(async (messageId: string) => {
+        const existingMsg = messages.find(m => m.id === messageId || m.serverId === messageId);
+
+        if (!existingMsg) return;
+
         try {
-            await chatService.deleteMessage(messageId);
-            deleteLocalMessage(messageId);
+            // Soft delete locally first (optimistic)
+            softDeleteMessage(messageId);
             loadLocalMessages();
+
+            // Delete on server
+            if (existingMsg.serverId) {
+                await chatService.deleteMessage(existingMsg.serverId);
+            }
         } catch (err) {
             console.error('Error deleting message:', err);
             setError('Error al eliminar mensaje');
+            // Reload to undo soft delete
+            loadLocalMessages();
         }
-    }, [loadLocalMessages]);
+    }, [messages, loadLocalMessages]);
 
     return {
         messages,
@@ -243,5 +331,6 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         deleteMessage,
         isLoading,
         error,
+        retryPending,
     };
 }

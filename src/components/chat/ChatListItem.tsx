@@ -5,7 +5,8 @@
  */
 
 import React from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Image } from 'react-native';
+import { chatListItemStyles as styles } from '../../styles/ChatComponents.styles';
 
 interface ChatListItemProps {
     id: string;
@@ -76,66 +77,3 @@ export function ChatListItem({
         </TouchableOpacity>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flexDirection: 'row',
-        padding: 16,
-        backgroundColor: '#FFFFFF',
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
-    },
-    avatar: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        backgroundColor: '#E0E0E0',
-    },
-    content: {
-        flex: 1,
-        marginLeft: 12,
-        justifyContent: 'center',
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    name: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#000000',
-        flex: 1,
-    },
-    time: {
-        fontSize: 12,
-        color: '#999999',
-        marginLeft: 8,
-    },
-    messageRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 4,
-    },
-    lastMessage: {
-        fontSize: 14,
-        color: '#666666',
-        flex: 1,
-    },
-    badge: {
-        backgroundColor: '#4CAF50',
-        borderRadius: 12,
-        minWidth: 24,
-        height: 24,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: 6,
-        marginLeft: 8,
-    },
-    badgeText: {
-        color: '#FFFFFF',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-});
