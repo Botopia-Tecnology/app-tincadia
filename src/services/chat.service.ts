@@ -59,6 +59,16 @@ export const chatService = {
     },
 
     /**
+     * Get a user's profile (for viewing original registration name)
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async getUserProfile(userId: string): Promise<{ profile: any }> {
+        return apiClient(API_ENDPOINTS.USER_PROFILE(userId), {
+            method: 'GET',
+        });
+    },
+
+    /**
      * Start or get existing conversation with another user
      */
     async startConversation(userId: string, otherUserId: string): Promise<{ conversationId: string }> {

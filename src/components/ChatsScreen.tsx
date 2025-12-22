@@ -83,6 +83,7 @@ interface ChatListItem {
   lastMessage?: string;
   lastMessageTime?: string;
   // From contact
+  contactId?: string;
   alias?: string;
   customFirstName?: string;
   customLastName?: string;
@@ -146,7 +147,13 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     conversationId: string;
     otherUserName: string;
     otherUserPhone?: string;
+    otherUserId?: string;
     isUnknown?: boolean;
+    // Contact info for profile
+    contactId?: string;
+    alias?: string;
+    customFirstName?: string;
+    customLastName?: string;
   } | null>(null);
 
   // Modal state
@@ -211,6 +218,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           unreadCount: conv.unreadCount || 0,
           lastMessage: conv.lastMessage,
           lastMessageTime: conv.lastMessageAt,
+          contactId: contact.id,
           alias: contact.alias,
           customFirstName: contact.customFirstName,
           customLastName: contact.customLastName,
@@ -480,7 +488,12 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
         conversationId,
         otherUserName: item.displayName,
         otherUserPhone: item.phone,
+        otherUserId: item.otherUserId,
         isUnknown: item.type === 'unknown',
+        contactId: item.contactId,
+        alias: item.alias,
+        customFirstName: item.customFirstName,
+        customLastName: item.customLastName,
       });
     } catch (err) {
       console.error('Error starting conversation:', err);
@@ -561,11 +574,16 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           conversationId={selectedChat.conversationId}
           otherUserName={selectedChat.otherUserName}
           otherUserPhone={selectedChat.otherUserPhone}
+          otherUserId={selectedChat.otherUserId}
           isUnknown={selectedChat.isUnknown}
           userId={userId}
           currentUser={user}
           onBack={handleBack}
           onAddContact={handleAddUnknownContact}
+          contactId={selectedChat.contactId}
+          alias={selectedChat.alias}
+          customFirstName={selectedChat.customFirstName}
+          customLastName={selectedChat.customLastName}
           onContactUpdate={(contact) => {
             // Save contact to local cache immediately
             if (contact && userId) {
