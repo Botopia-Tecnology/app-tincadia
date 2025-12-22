@@ -21,6 +21,7 @@ import { useChat } from '../../hooks/useChat';
 import { chatService } from '../../services/chat.service';
 import { chatViewStyles } from '../../styles/ChatsScreen.styles';
 import { AddContactModal } from '../AddContactModal';
+import { ContactProfileScreen } from './ContactProfileScreen';
 import { MagicPencilIcon } from '../icons/ActionIcons';
 import {
     BackArrowIcon,
@@ -34,6 +35,7 @@ export interface ChatViewProps {
     conversationId: string;
     otherUserName: string;
     otherUserPhone?: string;
+    otherUserId?: string;
     isUnknown?: boolean;
     userId: string;
     currentUser?: any;
@@ -41,12 +43,18 @@ export interface ChatViewProps {
     onAddContact?: () => void;
     onContactUpdate?: (contact: any) => void;
     onNavigateCall: (roomName: string, username: string, conversationId: string, userId: string) => void;
+    // Contact info for profile
+    contactId?: string;
+    alias?: string;
+    customFirstName?: string;
+    customLastName?: string;
 }
 
 export function ChatView({
     conversationId,
     otherUserName,
     otherUserPhone,
+    otherUserId,
     isUnknown,
     userId,
     currentUser,
@@ -54,13 +62,19 @@ export function ChatView({
     onAddContact,
     onContactUpdate,
     onNavigateCall,
+    contactId,
+    alias,
+    customFirstName,
+    customLastName,
 }: ChatViewProps) {
     const { messages, sendMessage, isLoading } = useChat(conversationId, userId);
     const [messageText, setMessageText] = useState('');
     const [isCorrecting, setIsCorrecting] = useState(false);
     const correctionOpacity = React.useRef(new Animated.Value(0)).current;
     const [showAddContactModal, setShowAddContactModal] = useState(false);
+    const [showProfile, setShowProfile] = useState(false);
     const [contactSaved, setContactSaved] = useState(false);
+    const [currentDisplayName, setCurrentDisplayName] = useState(otherUserName);
     const scrollViewRef = React.useRef<ScrollView>(null);
 
     // Create animated component for LinearGradient
@@ -142,6 +156,41 @@ export function ChatView({
         onNavigateCall(conversationId, myName, conversationId, userId);
     };
 
+    // Show profile screen if active
+    if (showProfile) {
+        return (
+            <ContactProfileScreen
+                userId={userId}
+                otherUserId={otherUserId || conversationId.replace('contact-', '')}
+                otherUserPhone={otherUserPhone}
+                contactId={contactId}
+                isContact={!isUnknown}
+                displayName={currentDisplayName}
+                alias={alias}
+                customFirstName={customFirstName}
+                customLastName={customLastName}
+                onBack={() => setShowProfile(false)}
+                onContactUpdated={(contact) => {
+                    const newName = contact.alias ||
+                        `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
+                        contact.phone;
+                    setCurrentDisplayName(newName);
+                    setShowProfile(false);
+                    if (onContactUpdate) onContactUpdate(contact);
+                }}
+                onContactAdded={(contact) => {
+                    const newName = contact.alias ||
+                        `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
+                        contact.phone;
+                    setCurrentDisplayName(newName);
+                    setContactSaved(true);
+                    setShowProfile(false);
+                    if (onContactUpdate) onContactUpdate(contact);
+                }}
+            />
+        );
+    }
+
     return (
         <View style={chatViewStyles.container}>
             {/* Header */}
@@ -150,18 +199,23 @@ export function ChatView({
                     <BackArrowIcon size={24} color="#000" />
                 </TouchableOpacity>
 
-                <View style={chatViewStyles.avatarSmall}>
-                    <Text style={chatViewStyles.avatarSmallText}>
-                        {otherUserName.charAt(0).toUpperCase()}
-                    </Text>
-                </View>
+                <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                    onPress={() => setShowProfile(true)}
+                >
+                    <View style={chatViewStyles.avatarSmall}>
+                        <Text style={chatViewStyles.avatarSmallText}>
+                            {currentDisplayName.charAt(0).toUpperCase()}
+                        </Text>
+                    </View>
 
-                <View style={chatViewStyles.headerInfo}>
-                    <Text style={chatViewStyles.chatName}>{otherUserName}</Text>
-                    {otherUserPhone && (
-                        <Text style={chatViewStyles.lastMessage}>{otherUserPhone}</Text>
-                    )}
-                </View>
+                    <View style={chatViewStyles.headerInfo}>
+                        <Text style={chatViewStyles.chatName}>{currentDisplayName}</Text>
+                        {otherUserPhone && (
+                            <Text style={chatViewStyles.lastMessage}>{otherUserPhone}</Text>
+                        )}
+                    </View>
+                </TouchableOpacity>
 
                 <TouchableOpacity style={{ padding: 8 }} onPress={startCall}>
                     <VideoCallIcon size={24} color="#000" />
