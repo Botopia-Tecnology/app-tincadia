@@ -49,6 +49,7 @@ export function ProfileScreen({
         );
     };
 
+
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar style="dark" />
