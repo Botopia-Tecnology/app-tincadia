@@ -40,6 +40,7 @@ export const API_ENDPOINTS = {
     ME: '/auth/me',
     USER_PROFILE: (userId: string) => `/auth/profile/${userId}`,
     AVAILABLE_USERS: (userId: string) => `/auth/users/${userId}`,
+    UPDATE_PUSH_TOKEN: '/auth/push-token',
 
     // Chat endpoints
     CONVERSATIONS: '/chat/conversations',

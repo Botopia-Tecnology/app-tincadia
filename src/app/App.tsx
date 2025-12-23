@@ -11,8 +11,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { I18nProvider } from '../contexts/I18nContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import { authService } from '../services/auth.service';
 import { SplashScreen } from '../components/SplashScreen';
 import { LoginScreen } from '../components/LoginScreen';
 import { CompleteProfileScreen } from '../components/CompleteProfileScreen';
@@ -24,10 +27,91 @@ import { AnimatedScreen } from '../components/AnimatedScreen';
 import { CallScreen } from '../screens/CallScreen';
 import { appStyles as styles } from '../styles/App.styles';
 
+// Configure notification behavior
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+async function registerForPushNotificationsAsync() {
+  let token;
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      console.warn('Failed to get push token for push notification!');
+      return;
+    }
+
+    try {
+      // Get the token from Expo
+      const expoPushTokenResponse = await Notifications.getExpoPushTokenAsync({
+        projectId: 'f00a224c-23fe-49ad-8474-e1ab7145df54',
+      });
+      token = expoPushTokenResponse.data;
+      console.log('✅ Expo Push Token:', token);
+    } catch (e) {
+      console.error('Error getting push token:', e);
+    }
+  } else {
+    console.log('Must use physical device for Push Notifications');
+  }
+
+  return token;
+}
+
 type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call';
 
 function AppContent() {
-  const { isAuthenticated, profileComplete, isLoading } = useAuth();
+  const { isAuthenticated, profileComplete, isLoading, user } = useAuth();
+  const [notification, setNotification] = useState<Notifications.Notification | null>(null);
+  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
+  const responseListener = useRef<Notifications.EventSubscription | null>(null);
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      registerForPushNotificationsAsync().then(token => {
+        if (token) {
+          authService.updatePushToken(user.id, token).catch(err =>
+            console.error('Failed to sync push token to server:', err)
+          );
+        }
+      });
+
+      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        setNotification(notification);
+      });
+
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+        console.log('Notification tapped:', response);
+        // Here we could navigate to specific chat if data.conversationId exists
+      });
+
+      return () => {
+        if (notificationListener.current) notificationListener.current.remove();
+        if (responseListener.current) responseListener.current.remove();
+      };
+    }
+  }, [isAuthenticated, user?.id]);
 
   // Simple navigation stack (no react-navigation). This lets Android "back" go to the previous screen.
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);

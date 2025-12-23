@@ -52,6 +52,7 @@ export interface UpdateProfileDto {
     documentTypeId?: number;
     documentNumber?: string;
     phone?: string;
+    pushToken?: string;
 }
 
 /**

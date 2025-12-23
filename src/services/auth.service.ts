@@ -177,4 +177,13 @@ export const authService = {
         }
         return null;
     },
+    /**
+     * Update/Register push notification token
+     */
+    async updatePushToken(userId: string, pushToken: string): Promise<void> {
+        await apiClient(API_ENDPOINTS.UPDATE_PUSH_TOKEN, {
+            method: 'POST',
+            body: JSON.stringify({ userId, pushToken }),
+        });
+    },
 };

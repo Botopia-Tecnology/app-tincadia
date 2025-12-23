@@ -291,7 +291,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           otherUserPhone: c.other_user_phone,
           lastMessage: c.last_message,
           lastMessageAt: c.last_message_at,
-          unreadCount: c.unread_count,
+          unreadCount: c.unread_count, // Use stored server count
         }));
 
         const items = transformToItems(contacts, conversations);
@@ -306,11 +306,11 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   }, [userId, transformToItems]);
 
   // Sync from server and update cache
-  const syncFromServer = useCallback(async (showLoading = false) => {
+  const syncFromServer = useCallback(async (showLoading = false, force = false) => {
     if (!userId) return;
 
-    // Skip if synced recently (< 30 seconds) - rely on cache for instant load
-    if (!shouldSync(`chats-${userId}`, 30000)) {
+    // Skip if synced recently (< 30 seconds) unless forced
+    if (!force && !shouldSync(`chats-${userId}`, 30000)) {
       console.log('⏭️ Skipping sync (too recent)');
       return;
     }
@@ -357,6 +357,8 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       updateSyncTime(`chats-${userId}`);
 
       // Update UI with fresh data
+      // Use server provided unreadCount for the list view as it is the source of truth
+      // Local calculation (getUnreadCountForConversation) only works if messages are synced locally
       const items = transformToItems(contacts, conversations);
       setChatItems(items);
       console.log('✅ Synced:', items.length, 'items');
@@ -411,21 +413,26 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*', // INSERT, UPDATE, DELETE
           schema: 'public',
           table: 'messages',
         },
         (payload) => {
-          const newMessage = payload.new as {
-            conversation_id: string;
-            sender_id: string;
-          };
+          const msg = payload.new as any;
 
-          // Only reload if message is for this user (not sent by them)
-          // and user is not currently in that chat
-          if (newMessage.sender_id !== userId && selectedChat?.conversationId !== newMessage.conversation_id) {
+          // For INSERT: Refresh list for new messages
+          if (payload.eventType === 'INSERT') {
             console.log('📩 New message received, refreshing chat list');
-            loadChats();
+            syncFromServer(false, true); // Force sync!
+          }
+
+          // For UPDATE: Refresh if status changed (e.g. read) to update badges
+          if (payload.eventType === 'UPDATE') {
+            const msg = payload.new as any;
+            if (msg.read_at) {
+              console.log('👁️ Message marked as read, refreshing chat list');
+              syncFromServer(false, true); // Force sync!
+            }
           }
         }
       )
@@ -504,11 +511,10 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   // Handle back from chat - load cache immediately, sync later
   const handleBack = useCallback(() => {
     setSelectedChat(null);
-    // Load from cache immediately (synchronous)
-    loadFromLocalCache();
-    // Sync from server in background (don't wait)
-    syncFromServer(false);
-  }, [loadFromLocalCache, syncFromServer]);
+    // Force immediate refresh to update unread counts
+    console.log('🔄 Closing chat, refreshing list immediately...');
+    loadChats();
+  }, [loadChats]);
 
   // Android hardware back: if inside a chat, go back to chat list instead of exiting the app.
   useEffect(() => {

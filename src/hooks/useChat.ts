@@ -20,6 +20,7 @@ import {
     MessageStatus,
 } from '../database/chatDatabase';
 import { chatService } from '../services/chat.service';
+import { supabase } from '../lib/supabase';
 
 export interface Message {
     id: string;
@@ -43,6 +44,7 @@ interface UseChatReturn {
     isLoading: boolean;
     error: string | null;
     retryPending: () => Promise<void>;
+    markMessagesAsRead: () => Promise<void>;
 }
 
 export function useChat(conversationId: string, userId: string): UseChatReturn {
@@ -51,6 +53,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
     const [error, setError] = useState<string | null>(null);
     const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isSyncingRef = useRef(false);
+    const channelRef = useRef<any>(null);
 
     // Transform LocalMessage to UI Message
     const transformMessage = useCallback((m: LocalMessage): Message => ({
@@ -140,6 +143,20 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 });
             });
 
+            if (newMessages.length > 0) {
+                console.log('📥 Got', newMessages.length, 'new messages');
+
+                // If there are new messages that are NOT mine, mark as read automatically
+                const hasIncoming = newMessages.some((msg: any) => {
+                    const msgSenderId = msg.senderId || msg.sender_id;
+                    return msgSenderId !== userId;
+                });
+
+                if (hasIncoming) {
+                    markMessagesAsRead();
+                }
+            }
+
             // Reload local messages to update UI
             loadLocalMessages();
         } catch (err) {
@@ -152,13 +169,165 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
 
     // Mark messages as read when user enters the chat
     const markMessagesAsRead = useCallback(async () => {
+        // --- 1. BROADCAST FAST PATH (Optimistic) ---
+        // We send this BEFORE the API call for zero-latency feedback to the sender.
+        if (channelRef.current) {
+            const state = channelRef.current.state;
+            if (state === 'joined') {
+                channelRef.current.send({
+                    type: 'broadcast',
+                    event: 'message_read',
+                    payload: { conversationId, readerId: userId, timestamp: new Date().toISOString() },
+                }).then((resp: any) => {
+                    console.log('🚀 Optimistic ACK Sent Status:', resp);
+                });
+            } else {
+                console.warn('⚠️ Channel not joined, skipping optimistic ACK');
+            }
+        }
+
         try {
             await chatService.markAsRead(conversationId, userId);
-            console.log('✓ Messages marked as read');
+            console.log('✓ Messages marked as read (API confirmed)');
         } catch (err) {
             console.error('Error marking messages as read:', err);
         }
     }, [conversationId, userId]);
+
+    // Subscribe to real-time updates for this specific conversation
+    useEffect(() => {
+        if (!conversationId || !userId) return;
+
+        console.log(`🔌 Subscribing to real-time messages for conv: ${conversationId}`);
+
+        // Normalize channel name to avoid mismatch
+        const channelId = `chat:${conversationId.toLowerCase()}`;
+        const channel = supabase
+            .channel(channelId)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*', // Listen to INSERT, UPDATE, DELETE
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `conversation_id=eq.${conversationId}`,
+                },
+                (payload) => {
+                    const newId = (payload.new as any)?.id;
+                    const oldId = (payload.old as any)?.id;
+                    console.log(`⚡ Real-time event [${payload.eventType}] for msg: ${newId || oldId}`);
+
+                    if (payload.eventType === 'INSERT') {
+                        const msg = payload.new as any;
+                        if (msg.sender_id !== userId) {
+                            console.log('📥 Incoming message via DB insert, syncing for decryption...');
+                        }
+                        // Sync to get decrypted content (and any status updates)
+                        syncFromServer();
+                    } else if (payload.eventType === 'UPDATE') {
+                        const msg = payload.new as any;
+
+                        // If it got marked as read, update local status DIRECTLY for instant UI response (blue check)
+                        if (msg.read_at) {
+                            console.log(`👁️ Message ${msg.id} marked as read via DB, updating UI`);
+                            updateMessageStatus(msg.id, 'read');
+                            loadLocalMessages();
+                        }
+
+                        // Also sync to ensure we have any other potential changes (like edited text)
+                        if (msg.sender_id !== userId || !msg.read_at) {
+                            syncFromServer();
+                        }
+                    } else if (payload.eventType === 'DELETE') {
+                        console.log('🗑️ Message deleted, removing local copy');
+                        const oldIdItem = (payload.old as any)?.id;
+                        if (oldIdItem) {
+                            deleteLocalMessage(oldIdItem);
+                            loadLocalMessages();
+                        }
+                    }
+                }
+            )
+            .on(
+                'broadcast',
+                { event: 'new_message' },
+                (payload) => {
+                    const msg = payload.payload;
+                    console.log('🚀 Broadcast [new_message] received:', msg?.id);
+
+                    if (msg && msg.conversationId === conversationId && msg.senderId !== userId) {
+                        // 1. Save locally for instant rendering
+                        saveMessage({
+                            id: msg.id,
+                            serverId: msg.id,
+                            conversationId: msg.conversationId,
+                            senderId: msg.senderId,
+                            content: msg.content,
+                            type: msg.type || 'text',
+                            status: 'delivered',
+                            createdAt: msg.createdAt,
+                            isMine: false,
+                        });
+                        loadLocalMessages();
+
+                        // NOTE: We DON'T auto-mark as read here!
+                        // Messages are only marked as read when the user is ACTIVELY in this chat.
+                        // The markMessagesAsRead happens in the main useEffect when user enters.
+                        console.log('✅ Message received via broadcast, NOT auto-marking as read');
+                    }
+                }
+            )
+            .on(
+                'broadcast',
+                { event: 'message_read' },
+                (payload) => {
+                    console.log('🚀 Broadcast [message_read] received:', payload);
+
+                    // IF WE ARE THE SENDER of the messages being read
+                    const readerId = payload.payload?.readerId;
+                    if (readerId && readerId !== userId) {
+                        console.log('✅ Instant UI Update: Marking messages as read');
+
+                        // OPTIMISTIC UI UPDATE: Update React state IMMEDIATELY
+                        let changed = false;
+                        setMessages(prevMessages =>
+                            prevMessages.map(msg => {
+                                if (msg.isMine && msg.status !== 'read') {
+                                    changed = true; // Mark that a change occurred
+                                    return { ...msg, status: 'read' as MessageStatus };
+                                }
+                                return msg;
+                            })
+                        );
+
+                        // Then update DB in background (async, non-blocking)
+                        setTimeout(() => {
+                            const rows = getLocalMessages(conversationId);
+                            rows.forEach(m => {
+                                if (m.isMine && m.status !== 'read') {
+                                    updateMessageStatus(m.id, 'read');
+                                }
+                            });
+                        }, 0);
+
+                        if (changed) {
+                            loadLocalMessages();
+                        }
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log(`📡 Subscription status for ${conversationId}:`, status);
+            });
+
+        channelRef.current = channel;
+
+        return () => {
+            console.log(`🔌 Unsubscribing from chat:${conversationId}`);
+            supabase.removeChannel(channel);
+            channelRef.current = null;
+        };
+    }, [conversationId, userId, loadLocalMessages]);
 
     // Initial load and polling setup
     useEffect(() => {
@@ -172,10 +341,10 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
             markMessagesAsRead();
         });
 
-        // 4. Poll for new messages every 15 seconds (reduced from 10s)
+        // 4. Poll for new messages every 30 seconds as fail-safe (increased from 15s)
         pollingIntervalRef.current = setInterval(() => {
             syncFromServer();
-        }, 15000);
+        }, 30000);
 
         return () => {
             if (pollingIntervalRef.current) {
@@ -233,6 +402,25 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 createdAt: serverMsgCreatedAt,
                 isMine: true,
             });
+
+            // --- BROADCAST FAST PATH (Send) ---
+            // Now that we have the REAL ID, notify the other user immediately via broadcast
+            if (channelRef.current && channelRef.current.state === 'joined') {
+                console.log('🚀 Broadcasting new_message to recipient (Confirmed ID)...');
+                channelRef.current.send({
+                    type: 'broadcast',
+                    event: 'new_message',
+                    payload: {
+                        id: serverMsg.id, // Use Real Server ID
+                        conversationId: serverMsgConvId,
+                        senderId: serverMsgSenderId,
+                        content: serverMsg.content,
+                        type: serverMsg.type || 'text',
+                        createdAt: serverMsgCreatedAt,
+                        isMine: false
+                    },
+                });
+            }
 
             loadLocalMessages();
             console.log('✓ Message sent:', serverMsg.id);
@@ -332,5 +520,6 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         isLoading,
         error,
         retryPending,
+        markMessagesAsRead,
     };
 }
