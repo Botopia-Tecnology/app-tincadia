@@ -21,7 +21,8 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
         "NSCameraUsageDescription": "Necesitamos acceso a tu cámara para las videollamadas.",
-        "NSMicrophoneUsageDescription": "Necesitamos acceso a tu micrófono para las videollamadas."
+        "NSMicrophoneUsageDescription": "Necesitamos acceso a tu micrófono para las videollamadas.",
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para enviar fotos en el chat."
       },
       "googleServicesFile": "./GoogleService-Info.plist"
     },
