@@ -46,7 +46,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                         <TouchableWithoutFeedback>
                             <View style={styles.floatingMenuContainer}>
                                 <View style={styles.floatingMenuItem}>
-                                    <Text style={styles.floatingLabel}>Opción 1</Text>
+                                    <Text style={styles.floatingLabel}>TinCards</Text>
                                     <TouchableOpacity style={styles.floatingButton} onPress={() => handleMenuOption('Option 1')}>
                                         <Text style={styles.floatingButtonText}>1</Text>
                                     </TouchableOpacity>

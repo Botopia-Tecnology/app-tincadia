@@ -38,7 +38,7 @@ export interface Message {
 
 interface UseChatReturn {
     messages: Message[];
-    sendMessage: (content: string, type?: string, metadata?: any) => Promise<void>;
+    sendMessage: (content: string, type?: 'text' | 'image' | 'audio' | 'call' | 'call_ended') => Promise<void>;
     editMessage: (messageId: string, content: string) => Promise<void>;
     deleteMessage: (messageId: string) => Promise<void>;
     isLoading: boolean;
@@ -354,7 +354,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
     }, [conversationId, userId, loadLocalMessages, syncFromServer, markMessagesAsRead]);
 
     // Send a message with optimistic update (WhatsApp style)
-    const sendMessage = useCallback(async (content: string) => {
+    const sendMessage = useCallback(async (content: string, type: 'text' | 'image' | 'audio' | 'call' | 'call_ended' = 'text') => {
         if (!content.trim()) return;
 
         // Optimistic update
@@ -366,7 +366,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
             conversationId,
             senderId: userId,
             content,
-            type: 'text',
+            type,
             status: 'pending',
             createdAt: now,
             isMine: true,
@@ -385,7 +385,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 conversationId,
                 senderId: userId,
                 content,
-                type: 'text',
+                type,
             }) as { message: any };
 
             // Update local message: pending → SENT
@@ -401,7 +401,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 conversationId: serverMsgConvId,
                 senderId: serverMsgSenderId,
                 content: serverMsg.content,
-                type: 'text',
+                type,
                 status: 'sent',
                 createdAt: serverMsgCreatedAt,
                 updatedAt: serverMsgCreatedAt,
@@ -419,7 +419,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                         conversationId: serverMsgConvId,
                         senderId: serverMsgSenderId,
                         content: serverMsg.content,
-                        type: 'text',
+                        type,
                         createdAt: serverMsgCreatedAt,
                         isMine: false
                     },

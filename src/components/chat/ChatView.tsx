@@ -15,6 +15,7 @@ import {
     Platform,
     ScrollView,
     Animated,
+    Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../../hooks/useChat';
@@ -22,6 +23,7 @@ import { chatService } from '../../services/chat.service';
 import { chatViewStyles } from '../../styles/ChatsScreen.styles';
 import { AddContactModal } from '../AddContactModal';
 import { ContactProfileScreen } from './ContactProfileScreen';
+import { MessageBubble } from './MessageBubble';
 import { MagicPencilIcon } from '../icons/ActionIcons';
 import {
     BackArrowIcon,
@@ -30,6 +32,7 @@ import {
     PlusIcon,
     VideoCallIcon,
 } from '../icons/NavigationIcons';
+import { mediaService } from '../../services/media.service';
 
 export interface ChatViewProps {
     conversationId: string;
@@ -72,6 +75,8 @@ export function ChatView({
     const [isCorrecting, setIsCorrecting] = useState(false);
     const correctionOpacity = React.useRef(new Animated.Value(0)).current;
     const [showAddContactModal, setShowAddContactModal] = useState(false);
+    const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
     const [contactSaved, setContactSaved] = useState(false);
     const [currentDisplayName, setCurrentDisplayName] = useState(otherUserName);
@@ -154,6 +159,57 @@ export function ChatView({
     const joinCall = () => {
         const myName = currentUser?.firstName || currentUser?.email || 'Usuario';
         onNavigateCall(conversationId, myName, conversationId, userId);
+    };
+
+    const handleMediaPick = async () => {
+        if (isUploadingMedia) return;
+
+        try {
+            // 1. Pick image/video from gallery
+            const media = await mediaService.pickMedia();
+            if (!media) return; // User cancelled or file too large
+
+            setIsUploadingMedia(true);
+
+            // 2. Upload to Supabase Storage
+            const storageKey = await mediaService.uploadMedia(media);
+
+            // 3. Send message with appropriate type
+            await sendMessage(storageKey, media.type === 'video' ? 'image' : 'image');
+
+        } catch (error) {
+            console.error('Media upload failed:', error);
+            Alert.alert('Error', 'Error al subir el archivo. Intenta de nuevo.');
+        } finally {
+            setIsUploadingMedia(false);
+        }
+    };
+
+    const handleAudioStart = async () => {
+        if (isRecording || isUploadingMedia) return;
+        const started = await mediaService.startRecording();
+        if (started) {
+            setIsRecording(true);
+        }
+    };
+
+    const handleAudioStop = async () => {
+        if (!isRecording) return;
+        setIsRecording(false);
+        setIsUploadingMedia(true);
+
+        try {
+            const audio = await mediaService.stopRecording();
+            if (audio) {
+                const storageKey = await mediaService.uploadMedia(audio);
+                await sendMessage(storageKey, 'audio');
+            }
+        } catch (error) {
+            console.error('Audio upload failed:', error);
+            Alert.alert('Error', 'Error al enviar el audio.');
+        } finally {
+            setIsUploadingMedia(false);
+        }
     };
 
     // Show profile screen if active
@@ -284,10 +340,6 @@ export function ChatView({
                             return (
                                 <View
                                     key={msg.id}
-                                    style={[
-                                        chatViewStyles.messageBubbleContainer,
-                                        isMe ? chatViewStyles.myMessage : chatViewStyles.theirMessage,
-                                    ]}
                                 >
                                     <MessageBubble
                                         content={msg.content}
@@ -311,8 +363,16 @@ export function ChatView({
             >
                 <View style={chatViewStyles.inputContainer}>
                     <View style={chatViewStyles.inputRow}>
-                        <TouchableOpacity style={chatViewStyles.mediaButton}>
-                            <PlusIcon size={24} color="#666666" />
+                        <TouchableOpacity
+                            style={[chatViewStyles.mediaButton, isUploadingMedia && { opacity: 0.5 }]}
+                            onPress={handleMediaPick}
+                            disabled={isUploadingMedia}
+                        >
+                            {isUploadingMedia ? (
+                                <ActivityIndicator size="small" color="#666666" />
+                            ) : (
+                                <PlusIcon size={24} color="#666666" />
+                            )}
                         </TouchableOpacity>
 
                         <View style={chatViewStyles.inputWrapper}>
@@ -353,8 +413,16 @@ export function ChatView({
                                 <SendIcon size={20} color="#FFFFFF" />
                             </TouchableOpacity>
                         ) : (
-                            <TouchableOpacity style={chatViewStyles.micButton}>
-                                <MicrophoneIcon size={24} color="#666666" />
+                            <TouchableOpacity
+                                style={[chatViewStyles.micButton, isRecording && { backgroundColor: '#EF4444' }]}
+                                onPressIn={handleAudioStart}
+                                onPressOut={handleAudioStop}
+                            >
+                                {isRecording ? (
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                ) : (
+                                    <MicrophoneIcon size={24} color="#666666" />
+                                )}
                             </TouchableOpacity>
                         )}
                     </View>

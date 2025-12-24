@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "app-tincadia",
-    "slug": "app-tincadia",
+    "slug": "tincadia",
     "scheme": "tincadia",
     "version": "3.0.0",
     "orientation": "portrait",
@@ -64,7 +64,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "f00a224c-23fe-49ad-8474-e1ab7145df54"
+        "projectId": "8bf6b071-622c-4428-a2f8-b83b95fa2d99"
       }
     }
   }
