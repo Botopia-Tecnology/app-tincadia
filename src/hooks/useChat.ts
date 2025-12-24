@@ -38,7 +38,7 @@ export interface Message {
 
 interface UseChatReturn {
     messages: Message[];
-    sendMessage: (content: string) => Promise<void>;
+    sendMessage: (content: string, type?: string, metadata?: any) => Promise<void>;
     editMessage: (messageId: string, content: string) => Promise<void>;
     deleteMessage: (messageId: string) => Promise<void>;
     isLoading: boolean;
@@ -355,26 +355,31 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
 
     // Send a message with optimistic update (WhatsApp style)
     const sendMessage = useCallback(async (content: string) => {
-        const tempId = `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        if (!content.trim()) return;
+
+        // Optimistic update
+        const tempId = Date.now().toString();
         const now = new Date().toISOString();
 
-        // 1. Save as PENDING (optimistic update)
-        saveMessage({
+        const localMessage: LocalMessage = {
             id: tempId,
             conversationId,
             senderId: userId,
             content,
             type: 'text',
-            status: 'pending', // ⏳ Pending
+            status: 'pending',
             createdAt: now,
             isMine: true,
-        });
+            updatedAt: now,
+        };
+
+        saveMessage(localMessage);
 
         // Reload to show pending message immediately
         loadLocalMessages();
 
         try {
-            // 2. Send to server
+            // Send to server
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const { message: serverMsg } = await chatService.sendMessage({
                 conversationId,
@@ -383,8 +388,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 type: 'text',
             }) as { message: any };
 
-            // 3. Update local message: pending → SENT
-            // Delete temp and save with server ID
+            // Update local message: pending → SENT
             deleteLocalMessage(tempId);
 
             const serverMsgConvId = serverMsg.conversationId || serverMsg.conversation_id || conversationId;
@@ -397,37 +401,37 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 conversationId: serverMsgConvId,
                 senderId: serverMsgSenderId,
                 content: serverMsg.content,
-                type: serverMsg.type || 'text',
-                status: 'sent', // ✓ Sent
+                type: 'text',
+                status: 'sent',
                 createdAt: serverMsgCreatedAt,
+                updatedAt: serverMsgCreatedAt,
                 isMine: true,
             });
 
             // --- BROADCAST FAST PATH (Send) ---
-            // Now that we have the REAL ID, notify the other user immediately via broadcast
             if (channelRef.current && channelRef.current.state === 'joined') {
                 console.log('🚀 Broadcasting new_message to recipient (Confirmed ID)...');
                 channelRef.current.send({
                     type: 'broadcast',
                     event: 'new_message',
                     payload: {
-                        id: serverMsg.id, // Use Real Server ID
+                        id: serverMsg.id,
                         conversationId: serverMsgConvId,
                         senderId: serverMsgSenderId,
                         content: serverMsg.content,
-                        type: serverMsg.type || 'text',
+                        type: 'text',
                         createdAt: serverMsgCreatedAt,
                         isMine: false
                     },
                 });
             }
 
+            // Reload to show checkmark
             loadLocalMessages();
-            console.log('✓ Message sent:', serverMsg.id);
+
         } catch (err) {
-            console.error('Error sending message:', err);
-            setError('Error al enviar mensaje');
-            // Message stays as PENDING - can retry later
+            console.error('Failed to send message:', err);
+            // Ideally mark as failed in DB, but for now just log
         }
     }, [conversationId, userId, loadLocalMessages]);
 
@@ -442,7 +446,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     conversationId: msg.conversationId,
                     senderId: msg.senderId,
                     content: msg.content,
-                    type: msg.type as 'text' | 'image' | 'audio' | 'call' | 'call_ended',
+                    type: 'text',
                 }) as { message: any };
 
                 // Update local message
@@ -453,7 +457,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     conversationId,
                     senderId: userId,
                     content: serverMsg.content,
-                    type: serverMsg.type || 'text',
+                    type: 'text',
                     status: 'sent',
                     createdAt: serverMsg.createdAt || serverMsg.created_at,
                     isMine: true,

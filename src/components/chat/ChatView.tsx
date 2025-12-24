@@ -289,49 +289,14 @@ export function ChatView({
                                         isMe ? chatViewStyles.myMessage : chatViewStyles.theirMessage,
                                     ]}
                                 >
-                                    <View
-                                        style={[
-                                            chatViewStyles.messageBubble,
-                                            isMe ? chatViewStyles.myBubble : chatViewStyles.theirBubble,
-                                        ]}
-                                    >
-                                        <Text
-                                            style={[
-                                                chatViewStyles.messageText,
-                                                isMe ? chatViewStyles.myMessageText : chatViewStyles.theirMessageText,
-                                            ]}
-                                        >
-                                            {msg.content}
-                                        </Text>
-
-                                        <View style={chatViewStyles.messageFooter}>
-                                            <Text
-                                                style={[
-                                                    chatViewStyles.messageTime,
-                                                    isMe ? chatViewStyles.myTime : chatViewStyles.theirTime,
-                                                ]}
-                                            >
-                                                {formatTime(msg.createdAt)}
-                                            </Text>
-                                            {/* WhatsApp-style checkmarks */}
-                                            {isMe && (
-                                                <Text style={[
-                                                    chatViewStyles.checkmarks,
-                                                    {
-                                                        color: msg.status === 'read'
-                                                            ? '#53BDEB'  // Blue for read
-                                                            : msg.status === 'pending'
-                                                                ? 'rgba(255, 255, 255, 0.4)'  // Faded for pending
-                                                                : 'rgba(255, 255, 255, 0.6)'  // Normal for sent/delivered
-                                                    }
-                                                ]}>
-                                                    {msg.status === 'pending' ? '⏳' :
-                                                        msg.status === 'sent' ? '✓' :
-                                                            '✓✓'}
-                                                </Text>
-                                            )}
-                                        </View>
-                                    </View>
+                                    <MessageBubble
+                                        content={msg.content}
+                                        time={msg.createdAt}
+                                        isMine={isMe}
+                                        isSynced={msg.status !== 'pending'}
+                                        isRead={msg.status === 'read'}
+                                        type={msg.type || 'text'}
+                                    />
                                 </View>
                             );
                         })

@@ -9,9 +9,12 @@ import { View, TextInput, TouchableOpacity, Text, ActivityIndicator, Animated } 
 import { MagicPencilIcon } from '../icons/ActionIcons';
 import { chatService } from '../../services/chat.service';
 import { chatInputStyles as styles } from '../../styles/ChatComponents.styles';
+import { mediaService } from '../../services/media.service';
+import { PlusIcon } from '../icons/NavigationIcons';
+import { Alert } from 'react-native';
 
 interface ChatInputProps {
-    onSend: (message: string) => void;
+    onSend: (message: string, type?: string, metadata?: any) => void;
     disabled?: boolean;
     placeholder?: string;
 }
@@ -66,10 +69,47 @@ export function ChatInput({ onSend, disabled = false, placeholder = 'Escribe un 
         }
     };
 
+    const handleAttachment = async () => {
+        if (disabled || isSending) return;
+        try {
+            const media = await mediaService.pickMedia();
+            if (!media) return;
+
+            setIsSending(true); // Block input while uploading
+
+            // Upload
+            const storageKey = await mediaService.uploadMedia(media.uri);
+
+            // Send
+            await onSend(storageKey, media.type, {
+                width: media.width,
+                height: media.height,
+                fileSize: media.fileSize,
+                mimeType: media.mimeType,
+                fileName: media.fileName,
+                localUri: media.uri // Optimization: Display this immediately
+            });
+
+        } catch (error) {
+            console.error('Attachment error:', error);
+            Alert.alert('Error', 'No se pudo enviar la imagen.');
+        } finally {
+            setIsSending(false);
+        }
+    };
+
     const canSend = text.trim().length > 0 && !disabled && !isSending;
 
     return (
         <View style={styles.container}>
+            <TouchableOpacity
+                style={styles.attachButton}
+                onPress={handleAttachment}
+                disabled={disabled || isSending}
+            >
+                <PlusIcon size={24} color="#007AFF" />
+            </TouchableOpacity>
+
             <TextInput
                 style={styles.input}
                 value={text}
@@ -92,8 +132,7 @@ export function ChatInput({ onSend, disabled = false, placeholder = 'Escribe un 
                     {isCorrecting ? (
                         <ActivityIndicator size="small" color="#FF69B4" />
                     ) : (
-                        // Debug: Simple square to test visibility
-                        <View style={{ width: 24, height: 24, backgroundColor: '#FF69B4' }} />
+                        <View style={{ width: 24, height: 24 }} />
                     )}
                 </TouchableOpacity>
             )}

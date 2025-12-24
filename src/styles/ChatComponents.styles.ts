@@ -12,6 +12,12 @@ export const chatInputStyles = StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: '#E0E0E0',
     },
+    attachButton: {
+        padding: 5,
+        marginRight: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     input: {
         flex: 1,
         minHeight: 40,
