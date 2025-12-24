@@ -17,6 +17,7 @@
     "@react-native-firebase/app": "21.6.0",
     "@react-native-google-signin/google-signin": "^16.0.0",
     "@supabase/supabase-js": "^2.87.1",
+    "base64-arraybuffer": "^1.0.2",
     "expo": "~54.0.25",
     "expo-auth-session": "^7.0.10",
     "expo-av": "~16.0.8",

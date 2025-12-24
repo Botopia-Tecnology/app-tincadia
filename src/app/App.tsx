@@ -65,7 +65,7 @@ async function registerForPushNotificationsAsync() {
     try {
       // Get the token from Expo
       const expoPushTokenResponse = await Notifications.getExpoPushTokenAsync({
-        projectId: 'f00a224c-23fe-49ad-8474-e1ab7145df54',
+        projectId: '8bf6b071-622c-4428-a2f8-b83b95fa2d99',
       });
       token = expoPushTokenResponse.data;
       console.log('✅ Expo Push Token:', token);
@@ -91,9 +91,7 @@ function AppContent() {
     if (isAuthenticated && user) {
       registerForPushNotificationsAsync().then(token => {
         if (token) {
-          authService.updatePushToken(user.id, token).catch(err =>
-            console.error('Failed to sync push token to server:', err)
-          );
+          authService.updatePushToken(user.id, token).catch(() => { });
         }
       });
 
