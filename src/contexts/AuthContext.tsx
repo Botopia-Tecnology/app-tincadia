@@ -35,6 +35,7 @@ interface AuthContextValue {
     updateProfile: (data: UpdateProfileDto) => Promise<void>;
     logout: () => Promise<void>;
     clearError: () => void;
+    refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -198,6 +199,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setError(null);
     }, []);
 
+    const refreshProfile = useCallback(async () => {
+        try {
+            const result = await authService.getCurrentUser(true); // force refresh
+            if (result) {
+                setUser({
+                    ...result.user,
+                    isProfileComplete: result.isProfileComplete,
+                });
+            }
+        } catch (err) {
+            console.error('Failed to refresh profile:', err);
+        }
+    }, []);
+
     const value = useMemo<AuthContextValue>(() => ({
         user,
         isLoading,
@@ -210,7 +225,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updateProfile,
         logout,
         clearError,
-    }), [user, isLoading, error, login, register, loginWithOAuth, updateProfile, logout, clearError]);
+        refreshProfile,
+    }), [user, isLoading, error, login, register, loginWithOAuth, updateProfile, logout, clearError, refreshProfile]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

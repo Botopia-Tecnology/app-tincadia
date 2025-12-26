@@ -11,8 +11,6 @@ import {
     TouchableOpacity,
     TextInput,
     ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
     ScrollView,
     Animated,
     Alert,
@@ -358,77 +356,72 @@ export function ChatView({
             )}
 
             {/* Input Area */}
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-            >
-                <View style={chatViewStyles.inputContainer}>
-                    <View style={chatViewStyles.inputRow}>
+            <View style={chatViewStyles.inputContainer}>
+                <View style={chatViewStyles.inputRow}>
+                    <TouchableOpacity
+                        style={[chatViewStyles.mediaButton, isUploadingMedia && { opacity: 0.5 }]}
+                        onPress={handleMediaPick}
+                        disabled={isUploadingMedia}
+                    >
+                        {isUploadingMedia ? (
+                            <ActivityIndicator size="small" color="#666666" />
+                        ) : (
+                            <PlusIcon size={24} color="#666666" />
+                        )}
+                    </TouchableOpacity>
+
+                    <View style={chatViewStyles.inputWrapper}>
+                        {/* Gradient Overlay when correcting */}
+                        <AnimatedGradient
+                            colors={['rgba(255, 215, 0, 0.3)', 'rgba(255, 105, 180, 0.3)', 'rgba(0, 191, 255, 0.3)']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={[
+                                { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
+                                { opacity: correctionOpacity }
+                            ]}
+                        />
+                        <TextInput
+                            style={chatViewStyles.textInput}
+                            placeholder="Escribe un mensaje..."
+                            placeholderTextColor="#9CA3AF"
+                            multiline
+                            value={messageText}
+                            onChangeText={setMessageText}
+                        />
                         <TouchableOpacity
-                            style={[chatViewStyles.mediaButton, isUploadingMedia && { opacity: 0.5 }]}
-                            onPress={handleMediaPick}
-                            disabled={isUploadingMedia}
+                            style={[chatViewStyles.pencilButton, { opacity: isCorrecting ? 0.5 : 1 }]}
+                            onPress={handleCorrection}
+                            disabled={isCorrecting}
                         >
-                            {isUploadingMedia ? (
-                                <ActivityIndicator size="small" color="#666666" />
+                            <Animated.View style={{ opacity: correctionOpacity }}>
+                                <MagicPencilIcon size={24} />
+                            </Animated.View>
+                            <View style={{ position: 'absolute', opacity: isCorrecting ? 0 : 1 }}>
+                                <MagicPencilIcon size={24} />
+                            </View>
+                        </TouchableOpacity>
+                    </View>
+
+                    {messageText.trim() ? (
+                        <TouchableOpacity style={chatViewStyles.sendButton} onPress={handleSend}>
+                            <SendIcon size={20} color="#FFFFFF" />
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity
+                            style={[chatViewStyles.micButton, isRecording && { backgroundColor: '#EF4444' }]}
+                            onPressIn={handleAudioStart}
+                            onPressOut={handleAudioStop}
+                        >
+                            {isRecording ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
-                                <PlusIcon size={24} color="#666666" />
+                                <MicrophoneIcon size={24} color="#666666" />
                             )}
                         </TouchableOpacity>
-
-                        <View style={chatViewStyles.inputWrapper}>
-                            {/* Gradient Overlay when correcting */}
-                            <AnimatedGradient
-                                colors={['rgba(255, 215, 0, 0.3)', 'rgba(255, 105, 180, 0.3)', 'rgba(0, 191, 255, 0.3)']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={[
-                                    { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
-                                    { opacity: correctionOpacity }
-                                ]}
-                            />
-                            <TextInput
-                                style={chatViewStyles.textInput}
-                                placeholder="Escribe un mensaje..."
-                                placeholderTextColor="#9CA3AF"
-                                multiline
-                                value={messageText}
-                                onChangeText={setMessageText}
-                            />
-                            <TouchableOpacity
-                                style={[chatViewStyles.pencilButton, { opacity: isCorrecting ? 0.5 : 1 }]}
-                                onPress={handleCorrection}
-                                disabled={isCorrecting}
-                            >
-                                <Animated.View style={{ opacity: correctionOpacity }}>
-                                    <MagicPencilIcon size={24} />
-                                </Animated.View>
-                                <View style={{ position: 'absolute', opacity: isCorrecting ? 0 : 1 }}>
-                                    <MagicPencilIcon size={24} />
-                                </View>
-                            </TouchableOpacity>
-                        </View>
-
-                        {messageText.trim() ? (
-                            <TouchableOpacity style={chatViewStyles.sendButton} onPress={handleSend}>
-                                <SendIcon size={20} color="#FFFFFF" />
-                            </TouchableOpacity>
-                        ) : (
-                            <TouchableOpacity
-                                style={[chatViewStyles.micButton, isRecording && { backgroundColor: '#EF4444' }]}
-                                onPressIn={handleAudioStart}
-                                onPressOut={handleAudioStop}
-                            >
-                                {isRecording ? (
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
-                                ) : (
-                                    <MicrophoneIcon size={24} color="#666666" />
-                                )}
-                            </TouchableOpacity>
-                        )}
-                    </View>
+                    )}
                 </View>
-            </KeyboardAvoidingView>
+            </View>
 
             {/* Add Contact Modal for unknown users */}
             {

@@ -1,8 +1,11 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, SafeAreaView, ScrollView, Image, TextInput, Alert, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
+import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
+import * as ImagePicker from 'expo-image-picker';
 import { profileScreenStyles as styles } from '../styles/ProfileScreen.styles';
 import { useAuth } from '../contexts/AuthContext';
+import { profilePictureService } from '../services/profilePicture.service';
 import {
     ChatIcon,
     CoursesIcon,
@@ -15,6 +18,7 @@ import {
     HelpIcon,
     InviteIcon,
     ChevronRightIcon,
+    CameraIcon,
 } from './icons/NavigationIcons';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
@@ -32,7 +36,42 @@ export function ProfileScreen({
     userId,
     onShowNotifications,
 }: ProfileScreenProps) {
-    const { user, logout, isLoading } = useAuth();
+    const { user, logout, isLoading, refreshProfile } = useAuth();
+    const [isUploading, setIsUploading] = useState(false);
+
+    const handleEditAvatar = async () => {
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería para cambiar la foto de perfil.');
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.8,
+            });
+
+            if (!result.canceled && result.assets[0].uri && user) {
+                setIsUploading(true);
+                try {
+                    await profilePictureService.uploadProfilePicture(user.id, result.assets[0].uri);
+                    await refreshProfile();
+                    Alert.alert('Éxito', 'Foto de perfil actualizada correctamente');
+                } catch (error) {
+                    console.error('Upload Error:', error);
+                    Alert.alert('Error', 'No se pudo subir la imagen. Inténtalo de nuevo.');
+                } finally {
+                    setIsUploading(false);
+                }
+            }
+        } catch (error) {
+            console.error('Picker Error:', error);
+            setIsUploading(false);
+        }
+    };
 
     const handleLogout = () => {
         Alert.alert(
@@ -57,7 +96,7 @@ export function ProfileScreen({
 
 
     return (
-        <SafeAreaView style={styles.container}>
+        <KeyboardSafeView style={styles.container}>
             <StatusBar style="dark" />
 
             {/* Header */}
@@ -92,15 +131,25 @@ export function ProfileScreen({
 
                 {/* Profile Section */}
                 <View style={styles.profileSection}>
-                    <View style={styles.avatarContainer}>
-                        <Image
-                            source={require('../../assets/user.png')}
-                            style={styles.avatar}
-                        />
-                        <View style={styles.badgeIcon}>
-                            <AccountIcon size={16} color="#666666" />
+                    <TouchableOpacity
+                        style={styles.avatarContainer}
+                        onPress={handleEditAvatar}
+                        disabled={isUploading}
+                    >
+                        {isUploading ? (
+                            <View style={[styles.avatar, { backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }]}>
+                                <ActivityIndicator color="#0000ff" />
+                            </View>
+                        ) : (
+                            <Image
+                                source={user?.avatarUrl ? { uri: user.avatarUrl } : require('../../assets/user.png')}
+                                style={styles.avatar}
+                            />
+                        )}
+                        <View style={[styles.badgeIcon, { backgroundColor: '#007AFF', padding: 4, borderRadius: 12 }]}>
+                            <CameraIcon size={14} color="#FFFFFF" />
                         </View>
-                    </View>
+                    </TouchableOpacity>
                     <View style={styles.userInfo}>
                         <Text style={styles.userName}>
                             {user ? `${user.firstName} ${user.lastName}` : 'Usuario'}
@@ -175,7 +224,7 @@ export function ProfileScreen({
             </ScrollView>
 
             <BottomNavigation currentScreen="profile" onNavigate={onNavigate} />
-        </SafeAreaView>
+        </KeyboardSafeView>
     );
 }
 
