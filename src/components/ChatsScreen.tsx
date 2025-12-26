@@ -17,7 +17,7 @@ import {
   Platform,
   AppState,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
@@ -593,8 +593,10 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
 
   // Show individual chat if selected
   if (selectedChat) {
+    const keyboardOffset = Platform.OS === 'ios' ? 100 : 0;
+
     return (
-      <SafeAreaView style={styles.container}>
+      <KeyboardSafeView style={styles.container} offset={keyboardOffset}>
         <StatusBar style="dark" />
         <ChatView
           conversationId={selectedChat.conversationId}
@@ -640,7 +642,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           }}
           onNavigateCall={(roomName, username, conversationId, passedUserId) => onNavigate('call', { roomName, username, conversationId, userId: passedUserId })}
         />
-      </SafeAreaView>
+      </KeyboardSafeView>
     );
   }
 
@@ -656,7 +658,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
 
   // Show user list
   return (
-    <SafeAreaView style={styles.container}>
+    <KeyboardSafeView style={styles.container}>
       <StatusBar style="dark" />
 
       {/* Header */}
@@ -870,7 +872,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       />
 
       <BottomNavigation currentScreen="chats" onNavigate={onNavigate} />
-    </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 

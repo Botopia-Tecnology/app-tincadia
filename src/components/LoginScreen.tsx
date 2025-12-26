@@ -5,12 +5,12 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   Modal,
   ActivityIndicator,
 } from 'react-native';
+import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../hooks/useTranslation';
@@ -88,10 +88,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <KeyboardSafeView style={styles.container}>
       <StatusBar style="dark" />
 
       <ScrollView
@@ -264,6 +261,6 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </KeyboardSafeView>
   );
 }

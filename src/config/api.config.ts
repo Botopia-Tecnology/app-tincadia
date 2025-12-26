@@ -42,6 +42,7 @@ export const API_ENDPOINTS = {
     AVAILABLE_USERS: (userId: string) => `/auth/users/${userId}`,
     UPDATE_PUSH_TOKEN: '/auth/push-token',
     RESET_PASSWORD: '/auth/reset-password',
+    UPLOAD_AVATAR: (userId: string) => `/auth/profile/${userId}/avatar`,
 
     // Chat endpoints
     CONVERSATIONS: '/chat/conversations',

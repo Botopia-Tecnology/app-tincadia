@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -14,6 +13,7 @@ import {
   ActivityIndicator,
   BackHandler,
 } from 'react-native';
+import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -215,234 +215,229 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
   const displayError = validationError || error;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <KeyboardSafeView style={styles.container}>
+      <StatusBar style="dark" />
+      <ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <StatusBar style="dark" />
-        <ScrollView
-          ref={scrollViewRef}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Title Section */}
-          <View style={styles.titleContainer}>
-            <View style={styles.logoArea}>
-              <TouchableOpacity style={styles.absoluteBackButton} onPress={handleBack} disabled={isLoading}>
-                <Text style={styles.backArrow}>←</Text>
-              </TouchableOpacity>
-              {step === 1 ? (
-                <Image
-                  source={require('../../assets/icon.png')}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
-              ) : (
-                <View style={{ height: 80 }} />
-              )}
-              <View style={styles.absoluteProgress}>
-                <ProgressCircle current={step} total={totalSteps} />
-              </View>
-            </View>
-            <Text style={styles.title}>Bienvenido a Tincadia</Text>
-            <Text style={styles.subtitle}>
-              Crea tu cuenta y comienza a aprender hoy mismo.
-            </Text>
-          </View>
-
-          {/* Error Message */}
-          {displayError && (
-            <TouchableOpacity
-              onPress={() => { setValidationError(null); clearError(); }}
-              style={{
-                backgroundColor: '#FFE5E5',
-                borderRadius: 8,
-                padding: 12,
-                marginHorizontal: 20,
-                marginBottom: 16,
-                borderWidth: 1,
-                borderColor: '#FF4444',
-              }}
-            >
-              <Text style={{ color: '#CC0000', fontSize: 14 }}>{displayError}</Text>
+        {/* Title Section */}
+        <View style={styles.titleContainer}>
+          <View style={styles.logoArea}>
+            <TouchableOpacity style={styles.absoluteBackButton} onPress={handleBack} disabled={isLoading}>
+              <Text style={styles.backArrow}>←</Text>
             </TouchableOpacity>
-          )}
-
-          {/* Form Content */}
-          <View style={styles.formContainer}>
             {step === 1 ? (
-              <>
-                {/* Step 1: Email & Passwords */}
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('register.email')}
-                  placeholderTextColor="#999"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!isLoading}
-                />
-                <View style={{ width: '100%', position: 'relative' }}>
-                  <TextInput
-                    style={[styles.input, { paddingRight: 50 }]}
-                    placeholder={t('register.password')}
-                    placeholderTextColor="#999"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    editable={!isLoading}
-                  />
-                  <TouchableOpacity
-                    style={{
-                      position: 'absolute',
-                      right: 28,
-                      top: 16,
-                    }}
-                    onPress={() => setShowPassword(!showPassword)}
-                  >
-                    <Ionicons
-                      name={showPassword ? 'eye' : 'eye-off'}
-                      size={22}
-                      color="#666"
-                    />
-                  </TouchableOpacity>
-                </View>
-                <View style={{ width: '100%', position: 'relative' }}>
-                  <TextInput
-                    style={[styles.input, { paddingRight: 50 }]}
-                    placeholder={t('register.confirmPassword')}
-                    placeholderTextColor="#999"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry={!showConfirmPassword}
-                    autoCapitalize="none"
-                    editable={!isLoading}
-                  />
-                  <TouchableOpacity
-                    style={{
-                      position: 'absolute',
-                      right: 28,
-                      top: 16,
-                    }}
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  >
-                    <Ionicons
-                      name={showConfirmPassword ? 'eye' : 'eye-off'}
-                      size={22}
-                      color="#666"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </>
+              <Image
+                source={require('../../assets/icon.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
             ) : (
-              <>
-                {/* Step 2: Personal Info */}
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('register.firstName')}
-                  placeholderTextColor="#999"
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  autoCapitalize="words"
-                  editable={!isLoading}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('register.lastName')}
-                  placeholderTextColor="#999"
-                  value={lastName}
-                  onChangeText={setLastName}
-                  autoCapitalize="words"
-                  editable={!isLoading}
-                />
-                <View style={styles.documentRow}>
-                  <TouchableOpacity
-                    style={styles.documentTypeContainer}
-                    onPress={() => setModalVisible(true)}
-                    disabled={isLoading}
-                  >
-                    <Text style={[styles.documentTypeText, !documentType && styles.documentTypePlaceholder]}>
-                      {documentType || 'Tipo'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TextInput
-                    style={styles.documentNumberInput}
-                    placeholder="Número de documento"
-                    placeholderTextColor="#999"
-                    value={documentNumber}
-                    onChangeText={setDocumentNumber}
-                    keyboardType="numeric"
-                    editable={!isLoading}
-                  />
-                </View>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('register.phone')}
-                  placeholderTextColor="#999"
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                  editable={!isLoading}
-                />
-              </>
+              <View style={{ height: 80 }} />
             )}
-          </View>
-
-          {/* Social Buttons (Bottom) */}
-          <View style={styles.socialSection}>
-            <View style={styles.separator}>
-              <View style={styles.separatorLine} />
-              <Text style={styles.separatorText}>o regístrate con</Text>
-              <View style={styles.separatorLine} />
-            </View>
-
-            <View style={styles.socialButtons}>
-              <TouchableOpacity
-                style={[styles.socialButton, (!googleReady || isLoading) && { opacity: 0.5 }]}
-                onPress={handleGoogleRegister}
-                disabled={!googleReady || isLoading}
-              >
-                <GoogleIcon size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.socialButton, isLoading && { opacity: 0.5 }]} disabled={isLoading}>
-                <AppleIcon size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.socialButton, isLoading && { opacity: 0.5 }]} disabled={isLoading}>
-                <MicrosoftIcon size={24} color="#FFFFFF" />
-              </TouchableOpacity>
+            <View style={styles.absoluteProgress}>
+              <ProgressCircle current={step} total={totalSteps} />
             </View>
           </View>
+          <Text style={styles.title}>Bienvenido a Tincadia</Text>
+          <Text style={styles.subtitle}>
+            Crea tu cuenta y comienza a aprender hoy mismo.
+          </Text>
+        </View>
 
-          {/* Footer */}
-          <View style={styles.footer}>
+        {/* Error Message */}
+        {displayError && (
+          <TouchableOpacity
+            onPress={() => { setValidationError(null); clearError(); }}
+            style={{
+              backgroundColor: '#FFE5E5',
+              borderRadius: 8,
+              padding: 12,
+              marginHorizontal: 20,
+              marginBottom: 16,
+              borderWidth: 1,
+              borderColor: '#FF4444',
+            }}
+          >
+            <Text style={{ color: '#CC0000', fontSize: 14 }}>{displayError}</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Form Content */}
+        <View style={styles.formContainer}>
+          {step === 1 ? (
+            <>
+              {/* Step 1: Email & Passwords */}
+              <TextInput
+                style={styles.input}
+                placeholder={t('register.email')}
+                placeholderTextColor="#999"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isLoading}
+              />
+              <View style={{ width: '100%', position: 'relative' }}>
+                <TextInput
+                  style={[styles.input, { paddingRight: 50 }]}
+                  placeholder={t('register.password')}
+                  placeholderTextColor="#999"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  editable={!isLoading}
+                />
+                <TouchableOpacity
+                  style={{
+                    position: 'absolute',
+                    right: 28,
+                    top: 16,
+                  }}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye' : 'eye-off'}
+                    size={22}
+                    color="#666"
+                  />
+                </TouchableOpacity>
+              </View>
+              <View style={{ width: '100%', position: 'relative' }}>
+                <TextInput
+                  style={[styles.input, { paddingRight: 50 }]}
+                  placeholder={t('register.confirmPassword')}
+                  placeholderTextColor="#999"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                  editable={!isLoading}
+                />
+                <TouchableOpacity
+                  style={{
+                    position: 'absolute',
+                    right: 28,
+                    top: 16,
+                  }}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? 'eye' : 'eye-off'}
+                    size={22}
+                    color="#666"
+                  />
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              {/* Step 2: Personal Info */}
+              <TextInput
+                style={styles.input}
+                placeholder={t('register.firstName')}
+                placeholderTextColor="#999"
+                value={firstName}
+                onChangeText={setFirstName}
+                autoCapitalize="words"
+                editable={!isLoading}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder={t('register.lastName')}
+                placeholderTextColor="#999"
+                value={lastName}
+                onChangeText={setLastName}
+                autoCapitalize="words"
+                editable={!isLoading}
+              />
+              <View style={styles.documentRow}>
+                <TouchableOpacity
+                  style={styles.documentTypeContainer}
+                  onPress={() => setModalVisible(true)}
+                  disabled={isLoading}
+                >
+                  <Text style={[styles.documentTypeText, !documentType && styles.documentTypePlaceholder]}>
+                    {documentType || 'Tipo'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TextInput
+                  style={styles.documentNumberInput}
+                  placeholder="Número de documento"
+                  placeholderTextColor="#999"
+                  value={documentNumber}
+                  onChangeText={setDocumentNumber}
+                  keyboardType="numeric"
+                  editable={!isLoading}
+                />
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder={t('register.phone')}
+                placeholderTextColor="#999"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                editable={!isLoading}
+              />
+            </>
+          )}
+        </View>
+
+        {/* Social Buttons (Bottom) */}
+        <View style={styles.socialSection}>
+          <View style={styles.separator}>
+            <View style={styles.separatorLine} />
+            <Text style={styles.separatorText}>o regístrate con</Text>
+            <View style={styles.separatorLine} />
+          </View>
+
+          <View style={styles.socialButtons}>
             <TouchableOpacity
-              style={[styles.nextButton, isLoading && { opacity: 0.7 }]}
-              onPress={handleNext}
-              disabled={isLoading}
+              style={[styles.socialButton, (!googleReady || isLoading) && { opacity: 0.5 }]}
+              onPress={handleGoogleRegister}
+              disabled={!googleReady || isLoading}
             >
-              {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.nextButtonText}>
-                  {step === totalSteps ? t('register.createAccount') : 'Continuar'}
-                </Text>
-              )}
+              <GoogleIcon size={24} color="#FFFFFF" />
             </TouchableOpacity>
-
-            <Text style={styles.termsText}>
-              Al continuar estás aceptando nuestros{' '}
-              <Text style={styles.linkText}>términos y condiciones</Text> y{' '}
-              <Text style={styles.linkText}>tratamiento de mis datos personales</Text>.
-            </Text>
+            <TouchableOpacity style={[styles.socialButton, isLoading && { opacity: 0.5 }]} disabled={isLoading}>
+              <AppleIcon size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.socialButton, isLoading && { opacity: 0.5 }]} disabled={isLoading}>
+              <MicrosoftIcon size={24} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.nextButton, isLoading && { opacity: 0.7 }]}
+            onPress={handleNext}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.nextButtonText}>
+                {step === totalSteps ? t('register.createAccount') : 'Continuar'}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <Text style={styles.termsText}>
+            Al continuar estás aceptando nuestros{' '}
+            <Text style={styles.linkText}>términos y condiciones</Text> y{' '}
+            <Text style={styles.linkText}>tratamiento de mis datos personales</Text>.
+          </Text>
+        </View>
+      </ScrollView>
 
       {/* Document Type Selection Modal */}
       <Modal
@@ -476,6 +471,6 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
           </View>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
