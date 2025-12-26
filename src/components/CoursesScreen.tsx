@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, Image } from 'r
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
-import { NotificationIcon } from './icons/NavigationIcons';
+import { NotificationBell } from './NotificationBell';
 
 interface Course {
     id: string;
@@ -18,13 +18,19 @@ interface CourseCategory {
     courses: Course[];
 }
 
+interface CoursesScreenProps {
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onBack: () => void;
+    userId?: string;
+    onShowNotifications?: () => void;
+}
+
 export function CoursesScreen({
     onNavigate,
     onBack,
-}: {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
-    onBack: () => void;
-}) {
+    userId,
+    onShowNotifications,
+}: CoursesScreenProps) {
     const categories: CourseCategory[] = [
         {
             title: 'Desarrollo web',
@@ -90,9 +96,15 @@ export function CoursesScreen({
                     <Text style={styles.backIcon}>←</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Cursos</Text>
-                <TouchableOpacity style={styles.notificationButton}>
-                    <NotificationIcon size={24} color="#000000" />
-                </TouchableOpacity>
+                {userId && onShowNotifications ? (
+                    <NotificationBell
+                        userId={userId}
+                        onPress={onShowNotifications}
+                        color="#000000"
+                    />
+                ) : (
+                    <View style={styles.notificationButton} />
+                )}
             </View>
 
             {/* Content */}

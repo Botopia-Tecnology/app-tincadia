@@ -225,6 +225,7 @@ export function ChatView({
                 alias={alias}
                 customFirstName={customFirstName}
                 customLastName={customLastName}
+                conversationId={conversationId}
                 onBack={() => setShowProfile(false)}
                 onContactUpdated={(contact) => {
                     const newName = contact.alias ||

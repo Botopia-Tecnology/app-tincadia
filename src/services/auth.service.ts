@@ -96,23 +96,45 @@ export const authService = {
     },
 
     /**
-     * Get current user from /auth/me endpoint
+     * Get current user - tries cache first, then validates with backend
+     * @param forceRefresh - If true, skips cache and fetches from backend
      */
-    async getCurrentUser(): Promise<{ user: User; isProfileComplete: boolean } | null> {
+    async getCurrentUser(forceRefresh = false): Promise<{ user: User; isProfileComplete: boolean } | null> {
         try {
+            // Try to get from cache first (unless forcing refresh)
+            if (!forceRefresh) {
+                const cachedUser = await userStorage.getUser();
+                if (cachedUser) {
+                    try {
+                        const user = JSON.parse(cachedUser) as User;
+                        console.log('📦 Using cached user profile');
+
+                        // Determine isProfileComplete from cached data
+                        let isComplete = user.isProfileComplete;
+                        if (typeof isComplete !== 'boolean') {
+                            isComplete = !!(
+                                (user.documentTypeId || user.documentType) &&
+                                user.documentNumber &&
+                                user.phone
+                            );
+                        }
+
+                        // Return cached data immediately, validate in background
+                        this.validateAndRefreshInBackground();
+
+                        return { user, isProfileComplete: isComplete };
+                    } catch (parseError) {
+                        console.warn('Failed to parse cached user, fetching from server');
+                    }
+                }
+            }
+
+            // Fetch from backend
             const response = await apiClient<AuthResponse>(API_ENDPOINTS.ME, {
                 method: 'GET',
             });
 
-            console.log('🔍 /auth/me raw response:', JSON.stringify(response, null, 2));
-            console.log('🔍 response.isProfileComplete:', response.isProfileComplete);
-            console.log('🔍 response.user?.isProfileComplete:', response.user?.isProfileComplete);
-            console.log('🔍 User profile fields:', {
-                documentTypeId: response.user?.documentTypeId,
-                documentType: response.user?.documentType,
-                documentNumber: response.user?.documentNumber,
-                phone: response.user?.phone,
-            });
+            console.log('🔍 /auth/me response received');
 
             // Use isProfileComplete from response, fallback to user object, then check fields
             let isComplete = response.isProfileComplete;
@@ -128,7 +150,13 @@ export const authService = {
                 );
             }
 
-            console.log('🔍 Final isProfileComplete:', isComplete);
+            // Update cache with fresh data
+            if (response.user) {
+                await userStorage.setUser(JSON.stringify({
+                    ...response.user,
+                    isProfileComplete: isComplete,
+                }));
+            }
 
             return {
                 user: response.user,
@@ -137,6 +165,37 @@ export const authService = {
         } catch (error) {
             console.error('🔍 /auth/me error:', error);
             return null;
+        }
+    },
+
+    /**
+     * Validate token with backend in background and update cache
+     */
+    async validateAndRefreshInBackground(): Promise<void> {
+        try {
+            const response = await apiClient<AuthResponse>(API_ENDPOINTS.ME, {
+                method: 'GET',
+            });
+
+            if (response.user) {
+                let isComplete = response.isProfileComplete ?? response.user?.isProfileComplete;
+                if (typeof isComplete !== 'boolean') {
+                    isComplete = !!(
+                        (response.user?.documentTypeId || response.user?.documentType) &&
+                        response.user?.documentNumber &&
+                        response.user?.phone
+                    );
+                }
+
+                await userStorage.setUser(JSON.stringify({
+                    ...response.user,
+                    isProfileComplete: isComplete,
+                }));
+                console.log('🔄 Background refresh: cache updated');
+            }
+        } catch (error) {
+            console.warn('🔄 Background validation failed:', error);
+            // If token is invalid, the 401 handler will trigger logout
         }
     },
 
@@ -184,6 +243,17 @@ export const authService = {
         await apiClient(API_ENDPOINTS.UPDATE_PUSH_TOKEN, {
             method: 'POST',
             body: JSON.stringify({ userId, pushToken }),
+        });
+    },
+
+    /**
+     * Request password reset - sends recovery email
+     */
+    async requestPasswordReset(email: string): Promise<{ message: string }> {
+        return await apiClient<{ message: string }>(API_ENDPOINTS.RESET_PASSWORD, {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+            skipAuth: true,
         });
     },
 };

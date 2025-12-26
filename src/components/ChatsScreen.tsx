@@ -26,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useContactsSync } from '../hooks/useContactsSync';
 import { chatService } from '../services/chat.service';
 import { contactService, Contact } from '../services/contact.service';
+import { appNotificationService } from '../services/appNotification.service';
 import {
   initChatDatabase,
   getConversations as getLocalConversations,
@@ -37,6 +38,7 @@ import {
 } from '../database/chatDatabase';
 import { BottomNavigation } from './BottomNavigation';
 import { ChatView } from './chat/ChatView';
+import { NotificationsScreen } from './NotificationsScreen';
 import {
   NotificationIcon,
   SearchIcon,
@@ -168,12 +170,30 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   const [syncResult, setSyncResult] = useState<{ found: number; total: number } | null>(null);
   const [syncedContacts, setSyncedContacts] = useState<ChatListItem[]>([]);
 
+  // Notifications state
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+
   const SYNCED_CONTACTS_KEY = `@synced_contacts_${userId}`;
 
   // Initialize database on mount
   useEffect(() => {
     initChatDatabase();
   }, []);
+
+  // Load unread notification count
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      if (!userId) return;
+      try {
+        const { count } = await appNotificationService.getUnreadCount(userId);
+        setUnreadNotificationCount(count);
+      } catch (err) {
+        console.error('Error loading unread count:', err);
+      }
+    };
+    loadUnreadCount();
+  }, [userId, showNotifications]); // Reload when returning from notifications
 
   // Load synced contacts from storage on mount
   useEffect(() => {
@@ -624,6 +644,16 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     );
   }
 
+  // Show notifications screen if selected
+  if (showNotifications) {
+    return (
+      <NotificationsScreen
+        userId={userId}
+        onBack={() => setShowNotifications(false)}
+      />
+    );
+  }
+
   // Show user list
   return (
     <SafeAreaView style={styles.container}>
@@ -633,8 +663,29 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>Chats</Text>
-          <TouchableOpacity style={styles.notificationButton}>
+          <TouchableOpacity
+            style={styles.notificationButton}
+            onPress={() => setShowNotifications(true)}
+          >
             <NotificationIcon size={24} color="#333333" />
+            {unreadNotificationCount > 0 && (
+              <View style={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                backgroundColor: '#EF4444',
+                borderRadius: 10,
+                minWidth: 18,
+                height: 18,
+                justifyContent: 'center',
+                alignItems: 'center',
+                paddingHorizontal: 4,
+              }}>
+                <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 

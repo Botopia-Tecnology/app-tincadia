@@ -82,9 +82,18 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
           updated_at TEXT
         );
         
+        CREATE TABLE IF NOT EXISTS media_cache (
+          storage_key TEXT PRIMARY KEY,
+          public_url TEXT NOT NULL,
+          conversation_id TEXT,
+          type TEXT DEFAULT 'image',
+          created_at TEXT NOT NULL
+        );
+        
         CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
         CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
         CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_id);
+        CREATE INDEX IF NOT EXISTS idx_media_conv ON media_cache(conversation_id);
       `);
             console.log('✅ Chat database initialized and tables verified');
         } catch (error) {
@@ -524,3 +533,87 @@ export function clearContacts(ownerId: string) {
     database.runSync(`DELETE FROM contacts WHERE owner_id = ?`, [ownerId]);
 }
 
+// ==================== MEDIA CACHE ====================
+
+export interface CachedMedia {
+    storageKey: string;
+    publicUrl: string;
+    conversationId?: string;
+    type: 'image' | 'audio' | 'video';
+    createdAt: string;
+}
+
+/**
+ * Save media URL to cache
+ */
+export function saveMediaUrl(media: {
+    storageKey: string;
+    publicUrl: string;
+    conversationId?: string;
+    type?: 'image' | 'audio' | 'video';
+}) {
+    const database = ensureInitialized();
+    const now = new Date().toISOString();
+    database.runSync(
+        `INSERT OR REPLACE INTO media_cache 
+     (storage_key, public_url, conversation_id, type, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+        [
+            media.storageKey,
+            media.publicUrl,
+            media.conversationId || null,
+            media.type || 'image',
+            now,
+        ]
+    );
+}
+
+/**
+ * Get cached media URL by storage key
+ * Returns null if not cached
+ */
+export function getMediaUrl(storageKey: string): string | null {
+    const database = ensureInitialized();
+    const result = database.getFirstSync<{ public_url: string }>(
+        `SELECT public_url FROM media_cache WHERE storage_key = ?`,
+        [storageKey]
+    );
+    return result?.public_url || null;
+}
+
+/**
+ * Get all cached media for a conversation
+ */
+export function getMediaForConversation(conversationId: string): CachedMedia[] {
+    const database = ensureInitialized();
+    const rows = database.getAllSync<{
+        storage_key: string;
+        public_url: string;
+        conversation_id: string | null;
+        type: string;
+        created_at: string;
+    }>(
+        `SELECT * FROM media_cache WHERE conversation_id = ? ORDER BY created_at DESC`,
+        [conversationId]
+    );
+
+    return rows.map(row => ({
+        storageKey: row.storage_key,
+        publicUrl: row.public_url,
+        conversationId: row.conversation_id || undefined,
+        type: row.type as 'image' | 'audio' | 'video',
+        createdAt: row.created_at,
+    }));
+}
+
+/**
+ * Clear media cache for a conversation
+ */
+export function clearMediaCache(conversationId?: string) {
+    const database = ensureInitialized();
+    if (conversationId) {
+        database.runSync(`DELETE FROM media_cache WHERE conversation_id = ?`, [conversationId]);
+    } else {
+        database.runSync(`DELETE FROM media_cache`);
+    }
+}

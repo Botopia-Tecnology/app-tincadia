@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
-      "buildNumber": "5",
+      "buildNumber": "7",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",

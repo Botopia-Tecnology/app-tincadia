@@ -23,6 +23,7 @@ import { ChatsScreen } from '../components/ChatsScreen';
 import { CoursesScreen } from '../components/CoursesScreen';
 import { SOSScreen } from '../components/SOSScreen';
 import { ProfileScreen } from '../components/ProfileScreen';
+import { NotificationsScreen } from '../components/NotificationsScreen';
 import { AnimatedScreen } from '../components/AnimatedScreen';
 import { CallScreen } from '../screens/CallScreen';
 import { appStyles as styles } from '../styles/App.styles';
@@ -79,7 +80,7 @@ async function registerForPushNotificationsAsync() {
   return token;
 }
 
-type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call';
+type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'notifications';
 
 function AppContent() {
   const { isAuthenticated, profileComplete, isLoading, user } = useAuth();
@@ -190,15 +191,37 @@ function AppContent() {
     return <CompleteProfileScreen />;
   }
 
+  const userId = user?.id || '';
+
+  // Handler to navigate to notifications screen
+  const handleShowNotifications = () => {
+    navigate('notifications');
+  };
+
   // Fully authenticated - show main app
   return (
     <AnimatedScreen key={currentScreen}>
       {currentScreen === 'chats' ? (
         <ChatsScreen onNavigate={navigate} />
       ) : currentScreen === 'courses' ? (
-        <CoursesScreen onNavigate={navigate} onBack={goBack} />
+        <CoursesScreen
+          onNavigate={navigate}
+          onBack={goBack}
+          userId={userId}
+          onShowNotifications={handleShowNotifications}
+        />
       ) : currentScreen === 'sos' ? (
-        <SOSScreen onNavigate={navigate} onBack={goBack} />
+        <SOSScreen
+          onNavigate={navigate}
+          onBack={goBack}
+          userId={userId}
+          onShowNotifications={handleShowNotifications}
+        />
+      ) : currentScreen === 'notifications' ? (
+        <NotificationsScreen
+          userId={userId}
+          onBack={goBack}
+        />
       ) : currentScreen === 'call' ? (
         <CallScreen
           roomName={callParams?.roomName || 'default'}
@@ -208,7 +231,12 @@ function AppContent() {
           onBack={goBack}
         />
       ) : (
-        <ProfileScreen onNavigate={navigate} onBack={goBack} />
+        <ProfileScreen
+          onNavigate={navigate}
+          onBack={goBack}
+          userId={userId}
+          onShowNotifications={handleShowNotifications}
+        />
       )}
     </AnimatedScreen>
   );
