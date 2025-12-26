@@ -62,7 +62,7 @@ export const chatService = {
      * Get a user's profile (for viewing original registration name)
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async getUserProfile(userId: string): Promise<{ profile: any }> {
+    async getUserProfile(userId: string): Promise<{ user?: any; profile?: any }> {
         return apiClient(API_ENDPOINTS.USER_PROFILE(userId), {
             method: 'GET',
         });

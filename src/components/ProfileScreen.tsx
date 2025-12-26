@@ -9,7 +9,6 @@ import {
     SOSIcon,
     ProfileIcon,
     BackArrowIcon,
-    NotificationIcon,
     SearchIcon,
     AccountIcon,
     PrivacyIcon,
@@ -18,14 +17,21 @@ import {
     ChevronRightIcon,
 } from './icons/NavigationIcons';
 import { BottomNavigation } from './BottomNavigation';
+import { NotificationBell } from './NotificationBell';
+
+interface ProfileScreenProps {
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onBack: () => void;
+    userId?: string;
+    onShowNotifications?: () => void;
+}
 
 export function ProfileScreen({
     onNavigate,
     onBack,
-}: {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
-    onBack: () => void;
-}) {
+    userId,
+    onShowNotifications,
+}: ProfileScreenProps) {
     const { user, logout, isLoading } = useAuth();
 
     const handleLogout = () => {
@@ -60,9 +66,15 @@ export function ProfileScreen({
                     <BackArrowIcon size={32} color="#000000" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Perfil</Text>
-                <TouchableOpacity style={styles.notificationButton}>
-                    <NotificationIcon size={24} color="#000000" />
-                </TouchableOpacity>
+                {userId && onShowNotifications ? (
+                    <NotificationBell
+                        userId={userId}
+                        onPress={onShowNotifications}
+                        color="#000000"
+                    />
+                ) : (
+                    <View style={styles.notificationButton} />
+                )}
             </View>
 
             <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>

@@ -9,9 +9,12 @@ import {
     ScrollView,
     SafeAreaView,
     BackHandler,
+    ActivityIndicator,
+    Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { forgotPasswordStyles as styles } from '../styles/ForgotPasswordScreen.styles';
+import { authService } from '../services/auth.service';
 
 interface ForgotPasswordScreenProps {
     onBack: () => void;
@@ -20,6 +23,8 @@ interface ForgotPasswordScreenProps {
 export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
     const [email, setEmail] = useState('');
     const [isSuccess, setIsSuccess] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Android hardware back: always go back to previous screen instead of exiting the app.
     useEffect(() => {
@@ -33,14 +38,46 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
         return () => sub.remove();
     }, [onBack]);
 
-    const handleRecover = () => {
-        if (email.trim().length === 0) {
-            // Basic validation
+    const validateEmail = (email: string): boolean => {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    };
+
+    const handleRecover = async () => {
+        setError(null);
+
+        const trimmedEmail = email.trim();
+        if (trimmedEmail.length === 0) {
+            setError('Por favor ingresa tu correo electrónico');
             return;
         }
-        // TODO: Connect with API to send recovery email
-        console.log('Recovering password for:', email);
-        setIsSuccess(true);
+
+        if (!validateEmail(trimmedEmail)) {
+            setError('Por favor ingresa un correo electrónico válido');
+            return;
+        }
+
+        setIsLoading(true);
+
+        try {
+            await authService.requestPasswordReset(trimmedEmail);
+            setIsSuccess(true);
+        } catch (err: any) {
+            console.error('Error al solicitar recuperación de contraseña:', err);
+
+            // Handle specific error messages
+            const errorMessage = err?.message || err?.error || 'Error desconocido';
+
+            if (errorMessage.includes('not found') || errorMessage.includes('no encontrado')) {
+                setError('No existe una cuenta con este correo electrónico');
+            } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+                setError('Error de conexión. Por favor verifica tu internet');
+            } else {
+                setError('Ocurrió un error al enviar el correo de recuperación. Intenta de nuevo.');
+            }
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     if (isSuccess) {
@@ -70,7 +107,7 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             >
                 <StatusBar style="dark" />
-                <TouchableOpacity style={styles.absoluteBackButton} onPress={onBack}>
+                <TouchableOpacity style={styles.absoluteBackButton} onPress={onBack} disabled={isLoading}>
                     <Text style={styles.backArrow}>←</Text>
                 </TouchableOpacity>
                 <ScrollView
@@ -84,18 +121,36 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
 
                     <View style={styles.formContainer}>
                         <TextInput
-                            style={styles.input}
+                            style={[styles.input, error ? { borderColor: '#ff4444', borderWidth: 1 } : {}]}
                             placeholder="Correo electrónico"
                             placeholderTextColor="#999"
                             value={email}
-                            onChangeText={setEmail}
+                            onChangeText={(text) => {
+                                setEmail(text);
+                                setError(null);
+                            }}
                             keyboardType="email-address"
                             autoCapitalize="none"
                             autoCorrect={false}
+                            editable={!isLoading}
                         />
 
-                        <TouchableOpacity style={styles.recoverButton} onPress={handleRecover}>
-                            <Text style={styles.recoverButtonText}>Confirmar correo</Text>
+                        {error && (
+                            <Text style={{ color: '#ff4444', marginBottom: 10, fontSize: 14 }}>
+                                {error}
+                            </Text>
+                        )}
+
+                        <TouchableOpacity
+                            style={[styles.recoverButton, isLoading && { opacity: 0.7 }]}
+                            onPress={handleRecover}
+                            disabled={isLoading}
+                        >
+                            {isLoading ? (
+                                <ActivityIndicator color="#ffffff" />
+                            ) : (
+                                <Text style={styles.recoverButtonText}>Confirmar correo</Text>
+                            )}
                         </TouchableOpacity>
                     </View>
                 </ScrollView>

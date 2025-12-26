@@ -41,6 +41,7 @@ export const API_ENDPOINTS = {
     USER_PROFILE: (userId: string) => `/auth/profile/${userId}`,
     AVAILABLE_USERS: (userId: string) => `/auth/users/${userId}`,
     UPDATE_PUSH_TOKEN: '/auth/push-token',
+    RESET_PASSWORD: '/auth/reset-password',
 
     // Chat endpoints
     CONVERSATIONS: '/chat/conversations',
@@ -62,4 +63,9 @@ export const API_ENDPOINTS = {
     CONTACTS_SYNC_START: '/contacts/sync/start',
     CONTACTS_SYNC_CHUNK: '/contacts/sync/chunk',
     CONTACTS_SYNC_COMPLETE: '/contacts/sync/complete',
+
+    // App Notifications endpoints
+    NOTIFICATIONS: '/notifications',
+    NOTIFICATIONS_UNREAD_COUNT: (userId: string) => `/notifications/unread-count/${userId}`,
+    NOTIFICATION_MARK_READ: (notificationId: string) => `/notifications/${notificationId}/read`,
 } as const;

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, SafeAreaView, ScrollView, Image } from 'r
 import { StatusBar } from 'expo-status-bar';
 import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
-import { NotificationIcon } from './icons/NavigationIcons';
+import { NotificationBell } from './NotificationBell';
 
 interface EmergencyType {
     id: string;
@@ -11,13 +11,19 @@ interface EmergencyType {
     label: string;
 }
 
+interface SOSScreenProps {
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onBack: () => void;
+    userId?: string;
+    onShowNotifications?: () => void;
+}
+
 export function SOSScreen({
     onNavigate,
     onBack,
-}: {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
-    onBack: () => void;
-}) {
+    userId,
+    onShowNotifications,
+}: SOSScreenProps) {
     const emergencyTypes: EmergencyType[] = [
         { id: '1', image: require('../../assets/fire_sos-section.png'), label: 'BOMBEROS' },
         { id: '2', image: require('../../assets/ambulance_sos-section.png'), label: 'AMBULANCIA' },
@@ -40,9 +46,15 @@ export function SOSScreen({
                     <Text style={styles.backIcon}>←</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>SOS</Text>
-                <TouchableOpacity style={styles.notificationButton}>
-                    <NotificationIcon size={24} color="#000000" />
-                </TouchableOpacity>
+                {userId && onShowNotifications ? (
+                    <NotificationBell
+                        userId={userId}
+                        onPress={onShowNotifications}
+                        color="#000000"
+                    />
+                ) : (
+                    <View style={styles.notificationButton} />
+                )}
             </View>
 
             {/* Content */}
