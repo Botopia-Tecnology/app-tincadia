@@ -23,6 +23,9 @@ import {
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
 
+import { appNotificationService } from '../services/appNotification.service';
+import * as Notifications from 'expo-notifications';
+
 interface ProfileScreenProps {
     onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
     onBack: () => void;
@@ -70,6 +73,27 @@ export function ProfileScreen({
         } catch (error) {
             console.error('Picker Error:', error);
             setIsUploading(false);
+        }
+    };
+
+    const handleTestPush = async () => {
+        try {
+            const { status } = await Notifications.getPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permiso denegado', 'Habilita las notificaciones en la configuración de tu dispositivo.');
+                return;
+            }
+
+            const tokenData = await Notifications.getExpoPushTokenAsync();
+            console.log('📱 Testing Push with Token:', tokenData.data);
+
+            if (user?.id) {
+                await appNotificationService.sendTestPush(user.id, tokenData.data);
+                Alert.alert('Enviado', 'Notificación de prueba enviada 🚀');
+            }
+        } catch (error) {
+            console.error('Test Push Error:', error);
+            Alert.alert('Error', 'No se pudo enviar la notificación de prueba.');
         }
     };
 
@@ -191,12 +215,20 @@ export function ProfileScreen({
                         <Text style={[styles.menuLabel, { marginLeft: 0 }]}>Ayuda</Text>
                         <ChevronRightIcon size={20} color="#999999" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem}>
+                    <TouchableOpacity style={[styles.menuItem, styles.menuItemBorder]}>
                         <View style={styles.menuIcon}>
                             <InviteIcon size={20} color="#666666" />
                         </View>
                         <Text style={styles.menuLabel}>Invitar amigos</Text>
                         <ChevronRightIcon size={20} color="#999999" />
+                    </TouchableOpacity>
+
+                    {/* Test Notification Button */}
+                    <TouchableOpacity style={styles.menuItem} onPress={handleTestPush}>
+                        <Text style={[styles.menuLabel, { marginLeft: 0, color: '#007AFF' }]}>
+                            🔔 Probar Notificación Push
+                        </Text>
+                        <ChevronRightIcon size={20} color="#007AFF" />
                     </TouchableOpacity>
                 </View>
 

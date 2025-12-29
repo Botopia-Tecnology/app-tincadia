@@ -3,7 +3,7 @@
     "name": "Tincadia",
     "slug": "tincadia",
     "scheme": "tincadia",
-    "version": "3.0.0",
+    "version": "3.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
-      "buildNumber": "7",
+      "buildNumber": "8",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
@@ -28,7 +28,7 @@
     },
     "android": {
       "package": "com.tincadia.app",
-      "versionCode": 5,
+      "versionCode": 6,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -46,7 +46,18 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#ffffff",
+      "androidMode": "default"
+    },
     "plugins": [
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.291627235984-al9qlsj9slos34mh9uca410q89oq7jl5"
+        }
+      ],
       "expo-notifications",
       [
         "expo-image-picker",

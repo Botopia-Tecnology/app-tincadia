@@ -16,6 +16,7 @@ import {
     getLastMessageTimestamp,
     deleteMessage as deleteLocalMessage,
     softDeleteMessage,
+    markConversationAsRead,
     LocalMessage,
     MessageStatus,
 } from '../database/chatDatabase';
@@ -169,6 +170,11 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
 
     // Mark messages as read when user enters the chat
     const markMessagesAsRead = useCallback(async () => {
+        // ✅ UPDATE LOCAL CACHE IMMEDIATELY (OPTIMISTIC)
+        // This ensures the badge disappears even if user exits before API completes
+        markConversationAsRead(conversationId);
+        console.log('✓ Local conversation cache updated (unreadCount = 0) - OPTIMISTIC');
+
         // --- 1. BROADCAST FAST PATH (Optimistic) ---
         // We send this BEFORE the API call for zero-latency feedback to the sender.
         if (channelRef.current) {
@@ -340,11 +346,12 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         loadLocalMessages();
         setIsLoading(false);
 
-        // 2. Sync from server in background
-        syncFromServer().then(() => {
-            // 3. Mark messages as read after loading
-            markMessagesAsRead();
-        });
+        // 2. Mark messages as read IMMEDIATELY when entering chat
+        // This updates local cache right away (don't wait for sync)
+        markMessagesAsRead();
+
+        // 3. Sync from server in background
+        syncFromServer();
 
         // 4. Poll for new messages every 30 seconds as fail-safe (increased from 15s)
         pollingIntervalRef.current = setInterval(() => {

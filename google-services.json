@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "551967008686",
-    "project_id": "tincadia-app",
-    "storage_bucket": "tincadia-app.firebasestorage.app"
+    "project_number": "432950882488",
+    "project_id": "tincadia-e934f",
+    "storage_bucket": "tincadia-e934f.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:551967008686:android:2aaa52b431cea093160a3f",
+        "mobilesdk_app_id": "1:432950882488:android:48059729ffac53fbe6844d",
         "android_client_info": {
           "package_name": "com.tincadia.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDbHmhJOOQmZYlWVm0e2orsOBTeAeWKR0c"
+          "current_key": "AIzaSyAvWc8QTaUbv6-pSi5tGDuPxLZfgtUG-3Q"
         }
       ],
       "services": {

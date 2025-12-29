@@ -76,6 +76,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   };
 
   const handleRegister = () => {
+    clearError(); // Clear any login errors when navigating to register
     setShowRegister(true);
   };
 
