@@ -69,4 +69,5 @@ export const API_ENDPOINTS = {
     NOTIFICATIONS: '/notifications',
     NOTIFICATIONS_UNREAD_COUNT: (userId: string) => `/notifications/unread-count/${userId}`,
     NOTIFICATION_MARK_READ: (notificationId: string) => `/notifications/${notificationId}/read`,
+    PUSH_TEST: '/notifications/push-test',
 } as const;

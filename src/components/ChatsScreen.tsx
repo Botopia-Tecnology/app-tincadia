@@ -35,6 +35,7 @@ import {
   saveContact,
   shouldSync,
   updateSyncTime,
+  updateConversationPreview,
 } from '../database/chatDatabase';
 import { BottomNavigation } from './BottomNavigation';
 import { ChatView } from './chat/ChatView';
@@ -443,6 +444,26 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           // For INSERT: Refresh list for new messages
           if (payload.eventType === 'INSERT') {
             console.log('📩 New message received, refreshing chat list');
+
+            const newMsg = payload.new as any;
+            const conversationId = newMsg.conversation_id;
+            const isMine = newMsg.sender_id === userId;
+            const isCurrentChat = selectedChat?.conversationId === conversationId;
+
+            // ✅ OPTIMIZATION: Update local database immediately
+            // This ensures the list shows the new message even before the API sync completes
+            if (conversationId) {
+              updateConversationPreview(
+                conversationId,
+                newMsg.content,
+                newMsg.created_at,
+                !isMine && !isCurrentChat // Increment unread only if not mine and not currently open
+              );
+
+              // Reload list from cache to show update instantly
+              loadFromLocalCache();
+            }
+
             syncFromServer(false, true); // Force sync!
           }
 
@@ -531,10 +552,11 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   // Handle back from chat - load cache immediately, sync later
   const handleBack = useCallback(() => {
     setSelectedChat(null);
-    // Force immediate refresh to update unread counts
-    console.log('🔄 Closing chat, refreshing list immediately...');
-    loadChats();
-  }, [loadChats]);
+    // Force immediate refresh bypassing throttle
+    console.log('🔄 Closing chat, forcing immediate sync...');
+    loadFromLocalCache(); // Show updated cache instantly
+    syncFromServer(false, true); // Force sync (bypass 30s throttle)
+  }, [loadFromLocalCache, syncFromServer]);
 
   // Android hardware back: if inside a chat, go back to chat list instead of exiting the app.
   useEffect(() => {
@@ -805,7 +827,16 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
                   </View>
                   <View style={styles.messageRow}>
                     <Text style={styles.lastMessage} numberOfLines={1}>
-                      {item.lastMessage || item.phone}
+                      {item.lastMessage
+                        ? ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
+                          (item.lastMessage.includes('/chat-media/') ||
+                            item.lastMessage.match(/\.(jpg|jpeg|png|gif|webp)/i)))
+                          ? '📷 Imagen'
+                          : ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
+                            item.lastMessage.match(/\.(m4a|mp3|wav|ogg|aac)/i))
+                            ? '🎵 Audio'
+                            : item.lastMessage
+                        : item.phone}
                     </Text>
                     {/* Unread count badge - green */}
                     {item.unreadCount > 0 && (

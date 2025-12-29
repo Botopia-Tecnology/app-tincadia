@@ -100,11 +100,12 @@ function AppContent() {
       });
 
       notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        console.log('🔔 Notification Received in Foreground:', notification);
         setNotification(notification);
       });
 
       responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-        console.log('Notification tapped:', response);
+        console.log('👆 Notification Tapped:', response);
         // Here we could navigate to specific chat if data.conversationId exists
       });
 

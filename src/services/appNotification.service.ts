@@ -51,4 +51,14 @@ export const appNotificationService = {
             body: JSON.stringify({ userId }),
         });
     },
+
+    /**
+     * Send a test push notification to the current device
+     */
+    async sendTestPush(userId: string, token: string): Promise<any> {
+        return apiClient(API_ENDPOINTS.PUSH_TEST, {
+            method: 'POST',
+            body: JSON.stringify({ userId, token }),
+        });
+    },
 };

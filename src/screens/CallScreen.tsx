@@ -90,10 +90,35 @@ export const CallScreen = ({ roomName, username, conversationId, userId, onBack 
                     conversationId={conversationId}
                     userId={userId}
                 />
+                <RoomEvents onLeave={onBack} />
             </LiveKitRoom>
         </View>
     );
 };
+
+function RoomEvents({ onLeave }: { onLeave: () => void }) {
+    const room = useRoomContext();
+
+    useEffect(() => {
+        if (!room) return;
+
+        const onParticipantDisconnected = () => {
+            // If it's a 1-on-1 call and the other person leaves, end the call
+            // We check total participants in the room
+            if (room.numParticipants <= 1) {
+                onLeave();
+            }
+        };
+
+        room.on('participantDisconnected', onParticipantDisconnected);
+
+        return () => {
+            room.off('participantDisconnected', onParticipantDisconnected);
+        };
+    }, [room, onLeave]);
+
+    return null;
+}
 
 function VideoView() {
     const tracks = useTracks([Track.Source.Camera]);
@@ -102,10 +127,16 @@ function VideoView() {
         <View style={styles.videoGrid}>
             {tracks.map((track) => (
                 <View key={track.participant.identity} style={styles.participant}>
-                    <VideoTrack
-                        trackRef={track}
-                        style={styles.video}
-                    />
+                    {track.publication.isMuted ? (
+                        <View style={[styles.video, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
+                            {/* Optional: Add an icon or text indicating camera is off */}
+                        </View>
+                    ) : (
+                        <VideoTrack
+                            trackRef={track}
+                            style={styles.video}
+                        />
+                    )}
                 </View>
             ))}
         </View>

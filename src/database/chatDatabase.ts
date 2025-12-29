@@ -206,14 +206,14 @@ export function saveMessage(msg: {
  * Update message status (pending → sent → delivered → read)
  */
 export function updateMessageStatus(messageId: string, status: MessageStatus, serverId?: string) {
-    ensureInitialized();
+    const database = ensureInitialized();
     if (serverId) {
-        db.runSync(
+        database.runSync(
             `UPDATE messages SET status = ?, server_id = ?, updated_at = ? WHERE id = ?`,
             [status, serverId, new Date().toISOString(), messageId]
         );
     } else {
-        db.runSync(
+        database.runSync(
             `UPDATE messages SET status = ?, updated_at = ? WHERE id = ?`,
             [status, new Date().toISOString(), messageId]
         );
@@ -224,9 +224,9 @@ export function updateMessageStatus(messageId: string, status: MessageStatus, se
  * Mark message as read (update read_at timestamp)
  */
 export function markMessageAsRead(messageId: string) {
-    ensureInitialized();
+    const database = ensureInitialized();
     const now = new Date().toISOString();
-    db.runSync(
+    database.runSync(
         `UPDATE messages SET status = 'read', read_at = ?, updated_at = ? WHERE id = ?`,
         [now, now, messageId]
     );
@@ -236,8 +236,8 @@ export function markMessageAsRead(messageId: string) {
  * Get all messages for a conversation
  */
 export function getMessages(conversationId: string): LocalMessage[] {
-    ensureInitialized();
-    const rows = db.getAllSync<{
+    const database = ensureInitialized();
+    const rows = database.getAllSync<{
         id: string;
         server_id: string | null;
         conversation_id: string;
@@ -407,6 +407,44 @@ export function updateUnreadCount(conversationId: string, count: number) {
     database.runSync(
         `UPDATE conversations SET unread_count = ? WHERE id = ?`,
         [count, conversationId]
+    );
+}
+
+/**
+ * Update conversation preview (last message) without overwriting other details
+ */
+export function updateConversationPreview(
+    conversationId: string,
+    lastMessage: string,
+    lastMessageAt: string,
+    incrementUnread: boolean = false
+) {
+    const database = ensureInitialized();
+    if (incrementUnread) {
+        database.runSync(
+            `UPDATE conversations 
+             SET last_message = ?, last_message_at = ?, unread_count = unread_count + 1, updated_at = ? 
+             WHERE id = ?`,
+            [lastMessage, lastMessageAt, new Date().toISOString(), conversationId]
+        );
+    } else {
+        database.runSync(
+            `UPDATE conversations 
+             SET last_message = ?, last_message_at = ?, updated_at = ? 
+             WHERE id = ?`,
+            [lastMessage, lastMessageAt, new Date().toISOString(), conversationId]
+        );
+    }
+}
+
+/**
+ * Mark a conversation as read locally (set unreadCount to 0)
+ */
+export function markConversationAsRead(conversationId: string) {
+    const database = ensureInitialized();
+    database.runSync(
+        `UPDATE conversations SET unread_count = 0 WHERE id = ?`,
+        [conversationId]
     );
 }
 

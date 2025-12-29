@@ -1,100 +1,121 @@
 /**
  * Google OAuth Hook
  * 
- * Uses expo-auth-session for Google authentication.
- * Returns ID token (NOT access token) as required by the backend.
- * 
- * Supports custom redirect URI for ngrok development.
+ * Uses @react-native-google-signin/google-signin for native Google authentication.
+ * Returns ID token to be validated by Supabase via the backend.
  */
 
-import { useEffect, useCallback } from 'react';
-import * as Google from 'expo-auth-session/providers/google';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
+import { useCallback, useState, useEffect } from 'react';
+import {
+    GoogleSignin,
+    isSuccessResponse,
+    isErrorWithCode,
+    statusCodes,
+} from '@react-native-google-signin/google-signin';
 import { useAuth } from '../contexts/AuthContext';
 
-// Complete auth session on web
-WebBrowser.maybeCompleteAuthSession();
+// Web Client ID from Google Cloud Console (also configured in Supabase)
+const WEB_CLIENT_ID = '291627235984-l28og4njn0136vq6rsdpm1ipe0mteve1.apps.googleusercontent.com';
 
-// Get custom redirect URI from environment (for ngrok)
-const getRedirectUri = (): string | undefined => {
-    const customUri = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI;
-    if (customUri) {
-        console.log('🔑 Using custom OAuth redirect URI:', customUri);
-        return customUri;
-    }
-    // Let expo-auth-session handle it automatically
-    return undefined;
-};
+// Configure Google Sign-In once
+let isConfigured = false;
+
+function configureGoogleSignIn() {
+    if (isConfigured) return;
+
+    GoogleSignin.configure({
+        webClientId: WEB_CLIENT_ID,
+        offlineAccess: true, // Required to get idToken
+        scopes: ['profile', 'email'],
+    });
+
+    isConfigured = true;
+    console.log('✅ Google Sign-In configured');
+}
 
 export function useGoogleAuth() {
     const { loginWithOAuth, isLoading } = useAuth();
+    const [isReady, setIsReady] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const redirectUri = getRedirectUri();
-
-    // Use ID Token request (NOT access token) - this is critical!
-    const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-        // Web client ID is required - used for all platforms in Expo Go
-        clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
-        // These are used in standalone builds
-        androidClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID,
-        iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
-        // Custom redirect URI for ngrok
-        ...(redirectUri ? { redirectUri } : {}),
-    });
-
-    // Log for debugging
+    // Configure on mount
     useEffect(() => {
-        const defaultRedirect = AuthSession.makeRedirectUri();
-        console.log('🔑 Google OAuth request ready:', !!request);
-        console.log('🔑 Default redirect URI:', defaultRedirect);
-        console.log('🔑 Custom redirect URI:', redirectUri || '(none - using default)');
-        console.log('🔑 Web Client ID:', process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB?.substring(0, 20) + '...');
-    }, [request, redirectUri]);
-
-    // Handle the OAuth response
-    useEffect(() => {
-        const handleResponse = async () => {
-            if (response?.type === 'success') {
-                const { id_token } = response.params;
-                console.log('✅ Got ID token from Google');
-                if (id_token) {
-                    try {
-                        await loginWithOAuth('google', id_token);
-                    } catch (error) {
-                        console.error('Google OAuth login failed:', error);
-                    }
-                }
-            } else if (response?.type === 'error') {
-                console.error('Google OAuth error:', response.error);
-            } else if (response?.type === 'dismiss') {
-                console.log('Google OAuth dismissed by user');
-            }
-        };
-
-        if (response) {
-            handleResponse();
+        try {
+            configureGoogleSignIn();
+            setIsReady(true);
+        } catch (err) {
+            console.error('Failed to configure Google Sign-In:', err);
+            setError('Failed to initialize Google Sign-In');
         }
-    }, [response, loginWithOAuth]);
+    }, []);
 
     const signInWithGoogle = useCallback(async () => {
-        if (!request) {
-            console.warn('Google OAuth request not ready yet');
-            return;
-        }
+        setError(null);
 
         try {
-            console.log('🚀 Starting Google OAuth...');
-            await promptAsync();
-        } catch (error) {
-            console.error('Google OAuth prompt failed:', error);
+            console.log('🚀 Starting Google Sign-In...');
+
+            // Check if device supports Google Play Services
+            await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+            // Sign in and get user info
+            const response = await GoogleSignin.signIn();
+
+            if (isSuccessResponse(response)) {
+                const { idToken } = response.data;
+
+                if (!idToken) {
+                    throw new Error('No ID token received from Google');
+                }
+
+                console.log('✅ Got ID token from Google');
+
+                // Send to backend for Supabase authentication
+                await loginWithOAuth('google', idToken);
+
+                console.log('✅ Google Sign-In completed successfully');
+            } else {
+                // User cancelled the sign-in
+                console.log('Google Sign-In was cancelled');
+            }
+        } catch (err: any) {
+            console.error('Google Sign-In error:', err);
+
+            if (isErrorWithCode(err)) {
+                switch (err.code) {
+                    case statusCodes.SIGN_IN_CANCELLED:
+                        // User cancelled - not an error to show
+                        console.log('User cancelled Google Sign-In');
+                        return;
+                    case statusCodes.IN_PROGRESS:
+                        setError('Sign-in already in progress');
+                        break;
+                    case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+                        setError('Google Play Services not available');
+                        break;
+                    default:
+                        setError(err.message || 'Failed to sign in with Google');
+                }
+            } else {
+                setError(err.message || 'An unexpected error occurred');
+            }
         }
-    }, [request, promptAsync]);
+    }, [loginWithOAuth]);
+
+    const signOut = useCallback(async () => {
+        try {
+            await GoogleSignin.signOut();
+            console.log('✅ Google Sign-Out completed');
+        } catch (err) {
+            console.error('Google Sign-Out error:', err);
+        }
+    }, []);
 
     return {
         signInWithGoogle,
-        isReady: !!request,
+        signOut,
+        isReady,
         isLoading,
-        response,
+        error,
     };
 }
