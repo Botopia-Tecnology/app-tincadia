@@ -16,5 +16,14 @@
             "developmentClient": true,
             "distribution": "internal"
         }
+    },
+    "submit": {
+        "preview": {
+            "ios": {
+                "appleId": "davas.espejo@gmail.com",
+                "appleTeamId": "CT344J3KHR"
+            }
+        },
+        "production": {}
     }
 }

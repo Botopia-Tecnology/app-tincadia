@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Platform, Text, View, ActivityIndicator } from 'react-native';
+import { BackHandler, Platform, Text, View, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -60,6 +60,7 @@ async function registerForPushNotificationsAsync() {
     }
     if (finalStatus !== 'granted') {
       console.warn('Failed to get push token for push notification!');
+      // Alert.alert('Error', 'Permiso de notificaciones denegado. No podrás recibir alertas.');
       return;
     }
 
@@ -70,8 +71,10 @@ async function registerForPushNotificationsAsync() {
       });
       token = expoPushTokenResponse.data;
       console.log('✅ Expo Push Token:', token);
-    } catch (e) {
+      // Alert.alert('Token Generado', token); // Optional: Uncomment to verify specific token
+    } catch (e: any) {
       console.error('Error getting push token:', e);
+      Alert.alert('Error Push Token', `No se pudo generar el token: ${e.message}`);
     }
   } else {
     console.log('Must use physical device for Push Notifications');
