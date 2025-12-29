@@ -255,17 +255,22 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     const msg = payload.payload;
                     console.log('🚀 Broadcast [new_message] received:', msg?.id);
 
-                    if (msg && msg.conversationId === conversationId && msg.senderId !== userId) {
+                    // Handle both snake_case (from DB) and camelCase (from sender broadcast)
+                    const msgConversationId = msg?.conversationId || msg?.conversation_id;
+                    const msgSenderId = msg?.senderId || msg?.sender_id;
+                    const msgCreatedAt = msg?.createdAt || msg?.created_at;
+
+                    if (msg && msgConversationId?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId) {
                         // 1. Save locally for instant rendering
                         saveMessage({
                             id: msg.id,
                             serverId: msg.id,
-                            conversationId: msg.conversationId,
-                            senderId: msg.senderId,
+                            conversationId: msgConversationId,
+                            senderId: msgSenderId,
                             content: msg.content,
                             type: msg.type || 'text',
                             status: 'delivered',
-                            createdAt: msg.createdAt,
+                            createdAt: msgCreatedAt,
                             isMine: false,
                         });
                         loadLocalMessages();
