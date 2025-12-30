@@ -9,8 +9,10 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Platform, Text, View, ActivityIndicator, Alert } from 'react-native';
+import { BackHandler, Platform, Text, View, ActivityIndicator, Alert, Button } from 'react-native';
+import * as Sentry from '@sentry/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { PostHogProvider } from 'posthog-react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { I18nProvider } from '../contexts/I18nContext';
@@ -27,6 +29,22 @@ import { NotificationsScreen } from '../components/NotificationsScreen';
 import { AnimatedScreen } from '../components/AnimatedScreen';
 import { CallScreen } from '../screens/CallScreen';
 import { appStyles as styles } from '../styles/App.styles';
+
+// Initialize Sentry with Session Replay
+Sentry.init({
+  dsn: 'https://922f74ca4e17c001f4ecd489c52e1055@o4510623853314048.ingest.us.sentry.io/4510623870615552',
+  debug: __DEV__,
+  tracesSampleRate: 1.0,
+  replaysSessionSampleRate: __DEV__ ? 1.0 : 0.1, // 100% in dev, 10% in prod
+  replaysOnErrorSampleRate: 1.0, // Always capture replay on error
+  integrations: [
+    Sentry.mobileReplayIntegration({
+      maskAllText: true,
+      maskAllImages: true,
+      maskAllVectors: true,
+    }),
+  ],
+});
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -255,13 +273,20 @@ export default function App() {
 
   try {
     return (
-      <SafeAreaProvider>
-        <I18nProvider>
-          <AuthProvider>
-            <AppContent />
-          </AuthProvider>
-        </I18nProvider>
-      </SafeAreaProvider>
+      <PostHogProvider
+        apiKey="phc_rktXQHfPdoUhyJqVTwqIKBirvMDHGAttJJ4ZS6Nm6BE"
+        options={{
+          host: 'https://us.i.posthog.com',
+        }}
+      >
+        <SafeAreaProvider>
+          <I18nProvider>
+            <AuthProvider>
+              <AppContent />
+            </AuthProvider>
+          </I18nProvider>
+        </SafeAreaProvider>
+      </PostHogProvider>
     );
   } catch (error) {
     console.error('Error en App:', error);

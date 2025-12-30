@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
-      "buildNumber": "8",
+      "buildNumber": "9",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
@@ -77,7 +77,15 @@
         }
       ],
       "expo-sqlite",
-      "./plugins/withModularHeaders"
+      "./plugins/withModularHeaders",
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "react-native",
+          "organization": "univalle-gi"
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
