@@ -1,17 +1,10 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, RefreshControl, Image, FlatList } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
-
-interface Course {
-    id: string;
-    title: string;
-    description: string;
-    instructor: string;
-    level: string;
-}
+import { contentService, Course } from '../services/content.service';
 
 interface CourseCategory {
     title: string;
@@ -23,6 +16,7 @@ interface CoursesScreenProps {
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
+    onCourseSelect?: (courseId: string) => void;
 }
 
 export function CoursesScreen({
@@ -30,61 +24,90 @@ export function CoursesScreen({
     onBack,
     userId,
     onShowNotifications,
+    onCourseSelect,
 }: CoursesScreenProps) {
-    const categories: CourseCategory[] = [
-        {
-            title: 'Desarrollo web',
-            courses: [
-                {
-                    id: '1',
-                    title: 'Introducción a la programación',
-                    description: 'Aprende la lógica básica de programación iniciando con C++',
-                    instructor: 'Profesor Fabian Guerrero',
-                    level: 'Nivel Básico',
-                },
-                {
-                    id: '2',
-                    title: 'Hola Mundo con C++',
-                    description: 'Realiza tu primera interacción programando un ¡Hola Mundo!',
-                    instructor: 'Profesor Fabian Guerrero',
-                    level: 'Nivel Básico',
-                },
-                {
-                    id: '3',
-                    title: 'Programa tu propia Calculadora',
-                    description: 'Realiza tu primera interacción programando un ¡Hola Mundo!',
-                    instructor: 'Profesor Fabian Guerrero',
-                    level: 'Nivel Básico',
-                },
-            ],
-        },
-        {
-            title: 'Administración de empresas',
-            courses: [
-                {
-                    id: '4',
-                    title: 'Introducción a la administración',
-                    description: 'Aprende qué es la administración, cómo funcionan las empresas y qué hace un administrador.',
-                    instructor: 'Profesor Israel Ramirez',
-                    level: 'Nivel Básico',
-                },
-                {
-                    id: '5',
-                    title: 'Finanzas básicas',
-                    description: 'Aprende Finanzas personales y empresariales, cómo llevar un presupuesto para tu negocio.',
-                    instructor: 'Profesor Israel Ramirez',
-                    level: 'Nivel Básico',
-                },
-                {
-                    id: '6',
-                    title: 'Emprendimiento',
-                    description: 'Aprende cómo crear una idea de negocio, validación de ideas y primeros pasos.',
-                    instructor: 'Profesor Israel Ramirez',
-                    level: 'Nivel Básico',
-                },
-            ],
-        },
-    ];
+    const [categories, setCategories] = useState<CourseCategory[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const fetchCourses = async () => {
+        try {
+            const allCourses = await contentService.getAllCourses();
+
+            // Group by category
+            const groups: Record<string, Course[]> = {};
+            // Sort by creation date if possible, currently just fetching
+
+            allCourses.forEach(course => {
+                const catName = course.category?.name || 'Otros';
+                if (!groups[catName]) groups[catName] = [];
+                groups[catName].push(course);
+            });
+
+            // Transform to array
+            const result = Object.entries(groups).map(([title, courses]) => ({
+                title,
+                courses
+            }));
+
+            setCategories(result);
+        } catch (error) {
+            console.error('Failed to load courses', error);
+        } finally {
+            setIsLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchCourses();
+    }, []);
+
+    const onRefresh = () => {
+        setRefreshing(true);
+        fetchCourses();
+    };
+
+    const renderCourseCard = ({ item: course }: { item: Course }) => (
+        <TouchableOpacity
+            style={styles.cardContainer}
+            onPress={() => onCourseSelect?.(course.id)}
+        >
+            <View style={styles.cardImageContainer}>
+                {course.thumbnailUrl ? (
+                    <Image source={{ uri: course.thumbnailUrl }} style={styles.cardImage} />
+                ) : (
+                    <View style={[styles.cardImage, { backgroundColor: '#e2e8f0', justifyContent: 'center', alignItems: 'center' }]}>
+                        <Text style={{ fontSize: 40 }}>📚</Text>
+                    </View>
+                )}
+                {/* Play Overlay */}
+                <View style={styles.playOverlay}>
+                    <View style={styles.playButton}>
+                        <Text style={{ fontSize: 16, marginLeft: 2 }}>▶</Text>
+                    </View>
+                </View>
+            </View>
+
+            <View style={styles.cardContent}>
+                <View>
+                    <Text style={styles.cardTitle} numberOfLines={2}>
+                        {course.title}
+                    </Text>
+                    <Text style={styles.cardInstructor}>
+                        {course.instructor || 'Tincadia'}
+                    </Text>
+                </View>
+
+                <View style={styles.cardFooter}>
+                    <Text style={styles.moduleIcon}>📖</Text>
+                    <Text style={styles.moduleText}>
+                        {course.modules?.length || 0} Módulos
+                    </Text>
+                </View>
+            </View>
+        </TouchableOpacity>
+    );
 
     return (
         <SafeAreaView style={styles.container}>
@@ -108,32 +131,45 @@ export function CoursesScreen({
             </View>
 
             {/* Content */}
-            <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
-                {categories.map((category, index) => (
-                    <View key={index}>
-                        <Text style={styles.sectionTitle}>{category.title}</Text>
-                        {category.courses.map((course) => (
-                            <TouchableOpacity key={course.id} style={styles.courseCard}>
-                                <View style={styles.courseIconContainer} />
-                                <View style={styles.courseInfo}>
-                                    <Text style={styles.courseTitle}>{course.title}</Text>
-                                    <Text style={styles.courseDescription} numberOfLines={2}>
-                                        {course.description}
-                                    </Text>
-                                    <View style={styles.tagsContainer}>
-                                        <View style={styles.tag}>
-                                            <Text style={styles.tagText}>{course.instructor}</Text>
-                                        </View>
-                                        <View style={styles.tag}>
-                                            <Text style={styles.tagText}>{course.level}</Text>
-                                        </View>
+            {isLoading ? (
+                <View style={[styles.content, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <ActivityIndicator size="large" color="#4CAF50" />
+                    <Text style={{ marginTop: 10, color: '#666' }}>Cargando cursos...</Text>
+                </View>
+            ) : (
+                <ScrollView
+                    style={styles.content}
+                    contentContainerStyle={styles.scrollContent}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4CAF50']} />
+                    }
+                >
+                    {categories.length === 0 ? (
+                        <View style={{ padding: 20, alignItems: 'center', marginTop: 100 }}>
+                            <Text style={{ color: '#666', fontSize: 16 }}>No hay cursos disponibles por el momento.</Text>
+                        </View>
+                    ) : (
+                        categories.map((category, index) => (
+                            <View key={index} style={styles.sectionContainer}>
+                                <View style={styles.sectionHeader}>
+                                    <Text style={styles.sectionTitle}>{category.title}</Text>
+                                    <View style={styles.courseCountBadge}>
+                                        <Text style={styles.courseCountText}>{category.courses.length}</Text>
                                     </View>
                                 </View>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                ))}
-            </ScrollView>
+                                <FlatList
+                                    data={category.courses}
+                                    renderItem={renderCourseCard}
+                                    keyExtractor={(item) => item.id}
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={styles.horizontalList}
+                                />
+                            </View>
+                        ))
+                    )}
+                </ScrollView>
+            )}
 
             <BottomNavigation currentScreen="courses" onNavigate={onNavigate} />
         </SafeAreaView>

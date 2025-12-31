@@ -169,11 +169,16 @@ export function ChatView({
 
             setIsUploadingMedia(true);
 
-            // 2. Upload to Supabase Storage
-            const storageKey = await mediaService.uploadMedia(media);
+            // 2. Upload to Cloudinary Securely (via API Gateway)
+            const { publicId, type } = await mediaService.uploadMedia(media);
 
-            // 3. Send message with appropriate type
-            await sendMessage(storageKey, media.type === 'video' ? 'image' : 'image');
+            // 3. Send message
+            // Content: Placeholder text (backend uses this for notifications/display fallback)
+            // Type: image/video
+            // Metadata: { publicId }
+            // LocalContent: media.uri (for instant optimistic display)
+            const content = type === 'video' ? '🎥 Video' : '📷 Foto';
+            await sendMessage(content, type as any, { publicId }, media.uri);
 
         } catch (error) {
             console.error('Media upload failed:', error);
@@ -199,8 +204,8 @@ export function ChatView({
         try {
             const audio = await mediaService.stopRecording();
             if (audio) {
-                const storageKey = await mediaService.uploadMedia(audio);
-                await sendMessage(storageKey, 'audio');
+                const { publicId } = await mediaService.uploadMedia(audio);
+                await sendMessage('🎤 Audio', 'audio', { publicId }, audio.uri);
             }
         } catch (error) {
             console.error('Audio upload failed:', error);

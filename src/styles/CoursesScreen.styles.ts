@@ -42,66 +42,131 @@ export const coursesScreenStyles = StyleSheet.create({
     },
     content: {
         flex: 1,
+        backgroundColor: '#f8fafc',
     },
     scrollContent: {
-        padding: 16,
-        paddingBottom: 100, // Space for bottom nav
+        paddingBottom: 20,
+    },
+    sectionContainer: {
+        marginTop: 24,
+        marginBottom: 8,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        marginBottom: 12,
     },
     sectionTitle: {
         fontSize: 20,
-        fontWeight: 'bold',
-        color: '#000000',
-        marginTop: 24,
-        marginBottom: 16,
+        fontWeight: '700',
+        color: '#1e293b',
+        letterSpacing: -0.5,
     },
-    courseCard: {
-        flexDirection: 'row',
-        backgroundColor: '#FFFFFF',
+    courseCountBadge: {
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+    },
+    courseCountText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    horizontalList: {
+        paddingHorizontal: 20,
+        paddingBottom: 20,
+    },
+    // New Card Styles
+    cardContainer: {
+        width: 260,
+        backgroundColor: '#ffffff',
         borderRadius: 16,
+        marginRight: 20,
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 3,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
-        padding: 12,
-        marginBottom: 12,
+        borderColor: '#f1f5f9',
+    },
+    cardImageContainer: {
+        height: 146,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+        backgroundColor: '#e2e8f0',
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    cardImage: {
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
+    },
+    playOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        justifyContent: 'center',
         alignItems: 'center',
     },
-    courseIconContainer: {
-        width: 60,
-        height: 60,
-        borderRadius: 8,
-        backgroundColor: '#F5F5F5', // Placeholder color
-        marginRight: 12,
+    playButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    courseInfo: {
+    cardContent: {
+        padding: 16,
+        justifyContent: 'space-between',
         flex: 1,
     },
-    courseTitle: {
+    cardTitle: {
         fontSize: 16,
-        fontWeight: 'bold',
-        color: '#000000',
+        fontWeight: '700',
+        color: '#0f172a',
         marginBottom: 4,
+        lineHeight: 22,
     },
-    courseDescription: {
-        fontSize: 12,
-        color: '#666666',
+    cardInstructor: {
+        fontSize: 13,
+        color: '#64748b',
+        fontWeight: '500',
         marginBottom: 8,
-        lineHeight: 16,
     },
-    tagsContainer: {
+    cardFooter: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
+        alignItems: 'center',
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+        paddingTop: 12,
     },
-    tag: {
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        backgroundColor: '#FFFFFF',
+    moduleIcon: {
+        fontSize: 12, // Since it's an emoji/text icon
+        marginRight: 6,
     },
-    tagText: {
-        fontSize: 10,
-        color: '#666666',
+    moduleText: {
+        fontSize: 12,
+        color: '#64748b',
         fontWeight: '500',
     },
     bottomContainer: {

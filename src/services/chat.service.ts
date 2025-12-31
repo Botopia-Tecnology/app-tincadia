@@ -34,6 +34,7 @@ interface SendMessageDto {
     senderId: string;
     content: string;
     type: 'text' | 'image' | 'audio' | 'call' | 'call_ended';
+    metadata?: any;
 }
 
 interface CreateConversationDto {
