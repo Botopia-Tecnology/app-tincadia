@@ -1,11 +1,11 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Audio } from 'expo-av';
-import { supabase } from '../lib/supabase';
-import { decode } from 'base64-arraybuffer';
 import { Alert } from 'react-native';
+import { API_URL, API_ENDPOINTS } from '../config/api.config';
+import { authService } from './auth.service';
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // Increased to 50MB for videos
 
 export interface MediaFile {
     uri: string;
@@ -19,8 +19,14 @@ export interface MediaFile {
     base64?: string;
 }
 
+export interface UploadResponse {
+    public_id: string;
+    url: string; // The raw Cloudinary URL (public or private)
+    resource_type: string;
+    format: string;
+}
+
 class MediaService {
-    private BUCKET_NAME = 'temp-media';
     private recording: Audio.Recording | null = null;
 
     /**
@@ -38,16 +44,16 @@ class MediaService {
             mediaTypes: ImagePicker.MediaTypeOptions.All, // Images and Videos
             allowsEditing: false, // Don't force editing for videos
             quality: 0.8,
-            base64: true, // Get base64 for upload
+            base64: false, // We don't need base64 for file upload
             videoMaxDuration: 60, // 1 minute max for videos
         });
 
         if (!result.canceled && result.assets[0]) {
             const asset = result.assets[0];
 
-            // Check file size
+            // Check file size if available (native often provides it)
             if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE) {
-                Alert.alert('Archivo muy grande', 'El archivo debe ser menor a 5MB.');
+                Alert.alert('Archivo muy grande', 'El archivo debe ser menor a 50MB.');
                 return null;
             }
 
@@ -66,7 +72,6 @@ class MediaService {
                 mimeType: asset.mimeType,
                 fileName: asset.fileName || `media_${Date.now()}.${type === 'video' ? 'mp4' : 'jpg'}`,
                 duration: asset.duration ?? undefined,
-                base64: asset.base64 ?? undefined,
             };
         }
 
@@ -74,57 +79,52 @@ class MediaService {
     }
 
     /**
-     * Upload media to Supabase Storage
-     * Returns the Storage Key (path)
+     * Upload media to Cloudinary via API Gateway
+     * Returns the Public ID (essential for signed URLs) and Type
      */
-    async uploadMedia(media: MediaFile): Promise<string> {
-        let base64Data: string;
+    async uploadMedia(media: MediaFile): Promise<{ publicId: string; type: string }> {
+        try {
+            const token = await authService.getToken();
+            if (!token) throw new Error('No authenticated');
 
-        // Use provided base64 if available, otherwise read from file
-        if (media.base64) {
-            base64Data = media.base64;
-        } else {
-            // Fallback: read file as base64
-            base64Data = await FileSystem.readAsStringAsync(media.uri, {
-                encoding: 'base64' as any, // Use string instead of enum to avoid undefined
-            });
-        }
+            const uploadUrl = API_URL + API_ENDPOINTS.UPLOAD_CHAT_MEDIA;
 
-        // Determine file extension and content type
-        let extension = 'jpg';
-        let contentType = 'image/jpeg';
+            // Prepare type field
+            // Note: Cloudinary 'raw' is used for generic files, but for audio we often use 'video' or 'raw'
+            // We'll stick to 'image' | 'video' | 'raw' as defined in backend
+            let uploadType = media.type === 'audio' ? 'raw' : media.type;
 
-        if (media.type === 'video') {
-            extension = 'mp4';
-            contentType = 'video/mp4';
-        } else if (media.type === 'audio') {
-            extension = 'm4a';
-            contentType = 'audio/m4a';
-        } else if (media.mimeType) {
-            contentType = media.mimeType;
-            if (media.mimeType.includes('png')) extension = 'png';
-            else if (media.mimeType.includes('gif')) extension = 'gif';
-            else if (media.mimeType.includes('webp')) extension = 'webp';
-        }
+            console.log(`📤 Uploading ${media.type} to ${uploadUrl}`);
 
-        // Generate unique filename
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
-        const filePath = `uploads/${fileName}`;
-
-        // Upload to Supabase
-        const { data, error } = await supabase.storage
-            .from(this.BUCKET_NAME)
-            .upload(filePath, decode(base64Data), {
-                contentType,
-                upsert: false
+            const response = await FileSystem.uploadAsync(uploadUrl, media.uri, {
+                httpMethod: 'POST',
+                uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+                fieldName: 'file',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                parameters: {
+                    type: uploadType
+                }
             });
 
-        if (error) {
-            console.error('Supabase Upload Error:', error);
+            if (response.status !== 201 && response.status !== 200) {
+                console.error('Upload failed with status:', response.status, response.body);
+                throw new Error(`Upload failed: ${response.status}`);
+            }
+
+            const data: UploadResponse = JSON.parse(response.body);
+            console.log('✅ Upload success:', data.public_id);
+
+            return {
+                publicId: data.public_id,
+                type: media.type
+            };
+
+        } catch (error) {
+            console.error('Media upload error:', error);
             throw error;
         }
-
-        return data.path;
     }
 
     /**
@@ -182,12 +182,6 @@ class MediaService {
             // Get file info
             const fileInfo = await FileSystem.getInfoAsync(uri);
 
-            // Check size
-            if (fileInfo.exists && 'size' in fileInfo && fileInfo.size > MAX_FILE_SIZE) {
-                Alert.alert('Audio muy largo', 'El audio debe ser menor a 5MB. Intenta grabar uno más corto.');
-                return null;
-            }
-
             console.log('🎙️ Recording stopped:', uri);
 
             return {
@@ -221,43 +215,6 @@ class MediaService {
      */
     isRecording(): boolean {
         return this.recording !== null;
-    }
-
-    /**
-     * Get public URL for media (no download needed if bucket is public)
-     */
-    async downloadMedia(storageKey: string): Promise<string> {
-        // For public buckets, just get the public URL directly
-        const { data } = supabase.storage
-            .from(this.BUCKET_NAME)
-            .getPublicUrl(storageKey);
-
-        if (data?.publicUrl) {
-            return data.publicUrl;
-        }
-
-        // Fallback: try signed URL if public URL doesn't work
-        const { data: signedData, error } = await supabase.storage
-            .from(this.BUCKET_NAME)
-            .createSignedUrl(storageKey, 3600); // 1 hour expiry
-
-        if (error) {
-            console.error('Failed to get media URL:', error);
-            throw error;
-        }
-
-        return signedData.signedUrl;
-    }
-
-    /**
-     * Delete media from Supabase Storage
-     */
-    async deleteMedia(storageKey: string): Promise<void> {
-        const { error } = await supabase.storage
-            .from(this.BUCKET_NAME)
-            .remove([storageKey]);
-
-        if (error) console.error('Delete Error:', error);
     }
 }
 

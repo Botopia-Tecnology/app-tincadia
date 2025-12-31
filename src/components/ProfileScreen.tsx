@@ -84,6 +84,7 @@ export function ProfileScreen({
                 return;
             }
 
+            // Send Remote Push via Backend
             const tokenData = await Notifications.getExpoPushTokenAsync();
             console.log('📱 Testing Push with Token:', tokenData.data);
 

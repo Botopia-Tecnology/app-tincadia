@@ -23,6 +23,7 @@ import { LoginScreen } from '../components/LoginScreen';
 import { CompleteProfileScreen } from '../components/CompleteProfileScreen';
 import { ChatsScreen } from '../components/ChatsScreen';
 import { CoursesScreen } from '../components/CoursesScreen';
+import { CoursePlayerScreen } from '../components/CoursePlayerScreen';
 import { SOSScreen } from '../components/SOSScreen';
 import { ProfileScreen } from '../components/ProfileScreen';
 import { NotificationsScreen } from '../components/NotificationsScreen';
@@ -101,7 +102,7 @@ async function registerForPushNotificationsAsync() {
   return token;
 }
 
-type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'notifications';
+type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'notifications' | 'course_player';
 
 function AppContent() {
   const { isAuthenticated, profileComplete, isLoading, user } = useAuth();
@@ -137,6 +138,8 @@ function AppContent() {
   // Simple navigation stack (no react-navigation). This lets Android "back" go to the previous screen.
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
   const [callParams, setCallParams] = useState<{ roomName: string; username: string; conversationId?: string; userId?: string } | null>(null);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+
   const currentScreen = useMemo(
     () => screenStack[screenStack.length - 1] ?? 'chats',
     [screenStack]
@@ -145,6 +148,9 @@ function AppContent() {
   const navigate = useCallback((next: ScreenName, params?: any) => {
     if (next === 'call' && params) {
       setCallParams(params);
+    }
+    if (next === 'course_player' && params?.courseId) {
+      setSelectedCourseId(params.courseId);
     }
     setScreenStack((prev) => {
       const last = prev[prev.length - 1];
@@ -231,6 +237,12 @@ function AppContent() {
           onBack={goBack}
           userId={userId}
           onShowNotifications={handleShowNotifications}
+          onCourseSelect={(courseId) => navigate('course_player', { courseId })}
+        />
+      ) : currentScreen === 'course_player' && selectedCourseId ? (
+        <CoursePlayerScreen
+          courseId={selectedCourseId}
+          onBack={goBack}
         />
       ) : currentScreen === 'sos' ? (
         <SOSScreen

@@ -256,4 +256,11 @@ export const authService = {
             skipAuth: true,
         });
     },
+
+    /**
+     * Get the current access token
+     */
+    async getToken(): Promise<string | null> {
+        return await tokenStorage.getToken();
+    },
 };

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Dimensions, StyleSheet, Pressable } from 'react-native';
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { messageBubbleStyles as styles } from '../../styles/ChatComponents.styles';
-import { mediaService } from '../../services/media.service';
 import { Ionicons } from '@expo/vector-icons';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -26,41 +25,10 @@ export function MessageBubble({ content, time, isMine, isSynced = true, isRead =
 
     // Auto-load media when component mounts
     useEffect(() => {
-        let isMounted = true;
-
-        const loadMedia = async () => {
-            if ((type === 'image' || type === 'video' || type === 'audio') && content) {
-                // If it's already a full URL or local file
-                if (content.startsWith('http') || content.startsWith('file://')) {
-                    setMediaUri(content);
-                    return;
-                }
-
-                // It's a storage key - get the public URL
-                setIsLoading(true);
-                try {
-                    const uri = await mediaService.downloadMedia(content);
-                    if (isMounted) {
-                        setMediaUri(uri);
-                    }
-                } catch (e) {
-                    console.error('Failed to load media:', e);
-                } finally {
-                    if (isMounted) {
-                        setIsLoading(false);
-                    }
-                }
-            }
-        };
-
-        loadMedia();
-
-        return () => {
-            isMounted = false;
-            if (audioSound) {
-                audioSound.unloadAsync();
-            }
-        };
+        if ((type === 'image' || type === 'video' || type === 'audio') && content) {
+            // Content is now always a URI (local file:// or remote https:// signed url)
+            setMediaUri(content);
+        }
     }, [content, type]);
 
     const handlePlayAudio = async () => {

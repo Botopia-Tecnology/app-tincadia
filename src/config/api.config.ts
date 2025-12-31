@@ -70,4 +70,10 @@ export const API_ENDPOINTS = {
     NOTIFICATIONS_UNREAD_COUNT: (userId: string) => `/notifications/unread-count/${userId}`,
     NOTIFICATION_MARK_READ: (notificationId: string) => `/notifications/${notificationId}/read`,
     PUSH_TEST: '/notifications/push-test',
+
+    // Content endpoints
+    COURSES: '/content/courses',
+    DETAILS: '/content/courses/:id',
+    CATEGORIES: '/content/categories',
+    UPLOAD_CHAT_MEDIA: '/content/chat/media',
 } as const;
