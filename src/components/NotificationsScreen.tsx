@@ -91,8 +91,21 @@ const getTypeStyle = (type: NotificationType) => {
 };
 
 // Format time ago
+// Format time ago
 const formatTimeAgo = (dateString: string): string => {
-    const date = new Date(dateString);
+    if (!dateString) return '';
+
+    // Fix potential format issues for cross-platform compatibility
+    // e.g., "2023-01-01 12:00:00" -> "2023-01-01T12:00:00"
+    const safeDateString = dateString.replace(' ', 'T');
+
+    const date = new Date(safeDateString);
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+        return '';
+    }
+
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);

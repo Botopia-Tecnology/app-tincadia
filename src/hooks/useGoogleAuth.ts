@@ -15,7 +15,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 
 // Web Client ID from Google Cloud Console (also configured in Supabase)
-const WEB_CLIENT_ID = '291627235984-l28og4njn0136vq6rsdpm1ipe0mteve1.apps.googleusercontent.com';
+const WEB_CLIENT_ID = '432950882488-80s791qdafaslmilmos19mndc9427n60.apps.googleusercontent.com';
 
 // Configure Google Sign-In once
 let isConfigured = false;

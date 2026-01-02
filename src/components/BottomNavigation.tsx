@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, Modal, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, Alert } from 'react-native';
 import { bottomNavigationStyles as styles } from '../styles/BottomNavigation.styles';
 import {
     ChatIcon,
@@ -8,6 +8,7 @@ import {
     ProfileIcon,
 } from './icons/NavigationIcons';
 import { useTranslation } from '../hooks/useTranslation';
+import { QRScannerScreen } from './QRScannerScreen';
 
 interface BottomNavigationProps {
     currentScreen: 'chats' | 'courses' | 'sos' | 'profile';
@@ -17,6 +18,7 @@ interface BottomNavigationProps {
 export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigationProps) {
     const { t } = useTranslation();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [showScanner, setShowScanner] = useState(false);
 
     const toggleMenu = () => {
         setIsMenuOpen(!isMenuOpen);
@@ -29,8 +31,32 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
     const handleMenuOption = (option: string) => {
         console.log(`Selected option: ${option}`);
         closeMenu();
-        // Add logic for menu options here
+        if (option === 'qr') {
+            setShowScanner(true);
+        } else if (option === 'tincards') {
+            // Handle Tincards navigation
+            Alert.alert('Tincards', 'Próximamente');
+        }
     };
+
+    const handleScanResult = (data: string) => {
+        setShowScanner(false);
+        // Handle the scanned data here
+        setTimeout(() => {
+            Alert.alert('Código QR Detectado', data);
+        }, 500);
+    };
+
+    if (showScanner) {
+        return (
+            <Modal animationType="slide" visible={true} onRequestClose={() => setShowScanner(false)}>
+                <QRScannerScreen
+                    onClose={() => setShowScanner(false)}
+                    onScan={handleScanResult}
+                />
+            </Modal>
+        );
+    }
 
     return (
         <>
@@ -45,24 +71,24 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                     <View style={styles.menuOverlay}>
                         <TouchableWithoutFeedback>
                             <View style={styles.floatingMenuContainer}>
-                                <View style={styles.floatingMenuItem}>
-                                    <Text style={styles.floatingLabel}>TinCards</Text>
-                                    <TouchableOpacity style={styles.floatingButton} onPress={() => handleMenuOption('Option 1')}>
-                                        <Text style={styles.floatingButtonText}>1</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                <View style={styles.floatingMenuItem}>
-                                    <Text style={styles.floatingLabel}>Opción 2</Text>
-                                    <TouchableOpacity style={styles.floatingButton} onPress={() => handleMenuOption('Option 2')}>
-                                        <Text style={styles.floatingButtonText}>2</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                <View style={styles.floatingMenuItem}>
-                                    <Text style={styles.floatingLabel}>Opción 3</Text>
-                                    <TouchableOpacity style={styles.floatingButton} onPress={() => handleMenuOption('Option 3')}>
-                                        <Text style={styles.floatingButtonText}>3</Text>
-                                    </TouchableOpacity>
-                                </View>
+                                <TouchableOpacity style={styles.floatingMenuItem} onPress={() => handleMenuOption('tincards')}>
+                                    <View style={styles.floatingLabelContainer}>
+                                        <Text style={styles.floatingLabel}>Tincards</Text>
+                                    </View>
+                                    <View style={[styles.floatingButton, { backgroundColor: '#4A90E2' }]}>
+                                        {/* Use a placeholder text or icon for now */}
+                                        <Text style={styles.floatingButtonText}>T</Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity style={styles.floatingMenuItem} onPress={() => handleMenuOption('qr')}>
+                                    <View style={styles.floatingLabelContainer}>
+                                        <Text style={styles.floatingLabel}>Lector QR</Text>
+                                    </View>
+                                    <View style={[styles.floatingButton, { backgroundColor: '#333' }]}>
+                                        <Text style={styles.floatingButtonText}>QR</Text>
+                                    </View>
+                                </TouchableOpacity>
                             </View>
                         </TouchableWithoutFeedback>
                     </View>
@@ -92,6 +118,10 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                         </Text>
                     </TouchableOpacity>
 
+                    <TouchableOpacity onPress={toggleMenu} style={styles.tincadiaIconContainer}>
+                        <Image source={require('../../assets/icon.png')} style={styles.tincadiaIcon} />
+                    </TouchableOpacity>
+
                     <TouchableOpacity
                         style={[styles.navItem, currentScreen === 'sos' && styles.navItemActive]}
                         onPress={() => onNavigate('sos')}
@@ -112,10 +142,6 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                         </Text>
                     </TouchableOpacity>
                 </View>
-
-                <TouchableOpacity onPress={toggleMenu} style={styles.tincadiaIconContainer}>
-                    <Image source={require('../../assets/icon.png')} style={styles.tincadiaIcon} />
-                </TouchableOpacity>
             </View>
         </>
     );

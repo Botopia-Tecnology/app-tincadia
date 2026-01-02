@@ -75,40 +75,36 @@ export const profileScreenStyles = StyleSheet.create({
         color: '#000000',
     },
     profileSection: {
-        flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 32,
     },
     avatarContainer: {
         position: 'relative',
-        marginRight: 16,
+        marginBottom: 16,
     },
     avatar: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
+        width: 120,
+        height: 120,
+        borderRadius: 60,
     },
     badgeIcon: {
         position: 'absolute',
-        bottom: 0,
-        right: -10,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 15,
-        padding: 4,
+        bottom: 5,
+        right: 5,
+        backgroundColor: '#007AFF', // Example color
+        borderRadius: 20,
+        padding: 8,
+        elevation: 4,
         shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 3,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
     },
     userInfo: {
-        flex: 1,
+        alignItems: 'center',
     },
     userName: {
-        fontSize: 18,
+        fontSize: 22,
         fontWeight: 'bold',
         color: '#000000',
         marginBottom: 4,
@@ -150,6 +146,52 @@ export const profileScreenStyles = StyleSheet.create({
         fontWeight: '500',
         color: '#000000',
     },
+
+    // New Fields Styles
+    fieldGroup: {
+        backgroundColor: '#FFFFFF',
+        marginTop: 20,
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: '#F0F0F0',
+    },
+    fieldItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 16,
+        paddingHorizontal: 16,
+        backgroundColor: '#FFFFFF',
+    },
+    fieldInfo: {
+        flex: 1,
+        justifyContent: 'center',
+    },
+    fieldLabel: {
+        fontSize: 14,
+        color: '#666666',
+        marginLeft: 12, // Space after icon
+        fontWeight: '500',
+    },
+    fieldValue: {
+        fontSize: 17,
+        color: '#000000',
+        marginTop: 4,
+        marginLeft: 32, // Indent to align with label text (20 icon + 12 margin) roughly
+    },
+    fieldSubtext: {
+        fontSize: 12,
+        color: '#999999',
+        marginLeft: 32,
+        marginTop: 2,
+    },
+    separator: {
+        height: 1,
+        backgroundColor: '#F0F0F0',
+        marginLeft: 48, // Indent separator
+    },
+
+    // Bottom container for nav
     bottomContainer: {
         position: 'absolute',
         bottom: 20,

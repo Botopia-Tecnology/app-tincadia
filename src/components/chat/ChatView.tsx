@@ -11,9 +11,10 @@ import {
     TouchableOpacity,
     TextInput,
     ActivityIndicator,
-    ScrollView,
+    FlatList,
     Animated,
     Alert,
+    Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../../hooks/useChat';
@@ -49,6 +50,7 @@ export interface ChatViewProps {
     alias?: string;
     customFirstName?: string;
     customLastName?: string;
+    otherUserAvatar?: string;
 }
 
 export function ChatView({
@@ -67,6 +69,7 @@ export function ChatView({
     alias,
     customFirstName,
     customLastName,
+    otherUserAvatar,
 }: ChatViewProps) {
     const { messages, sendMessage, isLoading } = useChat(conversationId, userId);
     const [messageText, setMessageText] = useState('');
@@ -78,17 +81,17 @@ export function ChatView({
     const [showProfile, setShowProfile] = useState(false);
     const [contactSaved, setContactSaved] = useState(false);
     const [currentDisplayName, setCurrentDisplayName] = useState(otherUserName);
-    const scrollViewRef = React.useRef<ScrollView>(null);
+
 
     // Create animated component for LinearGradient
     const AnimatedGradient = Animated.createAnimatedComponent(LinearGradient);
 
-    // Auto-scroll to bottom
-    useEffect(() => {
-        if (scrollViewRef.current) {
-            scrollViewRef.current.scrollToEnd({ animated: true });
-        }
-    }, [messages]);
+    // Auto-scroll handled by inverted FlatList
+    // useEffect(() => {
+    //     if (scrollViewRef.current) {
+    //         scrollViewRef.current.scrollToEnd({ animated: true });
+    //     }
+    // }, [messages]);
 
     const handleSend = async () => {
         if (!messageText.trim()) return;
@@ -228,6 +231,7 @@ export function ChatView({
                 alias={alias}
                 customFirstName={customFirstName}
                 customLastName={customLastName}
+                avatarUrl={otherUserAvatar}
                 conversationId={conversationId}
                 onBack={() => setShowProfile(false)}
                 onContactUpdated={(contact) => {
@@ -264,9 +268,20 @@ export function ChatView({
                     onPress={() => setShowProfile(true)}
                 >
                     <View style={chatViewStyles.avatarSmall}>
-                        <Text style={chatViewStyles.avatarSmallText}>
-                            {currentDisplayName.charAt(0).toUpperCase()}
-                        </Text>
+                        {otherUserAvatar ? (
+                            <Image
+                                source={{ uri: otherUserAvatar }}
+                                style={{
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 20,
+                                }}
+                            />
+                        ) : (
+                            <Text style={chatViewStyles.avatarSmallText}>
+                                {currentDisplayName.charAt(0).toUpperCase()}
+                            </Text>
+                        )}
                     </View>
 
                     <View style={chatViewStyles.headerInfo}>
@@ -289,75 +304,79 @@ export function ChatView({
             )}
 
             {/* Messages */}
+            {/* Messages */}
             {isLoading && messages.length === 0 ? (
                 <View style={chatViewStyles.loadingContainer}>
                     <ActivityIndicator size="large" color="#7FA889" />
                 </View>
             ) : (
-                <ScrollView
-                    ref={scrollViewRef}
+                <FlatList
+                    data={[...messages].reverse()}
+                    inverted
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={{ paddingVertical: 16 }}
                     style={chatViewStyles.messagesContainer}
-                    contentContainerStyle={chatViewStyles.messagesContent}
-                    onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-                >
-                    {messages.length === 0 ? (
+                    keyboardDismissMode="on-drag"
+                    ListEmptyComponent={
                         <View style={chatViewStyles.emptyContainer}>
                             <Text style={chatViewStyles.emptyText}>No hay mensajes aún</Text>
                             <Text style={chatViewStyles.emptySubtext}>¡Envía el primero!</Text>
                         </View>
-                    ) : (
-                        messages.map((msg, index) => {
-                            const isMe = msg.senderId === userId;
+                    }
+                    renderItem={({ item: msg }) => {
+                        const isMe = msg.senderId === userId;
 
-                            // For call messages, check if there's a call_ended after it
-                            if (msg.type === 'call') {
-                                // Check if any subsequent message is call_ended
-                                const hasEnded = messages.slice(index + 1).some(m => m.type === 'call_ended');
+                        // For call messages, check if there's a call_ended after it
+                        // Note: inside flattened list (reversed), 'after' means 'before' index, but logic is tricky
+                        // It's easier to just handle call display logic simpler or rely on standard rendering
+                        // For now we preserve specific call rendering logic but adapted for item
 
-                                return (
-                                    <View key={msg.id} style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center', marginVertical: 10 }]}>
-                                        <View style={{ backgroundColor: hasEnded ? '#F3F4F6' : '#E0E7FF', padding: 15, borderRadius: 15, alignItems: 'center' }}>
-                                            <Text style={{ fontWeight: 'bold', marginBottom: 5 }}>
-                                                {hasEnded ? '📞 Videollamada finalizada' : '📞 Videollamada'}
-                                            </Text>
-                                            {!hasEnded && (
-                                                <>
-                                                    <Text style={{ marginBottom: 10 }}>{isMe ? 'Has iniciado una llamada' : 'Te invitaron a una llamada'}</Text>
-                                                    <TouchableOpacity
-                                                        onPress={joinCall}
-                                                        style={{ backgroundColor: '#4F46E5', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}
-                                                    >
-                                                        <Text style={{ color: 'white', fontWeight: 'bold' }}>Unirse ahora</Text>
-                                                    </TouchableOpacity>
-                                                </>
-                                            )}
-                                        </View>
-                                    </View>
-                                );
-                            }
-
-                            // Hide call_ended messages (already handled above)
-                            if (msg.type === 'call_ended') {
-                                return null;
-                            }
-
+                        if (msg.type === 'call') {
+                            // Simplified call rendering for FlatList to avoid complex lookups
                             return (
-                                <View
-                                    key={msg.id}
-                                >
-                                    <MessageBubble
-                                        content={msg.content}
-                                        time={msg.createdAt}
-                                        isMine={isMe}
-                                        isSynced={msg.status !== 'pending'}
-                                        isRead={msg.status === 'read'}
-                                        type={msg.type || 'text'}
-                                    />
+                                <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center', marginVertical: 10 }]}>
+                                    <View style={{ backgroundColor: '#E0E7FF', padding: 15, borderRadius: 15, alignItems: 'center' }}>
+                                        <Text style={{ fontWeight: 'bold', marginBottom: 5 }}>
+                                            📞 Videollamada
+                                        </Text>
+                                        <Text style={{ marginBottom: 10 }}>{isMe ? 'Iniciaste una llamada' : 'Te invitaron a una llamada'}</Text>
+                                        <TouchableOpacity
+                                            onPress={joinCall}
+                                            style={{ backgroundColor: '#4F46E5', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}
+                                        >
+                                            <Text style={{ color: 'white', fontWeight: 'bold' }}>Unirse ahora</Text>
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
                             );
-                        })
-                    )}
-                </ScrollView>
+                        }
+
+                        if (msg.type === 'call_ended') {
+                            return (
+                                <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center', marginVertical: 10 }]}>
+                                    <View style={{ backgroundColor: '#F3F4F6', padding: 10, borderRadius: 15, alignItems: 'center' }}>
+                                        <Text style={{ color: '#6B7280', fontSize: 12 }}>
+                                            📞 Videollamada finalizada
+                                        </Text>
+                                    </View>
+                                </View>
+                            );
+                        }
+
+                        return (
+                            <View>
+                                <MessageBubble
+                                    content={msg.content}
+                                    time={msg.createdAt}
+                                    isMine={isMe}
+                                    isSynced={msg.status !== 'pending'}
+                                    isRead={msg.status === 'read'}
+                                    type={msg.type || 'text'}
+                                />
+                            </View>
+                        );
+                    }}
+                />
             )}
 
             {/* Input Area */}

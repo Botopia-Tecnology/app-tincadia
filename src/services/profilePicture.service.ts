@@ -1,11 +1,4 @@
-/**
- * Profile Picture Service
- * 
- * Handles uploading profile pictures to the backend.
- * Uses direct fetch instead of apiClient to handle FormData correctly.
- */
-
-import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy'; // Ensure legacy import matches media.service if needed, or standard
 import { tokenStorage } from '../lib/secure-storage';
 import { API_URL, API_ENDPOINTS } from '../config/api.config';
 
@@ -21,42 +14,31 @@ export const profilePictureService = {
             throw new Error('No authentication token found');
         }
 
-        const formData = new FormData();
-
-        // React Native specific FormData structure
-        const filename = imageUri.split('/').pop() || 'avatar.jpg';
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : 'image/jpeg';
-
-        formData.append('file', {
-            uri: Platform.OS === 'ios' ? imageUri.replace('file://', '') : imageUri,
-            name: filename,
-            type,
-        } as any);
-
         try {
             const endpoint = API_ENDPOINTS.UPLOAD_AVATAR(userId);
-            // Ensure API_URL doesn't double slash if endpoint starts with /
             const baseUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
             const fullUrl = `${baseUrl}${endpoint}`;
 
-            console.log('Uploading to:', fullUrl);
+            console.log('📤 Uploading avatar to:', fullUrl);
 
-            const response = await fetch(fullUrl, {
-                method: 'POST',
-                body: formData,
+            // Use FileSystem.uploadAsync for better Android support and consistency with Chat logic
+            const response = await FileSystem.uploadAsync(fullUrl, imageUri, {
+                httpMethod: 'POST',
+                uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+                fieldName: 'file',
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    // Content-Type is handled automatically by FormData (multipart/form-data; boundary=...)
                 },
+                // mimetype is usually inferred or can be passed if needed, but uploadAsync handles it well usually.
+                // If strict mimeType needed, we can check file extension.
             });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText || `Upload failed with status ${response.status}`);
+            if (response.status !== 201 && response.status !== 200) {
+                console.error('Upload failed with status:', response.status, response.body);
+                throw new Error(`Upload failed with status ${response.status}`);
             }
 
-            const data = await response.json();
+            const data = JSON.parse(response.body);
             return data;
         } catch (error) {
             console.error('Error uploading profile picture:', error);

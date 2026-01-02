@@ -27,6 +27,7 @@ export interface AddContactDto {
 }
 
 export interface UpdateContactDto {
+    ownerId: string;
     alias?: string;
     customFirstName?: string;
     customLastName?: string;
@@ -58,7 +59,7 @@ export const contactService = {
     async updateContact(contactId: string, data: UpdateContactDto): Promise<{ contact: Contact }> {
         return apiClient(API_ENDPOINTS.CONTACT(contactId), {
             method: 'PUT',
-            body: JSON.stringify(data),
+            body: JSON.stringify({ ...data, contactId }),
         });
     },
 

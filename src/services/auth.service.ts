@@ -204,7 +204,32 @@ export const authService = {
      */
     async logout(): Promise<void> {
         try {
-            await apiClient(API_ENDPOINTS.LOGOUT, { method: 'POST' });
+            // Retrieve data before clearing (to satisfy backend DTO)
+            const token = await tokenStorage.getToken();
+            const userData = await userStorage.getUser();
+            let userId = '';
+
+            if (userData) {
+                try {
+                    const user = JSON.parse(userData);
+                    userId = user.id;
+                } catch (e) { }
+            }
+
+            if (token && userId) {
+                await apiClient(API_ENDPOINTS.LOGOUT, {
+                    method: 'POST',
+                    body: JSON.stringify({ userId, token })
+                });
+            } else {
+                // If we don't have enough info, just skip the API call or send what we have
+                // But backend requires both, so if missing, maybe just skip API call entirely?
+                // The backend logout logic is empty anyway.
+                await apiClient(API_ENDPOINTS.LOGOUT, {
+                    method: 'POST',
+                    body: JSON.stringify({ userId: userId || 'unknown', token: token || 'unknown' })
+                });
+            }
         } catch (error) {
             // Ignore logout errors - we'll clear tokens anyway
             console.warn('Logout API error:', error);
@@ -262,5 +287,22 @@ export const authService = {
      */
     async getToken(): Promise<string | null> {
         return await tokenStorage.getToken();
+    },
+
+    /**
+     * Delete profile picture
+     */
+    async deleteProfilePicture(userId: string): Promise<void> {
+        await apiClient(API_ENDPOINTS.DELETE_AVATAR(userId), {
+            method: 'DELETE',
+        });
+
+        // Update stored user
+        const userData = await userStorage.getUser();
+        if (userData) {
+            const user = JSON.parse(userData);
+            user.avatarUrl = null;
+            await userStorage.setUser(JSON.stringify(user));
+        }
     },
 };

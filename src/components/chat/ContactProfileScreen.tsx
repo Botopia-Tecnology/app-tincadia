@@ -34,6 +34,7 @@ export interface ContactProfileProps {
     alias?: string;
     customFirstName?: string;
     customLastName?: string;
+    avatarUrl?: string;
     conversationId?: string;
     onBack: () => void;
     onContactUpdated?: (contact: Contact) => void;
@@ -62,6 +63,7 @@ export function ContactProfileScreen({
     alias: initialAlias,
     customFirstName: initialFirstName,
     customLastName: initialLastName,
+    avatarUrl,
     conversationId,
     onBack,
     onContactUpdated,
@@ -150,13 +152,20 @@ export function ContactProfileScreen({
                         // Not in cache - fetch from backend and cache it
                         try {
                             url = await mediaService.downloadMedia(storageKey);
-                            // Save to cache for future use
-                            saveMediaUrl({
-                                storageKey,
-                                publicUrl: url,
-                                conversationId,
-                                type: 'image',
-                            });
+
+                            // Only save if valid URL returned
+                            if (url) {
+                                // Save to cache for future use
+                                saveMediaUrl({
+                                    storageKey,
+                                    publicUrl: url,
+                                    conversationId,
+                                    type: 'image',
+                                });
+                            } else {
+                                console.warn(`⚠️ mediaService returned empty URL for ${storageKey}`);
+                                continue;
+                            }
                         } catch (e) {
                             console.error('Error getting media URL:', e);
                             continue;
@@ -192,6 +201,7 @@ export function ContactProfileScreen({
         setIsSaving(true);
         try {
             const updateData: UpdateContactDto = {
+                ownerId: userId,
                 alias: alias.trim() || undefined,
                 customFirstName: firstName.trim() || undefined,
                 customLastName: lastName.trim() || undefined,
@@ -313,7 +323,18 @@ export function ContactProfileScreen({
                     {/* Avatar */}
                     <View style={styles.avatarContainer}>
                         <View style={styles.avatarLarge}>
-                            <Text style={styles.avatarText}>{getAvatarInitial()}</Text>
+                            {avatarUrl ? (
+                                <Image
+                                    source={{ uri: avatarUrl }}
+                                    style={{
+                                        width: 100,
+                                        height: 100,
+                                        borderRadius: 50,
+                                    }}
+                                />
+                            ) : (
+                                <Text style={styles.avatarText}>{getAvatarInitial()}</Text>
+                            )}
                         </View>
                     </View>
 

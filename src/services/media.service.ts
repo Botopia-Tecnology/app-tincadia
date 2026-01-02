@@ -216,6 +216,53 @@ class MediaService {
     isRecording(): boolean {
         return this.recording !== null;
     }
+    /**
+     * Download media to local file system
+     */
+    async downloadMedia(storageKeyOrUrl: string): Promise<string | null> {
+        try {
+            let urlToDownload = storageKeyOrUrl;
+
+            // If it's not a URL (doesn't start with http), assume it's a storage key
+            if (!storageKeyOrUrl.startsWith('http')) {
+                console.log(`🔑 Fetching signed URL for key: ${storageKeyOrUrl}`);
+                try {
+                    const token = await authService.getToken();
+                    // We need to fetch the signed URL from the backend
+                    const response = await fetch(API_URL + API_ENDPOINTS.GET_SIGNED_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ publicId: storageKeyOrUrl })
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.url) {
+                            urlToDownload = data.url;
+                            console.log('✅ Got signed URL:', urlToDownload);
+                        }
+                    } else {
+                        console.warn('⚠️ Failed to get signed URL, trying original key just in case');
+                    }
+
+                } catch (e) {
+                    console.error('Error fetching signed URL:', e);
+                    // Fallback to trying original string, might fail if it's not a URL
+                }
+            }
+
+            const filename = urlToDownload.split('/').pop()?.split('?')[0] || `media_${Date.now()}`;
+            const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+
+            const { uri } = await FileSystem.downloadAsync(urlToDownload, fileUri);
+            return uri;
+        } catch (error) {
+            console.error('Download media error:', error);
+            return null;
+        }
+    }
 }
 
 export const mediaService = new MediaService();

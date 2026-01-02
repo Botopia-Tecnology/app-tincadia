@@ -12,15 +12,17 @@ import {
   FlatList,
   ActivityIndicator,
   BackHandler,
+  // KeyboardAvoidingView, // Replaced by KeyboardSafeView
 } from 'react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
-import { SafeAreaView } from 'react-native-safe-area-context';
+// import { SafeAreaView } from 'react-native-safe-area-context'; // Managed by KeyboardSafeView
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
-import { GoogleIcon, AppleIcon, MicrosoftIcon } from './icons/SocialIcons';
+import { useAppleAuth } from '../hooks/useAppleAuth';
+import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
 import { registerScreenStyles as styles } from '../styles/RegisterScreen.styles';
 import { getDocumentTypeId } from '../types/auth.types';
 import Svg, { Circle } from 'react-native-svg';
@@ -34,6 +36,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
   const { t } = useTranslation();
   const { register, error, clearError, isLoading } = useAuth();
   const { signInWithGoogle, isReady: googleReady } = useGoogleAuth();
+  const { signInWithApple, isAvailable: isAppleAvailable } = useAppleAuth();
 
   const [step, setStep] = useState(1);
   const totalSteps = 2;
@@ -171,6 +174,11 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
     await signInWithGoogle();
   };
 
+  const handleAppleRegister = async () => {
+    clearError();
+    await signInWithApple();
+  };
+
   // Progress Circle Component
   const ProgressCircle = ({ current, total }: { current: number; total: number }) => {
     const size = 50;
@@ -215,7 +223,10 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
   const displayError = validationError || error;
 
   return (
-    <KeyboardSafeView style={styles.container}>
+    <KeyboardSafeView
+      style={styles.container}
+      offset={Platform.OS === 'ios' ? 0 : 20}
+    >
       <StatusBar style="dark" />
       <ScrollView
         ref={scrollViewRef}
@@ -282,9 +293,9 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                 autoCorrect={false}
                 editable={!isLoading}
               />
-              <View style={{ width: '100%', position: 'relative' }}>
+              <View style={{ width: '90%', alignSelf: 'center', position: 'relative' }}>
                 <TextInput
-                  style={[styles.input, { paddingRight: 50 }]}
+                  style={[styles.input, { width: '100%', paddingRight: 50 }]}
                   placeholder={t('register.password')}
                   placeholderTextColor="#999"
                   value={password}
@@ -296,8 +307,10 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                 <TouchableOpacity
                   style={{
                     position: 'absolute',
-                    right: 28,
+                    right: 16,
                     top: 16,
+                    zIndex: 10,
+                    elevation: 5,
                   }}
                   onPress={() => setShowPassword(!showPassword)}
                 >
@@ -308,9 +321,9 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   />
                 </TouchableOpacity>
               </View>
-              <View style={{ width: '100%', position: 'relative' }}>
+              <View style={{ width: '90%', alignSelf: 'center', position: 'relative' }}>
                 <TextInput
-                  style={[styles.input, { paddingRight: 50 }]}
+                  style={[styles.input, { width: '100%', paddingRight: 50 }]}
                   placeholder={t('register.confirmPassword')}
                   placeholderTextColor="#999"
                   value={confirmPassword}
@@ -322,8 +335,10 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                 <TouchableOpacity
                   style={{
                     position: 'absolute',
-                    right: 28,
+                    right: 16,
                     top: 16,
+                    zIndex: 10,
+                    elevation: 5,
                   }}
                   onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                 >
@@ -406,11 +421,12 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
             >
               <GoogleIcon size={24} color="#FFFFFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.socialButton, isLoading && { opacity: 0.5 }]} disabled={isLoading}>
+            <TouchableOpacity
+              style={[styles.socialButton, (!isAppleAvailable || isLoading) && { opacity: 0.5 }]}
+              onPress={handleAppleRegister}
+              disabled={!isAppleAvailable || isLoading}
+            >
               <AppleIcon size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.socialButton, isLoading && { opacity: 0.5 }]} disabled={isLoading}>
-              <MicrosoftIcon size={24} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
