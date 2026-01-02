@@ -43,6 +43,7 @@ export const API_ENDPOINTS = {
     UPDATE_PUSH_TOKEN: '/auth/push-token',
     RESET_PASSWORD: '/auth/reset-password',
     UPLOAD_AVATAR: (userId: string) => `/auth/profile/${userId}/avatar`,
+    DELETE_AVATAR: (userId: string) => `/auth/profile/${userId}/avatar`,
 
     // Chat endpoints
     CONVERSATIONS: '/chat/conversations',
@@ -76,4 +77,5 @@ export const API_ENDPOINTS = {
     DETAILS: '/content/courses/:id',
     CATEGORIES: '/content/categories',
     UPLOAD_CHAT_MEDIA: '/content/chat/media',
+    GET_SIGNED_URL: '/content/chat/media/url',
 } as const;

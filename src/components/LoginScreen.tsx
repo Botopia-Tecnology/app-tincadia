@@ -7,7 +7,7 @@ import {
   Image,
   Platform,
   ScrollView,
-  Modal,
+
   ActivityIndicator,
 } from 'react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
@@ -16,7 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
-import { GoogleIcon, AppleIcon, MicrosoftIcon } from './icons/SocialIcons';
+import { useAppleAuth } from '../hooks/useAppleAuth';
+import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
 import { RegisterScreen } from './RegisterScreen';
 import { ForgotPasswordScreen } from './ForgotPasswordScreen';
 import { loginScreenStyles as styles } from '../styles/LoginScreen.styles';
@@ -27,13 +28,13 @@ interface LoginScreenProps {
 
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const { t } = useTranslation();
-  const { login, error, clearError, isLoading } = useAuth();
+  const { login, loginWithOAuth, error, clearError, isLoading } = useAuth();
   const { signInWithGoogle, isReady: googleReady } = useGoogleAuth();
+  const { signInWithApple, isAvailable: isAppleAvailable } = useAppleAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showOtherMethods, setShowOtherMethods] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
 
@@ -60,19 +61,14 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     }
   };
 
-  const handlePhoneLogin = () => {
-    // TODO: Implementar login con teléfono
-    console.log('Login con teléfono');
+  const handleAppleLogin = async () => {
+    clearError();
+    await signInWithApple();
   };
 
-  const handleAppleLogin = () => {
-    // TODO: Implementar login con Apple
-    console.log('Login con Apple');
-  };
-
-  const handleMicrosoftLogin = () => {
-    // TODO: Implementar login con Microsoft
-    console.log('Login con Microsoft');
+  const handleMicrosoftLogin = async () => {
+    clearError();
+    await signInWithMicrosoft();
   };
 
   const handleRegister = () => {
@@ -206,62 +202,16 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.socialButton, isLoading && { opacity: 0.5 }]}
+            style={[styles.socialButton, (!isAppleAvailable || isLoading) && { opacity: 0.5 }]}
             onPress={handleAppleLogin}
-            disabled={isLoading}
+            disabled={!isAppleAvailable || isLoading}
           >
             <AppleIcon size={32} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.socialButton, isLoading && { opacity: 0.5 }]}
-            onPress={handleMicrosoftLogin}
-            disabled={isLoading}
-          >
-            <MicrosoftIcon size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.socialButton}
-            onPress={() => setShowOtherMethods(true)}
-            disabled={isLoading}
-          >
-            <Text style={styles.moreIcon}>⋯</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* Modal de otros métodos */}
-      <Modal
-        visible={showOtherMethods}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowOtherMethods(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('login.otherMethods')}</Text>
-              <TouchableOpacity
-                onPress={() => setShowOtherMethods(false)}
-                style={styles.closeButton}
-              >
-                <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-            </View>
 
-            <TouchableOpacity
-              style={[styles.loginButtonModal, styles.phoneButtonModal]}
-              onPress={handlePhoneLogin}
-            >
-              <Text style={styles.phoneIconModal}>📱</Text>
-              <Text style={[styles.buttonText, styles.phoneButtonText]}>
-                {t('login.continueWithPhone')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </KeyboardSafeView>
   );
 }

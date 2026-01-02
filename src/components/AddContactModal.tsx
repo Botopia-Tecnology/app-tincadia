@@ -106,7 +106,8 @@ export function AddContactModal({
         >
             <KeyboardAvoidingView
                 style={styles.overlay}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -150}
             >
                 <TouchableOpacity
                     style={styles.backdrop}

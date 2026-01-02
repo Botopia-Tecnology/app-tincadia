@@ -14,11 +14,11 @@ import {
     Modal,
     FlatList,
     ActivityIndicator,
-    KeyboardAvoidingView,
     Platform,
     ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+// import { SafeAreaView } from 'react-native-safe-area-context'; // Managed by KeyboardSafeView
+import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { useAuth } from '../contexts/AuthContext';
 import { DOCUMENT_TYPE_MAP } from '../types/auth.types';
 import { completeProfileStyles as styles } from '../styles/CompleteProfileScreen.styles';
@@ -54,85 +54,84 @@ export function CompleteProfileScreen() {
         }
     };
 
+
+
     const isFormValid = documentType && documentNumber.length >= 5 && phone.length >= 7;
 
+
+
     return (
-        <SafeAreaView style={styles.container}>
-            <KeyboardAvoidingView
-                style={styles.keyboardView}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        <KeyboardSafeView style={styles.container}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
             >
-                <ScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    keyboardShouldPersistTaps="handled"
-                >
-                    {/* Header */}
-                    <View style={styles.header}>
-                        <Text style={styles.title}>Completa tu Perfil</Text>
-                        <Text style={styles.subtitle}>
-                            ¡Hola {user?.firstName || 'Usuario'}! Necesitamos algunos datos adicionales para continuar.
-                        </Text>
-                    </View>
+                {/* Header */}
+                <View style={styles.header}>
+                    <Text style={styles.title}>Completa tu Perfil</Text>
+                    <Text style={styles.subtitle}>
+                        ¡Hola {user?.firstName || 'Usuario'}! Necesitamos algunos datos adicionales para continuar.
+                    </Text>
+                </View>
 
-                    {/* Error Message */}
-                    {error && (
-                        <TouchableOpacity style={styles.errorContainer} onPress={clearError}>
-                            <Text style={styles.errorText}>{error}</Text>
-                            <Text style={styles.errorDismiss}>Tocar para cerrar</Text>
-                        </TouchableOpacity>
-                    )}
-
-                    {/* Form */}
-                    <View style={styles.form}>
-                        {/* Document Type */}
-                        <Text style={styles.label}>Tipo de Documento</Text>
-                        <TouchableOpacity
-                            style={styles.select}
-                            onPress={() => setModalVisible(true)}
-                        >
-                            <Text style={documentType ? styles.selectText : styles.selectPlaceholder}>
-                                {documentType || 'Seleccionar...'}
-                            </Text>
-                            <Text style={styles.selectArrow}>▼</Text>
-                        </TouchableOpacity>
-
-                        {/* Document Number */}
-                        <Text style={styles.label}>Número de Documento</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Ingresa tu número de documento"
-                            placeholderTextColor="#999"
-                            value={documentNumber}
-                            onChangeText={setDocumentNumber}
-                            keyboardType="numeric"
-                        />
-
-                        {/* Phone */}
-                        <Text style={styles.label}>Teléfono</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Ingresa tu número de teléfono"
-                            placeholderTextColor="#999"
-                            value={phone}
-                            onChangeText={setPhone}
-                            keyboardType="phone-pad"
-                        />
-                    </View>
-
-                    {/* Submit Button */}
-                    <TouchableOpacity
-                        style={[styles.submitButton, !isFormValid && styles.submitButtonDisabled]}
-                        onPress={handleSubmit}
-                        disabled={!isFormValid || isLoading}
-                    >
-                        {isLoading ? (
-                            <ActivityIndicator color="#FFFFFF" />
-                        ) : (
-                            <Text style={styles.submitButtonText}>Completar Registro</Text>
-                        )}
+                {/* Error Message */}
+                {error && (
+                    <TouchableOpacity style={styles.errorContainer} onPress={clearError}>
+                        <Text style={styles.errorText}>{error}</Text>
+                        <Text style={styles.errorDismiss}>Tocar para cerrar</Text>
                     </TouchableOpacity>
-                </ScrollView>
-            </KeyboardAvoidingView>
+                )}
+
+                {/* Form */}
+                <View style={styles.form}>
+                    {/* Document Type */}
+                    <Text style={styles.label}>Tipo de Documento</Text>
+                    <TouchableOpacity
+                        style={styles.select}
+                        onPress={() => setModalVisible(true)}
+                    >
+                        <Text style={documentType ? styles.selectText : styles.selectPlaceholder}>
+                            {documentType || 'Seleccionar...'}
+                        </Text>
+                        <Text style={styles.selectArrow}>▼</Text>
+                    </TouchableOpacity>
+
+                    {/* Document Number */}
+                    <Text style={styles.label}>Número de Documento</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Ingresa tu número de documento"
+                        placeholderTextColor="#999"
+                        value={documentNumber}
+                        onChangeText={setDocumentNumber}
+                        keyboardType="numeric"
+                    />
+
+                    {/* Phone */}
+                    <Text style={styles.label}>Teléfono</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Ingresa tu número de teléfono"
+                        placeholderTextColor="#999"
+                        value={phone}
+                        onChangeText={setPhone}
+                        keyboardType="phone-pad"
+                    />
+                </View>
+
+                {/* Submit Button */}
+                <TouchableOpacity
+                    style={[styles.submitButton, !isFormValid && styles.submitButtonDisabled]}
+                    onPress={handleSubmit}
+                    disabled={!isFormValid || isLoading}
+                >
+                    {isLoading ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                        <Text style={styles.submitButtonText}>Completar Registro</Text>
+                    )}
+                </TouchableOpacity>
+            </ScrollView>
 
             {/* Document Type Modal */}
             <Modal
@@ -166,6 +165,6 @@ export function CompleteProfileScreen() {
                     </View>
                 </TouchableOpacity>
             </Modal>
-        </SafeAreaView>
+        </KeyboardSafeView>
     );
 }

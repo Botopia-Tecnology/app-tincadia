@@ -1,21 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, Alert, ActivityIndicator, Linking, Share } from 'react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
-import * as ImagePicker from 'expo-image-picker';
 import { profileScreenStyles as styles } from '../styles/ProfileScreen.styles';
 import { useAuth } from '../contexts/AuthContext';
-import { profilePictureService } from '../services/profilePicture.service';
 import {
     ChatIcon,
-    CoursesIcon,
-    SOSIcon,
     ProfileIcon,
     BackArrowIcon,
-    SearchIcon,
     AccountIcon,
     PrivacyIcon,
-    HelpIcon,
     InviteIcon,
     ChevronRightIcon,
     CameraIcon,
@@ -25,6 +19,8 @@ import { NotificationBell } from './NotificationBell';
 
 import { appNotificationService } from '../services/appNotification.service';
 import * as Notifications from 'expo-notifications';
+import { EditProfileScreen } from './profile/EditProfileScreen';
+import { PrivacyScreen } from './profile/PrivacyScreen';
 
 interface ProfileScreenProps {
     onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
@@ -39,42 +35,9 @@ export function ProfileScreen({
     userId,
     onShowNotifications,
 }: ProfileScreenProps) {
-    const { user, logout, isLoading, refreshProfile } = useAuth();
-    const [isUploading, setIsUploading] = useState(false);
-
-    const handleEditAvatar = async () => {
-        try {
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería para cambiar la foto de perfil.');
-                return;
-            }
-
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
-                aspect: [1, 1],
-                quality: 0.8,
-            });
-
-            if (!result.canceled && result.assets[0].uri && user) {
-                setIsUploading(true);
-                try {
-                    await profilePictureService.uploadProfilePicture(user.id, result.assets[0].uri);
-                    await refreshProfile();
-                    Alert.alert('Éxito', 'Foto de perfil actualizada correctamente');
-                } catch (error) {
-                    console.error('Upload Error:', error);
-                    Alert.alert('Error', 'No se pudo subir la imagen. Inténtalo de nuevo.');
-                } finally {
-                    setIsUploading(false);
-                }
-            }
-        } catch (error) {
-            console.error('Picker Error:', error);
-            setIsUploading(false);
-        }
-    };
+    const { user, logout, isLoading } = useAuth();
+    // Local state to manage sub-screen navigation
+    const [subScreen, setSubScreen] = useState<'none' | 'editProfile' | 'privacy'>('none');
 
     const handleTestPush = async () => {
         try {
@@ -95,6 +58,22 @@ export function ProfileScreen({
         } catch (error) {
             console.error('Test Push Error:', error);
             Alert.alert('Error', 'No se pudo enviar la notificación de prueba.');
+        }
+    };
+
+    const handleInviteFriends = async () => {
+        try {
+            const url = 'https://tincadia-frontend.vercel.app/';
+            const message = `¡Únete a Tincadia! La mejor plataforma para conectar. ${url}`;
+
+            await Share.share({
+                message: message, // Android (and iOS fallback)
+                url: url, // iOS
+                title: 'Invitar amigos a Tincadia',
+            });
+        } catch (error) {
+            console.error('Error sharing:', error);
+            Alert.alert('Error', 'No se pudo abrir el menú de compartir.');
         }
     };
 
@@ -119,6 +98,14 @@ export function ProfileScreen({
         );
     };
 
+    // Render Sub-Screen if active
+    if (subScreen === 'editProfile') {
+        return <EditProfileScreen onBack={() => setSubScreen('none')} />;
+    }
+
+    if (subScreen === 'privacy') {
+        return <PrivacyScreen onBack={() => setSubScreen('none')} />;
+    }
 
     return (
         <KeyboardSafeView style={styles.container}>
@@ -142,41 +129,16 @@ export function ProfileScreen({
             </View>
 
             <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
-                {/* Search Bar */}
-                <View style={styles.searchContainer}>
-                    <View style={styles.searchIcon}>
-                        <SearchIcon size={20} color="#999999" />
+                {/* Profile Section (Reduced for Menu View) */}
+                <View style={[styles.profileSection, { flexDirection: 'row', marginBottom: 32 }]}>
+                    <View style={styles.avatarContainer}>
+                        <Image
+                            source={user?.avatarUrl ? { uri: user.avatarUrl } : require('../../assets/user.png')}
+                            style={[styles.avatar, { width: 80, height: 80, borderRadius: 40 }]}
+                        />
                     </View>
-                    <TextInput
-                        style={styles.searchInput}
-                        placeholder="Buscar"
-                        placeholderTextColor="#999999"
-                    />
-                </View>
-
-                {/* Profile Section */}
-                <View style={styles.profileSection}>
-                    <TouchableOpacity
-                        style={styles.avatarContainer}
-                        onPress={handleEditAvatar}
-                        disabled={isUploading}
-                    >
-                        {isUploading ? (
-                            <View style={[styles.avatar, { backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }]}>
-                                <ActivityIndicator color="#0000ff" />
-                            </View>
-                        ) : (
-                            <Image
-                                source={user?.avatarUrl ? { uri: user.avatarUrl } : require('../../assets/user.png')}
-                                style={styles.avatar}
-                            />
-                        )}
-                        <View style={[styles.badgeIcon, { backgroundColor: '#007AFF', padding: 4, borderRadius: 12 }]}>
-                            <CameraIcon size={14} color="#FFFFFF" />
-                        </View>
-                    </TouchableOpacity>
                     <View style={styles.userInfo}>
-                        <Text style={styles.userName}>
+                        <Text style={[styles.userName, { fontSize: 18 }]}>
                             {user ? `${user.firstName} ${user.lastName}` : 'Usuario'}
                         </Text>
                         {user?.email && (
@@ -187,21 +149,30 @@ export function ProfileScreen({
 
                 {/* Menu Group 1 */}
                 <View style={styles.menuGroup}>
-                    <TouchableOpacity style={[styles.menuItem, styles.menuItemBorder]}>
+                    <TouchableOpacity
+                        style={[styles.menuItem, styles.menuItemBorder]}
+                        onPress={() => setSubScreen('editProfile')} // Open Edit Profile
+                    >
                         <View style={styles.menuIcon}>
                             <AccountIcon size={20} color="#666666" />
                         </View>
                         <Text style={styles.menuLabel}>Cuenta</Text>
                         <ChevronRightIcon size={20} color="#999999" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.menuItem, styles.menuItemBorder]}>
+                    <TouchableOpacity
+                        style={[styles.menuItem, styles.menuItemBorder]}
+                        onPress={() => setSubScreen('privacy')} // Open Privacy Screen
+                    >
                         <View style={styles.menuIcon}>
                             <PrivacyIcon size={20} color="#666666" />
                         </View>
                         <Text style={styles.menuLabel}>Privacidad</Text>
                         <ChevronRightIcon size={20} color="#999999" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem}>
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => onNavigate('chats')}
+                    >
                         <View style={styles.menuIcon}>
                             <ChatIcon size={20} color="#666666" />
                         </View>
@@ -212,11 +183,17 @@ export function ProfileScreen({
 
                 {/* Menu Group 2 */}
                 <View style={styles.menuGroup}>
-                    <TouchableOpacity style={[styles.menuItem, styles.menuItemBorder]}>
+                    <TouchableOpacity
+                        style={[styles.menuItem, styles.menuItemBorder]}
+                        onPress={() => Linking.openURL('https://tincadia-frontend.vercel.app/contacto')}
+                    >
                         <Text style={[styles.menuLabel, { marginLeft: 0 }]}>Ayuda</Text>
                         <ChevronRightIcon size={20} color="#999999" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.menuItem, styles.menuItemBorder]}>
+                    <TouchableOpacity
+                        style={[styles.menuItem, styles.menuItemBorder]}
+                        onPress={handleInviteFriends}
+                    >
                         <View style={styles.menuIcon}>
                             <InviteIcon size={20} color="#666666" />
                         </View>
@@ -227,7 +204,7 @@ export function ProfileScreen({
                     {/* Test Notification Button */}
                     <TouchableOpacity style={styles.menuItem} onPress={handleTestPush}>
                         <Text style={[styles.menuLabel, { marginLeft: 0, color: '#007AFF' }]}>
-                            🔔 Probar Notificación Push
+                            Probar Notificación Push
                         </Text>
                         <ChevronRightIcon size={20} color="#007AFF" />
                     </TouchableOpacity>
@@ -260,4 +237,14 @@ export function ProfileScreen({
         </KeyboardSafeView>
     );
 }
+
+// Add styles locally if needed or modify StyleSheet
+// For now I'll assume profileScreenStyles has basic containers, but I'll add field styles to style file if possible or Inline them for speed if simple.
+// I will check the imported styles first. The styles file contains header, etc.
+// I'll add the new field styles to the style file in the next step or right here if I'm not using the imported ones exclusively.
+// Actually, to avoid breaking, I should update the style file too or add inline styles.
+// Given the tool usage, I'll update the style file first or AFTER this?
+// I'll use inline styles for the new specific layout parts to ensure it works immediately without context switching back and forth too much, or better:
+// I'll assume standard flex styles.
+
 

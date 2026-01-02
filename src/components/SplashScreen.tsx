@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Image, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { splashScreenStyles as styles } from '../styles/SplashScreen.styles';
 
@@ -21,11 +21,7 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
     <View style={styles.container}>
       <StatusBar style="light" />
       <View style={styles.logoContainer}>
-        <Image
-          source={require('../../assets/icon.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+
       </View>
       <ActivityIndicator size="large" color="#4CAF50" style={styles.loader} />
     </View>

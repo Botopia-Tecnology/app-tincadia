@@ -16,6 +16,7 @@ import {
   BackHandler,
   Platform,
   AppState,
+  Image,
 } from 'react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
@@ -49,6 +50,8 @@ import { AddContactModal } from './AddContactModal';
 
 interface ChatsScreenProps {
   onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call', params?: { roomName?: string; username?: string; conversationId?: string; userId?: string }) => void;
+  initialConversation?: { conversationId: string; recipientId: string } | null;
+  onInitialConversationOpened?: () => void;
 }
 
 // Format message time for display
@@ -90,6 +93,7 @@ interface ChatListItem {
   alias?: string;
   customFirstName?: string;
   customLastName?: string;
+  avatarUrl?: string;
 }
 
 // Contact List Item Component
@@ -136,7 +140,7 @@ function ContactListItem({
 }
 
 // Main Chats Screen
-export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
+export function ChatsScreen({ onNavigate, initialConversation, onInitialConversationOpened }: ChatsScreenProps) {
   const { user } = useAuth();
   const userId = user?.id || '';
 
@@ -157,6 +161,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     alias?: string;
     customFirstName?: string;
     customLastName?: string;
+    avatarUrl?: string;
   } | null>(null);
 
   // Modal state
@@ -218,7 +223,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
   // Helper to transform local/server data to ChatListItem[]
   const transformToItems = useCallback((
     contacts: Contact[],
-    conversations: { id: string; otherUserId: string; otherUserPhone?: string; lastMessage?: string; lastMessageAt?: string; unreadCount?: number }[]
+    conversations: { id: string; otherUserId: string; otherUserPhone?: string; lastMessage?: string; lastMessageAt?: string; unreadCount?: number; otherUserAvatar?: string }[]
   ): ChatListItem[] => {
     const contactsByUserId = new Map(contacts.map(c => [c.contactUserId, c]));
     const conversationsByUserId = new Map(conversations.map(conv => [conv.otherUserId, conv]));
@@ -243,6 +248,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           alias: contact.alias,
           customFirstName: contact.customFirstName,
           customLastName: contact.customLastName,
+          avatarUrl: conv.otherUserAvatar, // Map from backend response
         };
       } else {
         return {
@@ -255,6 +261,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           unreadCount: conv.unreadCount || 0,
           lastMessage: conv.lastMessage,
           lastMessageTime: conv.lastMessageAt,
+          avatarUrl: conv.otherUserAvatar, // Map from backend response
         };
       }
     });
@@ -313,6 +320,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
           lastMessage: c.last_message,
           lastMessageAt: c.last_message_at,
           unreadCount: c.unread_count, // Use stored server count
+          otherUserAvatar: c.other_user_avatar, // Map from local DB
         }));
 
         const items = transformToItems(contacts, conversations);
@@ -373,6 +381,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
         lastMessage: conv.lastMessage,
         lastMessageAt: conv.lastMessageAt,
         unreadCount: conv.unreadCount,
+        otherUserAvatar: conv.otherUserAvatar, // Save avatar to DB
       }));
 
       updateSyncTime(`chats-${userId}`);
@@ -413,6 +422,52 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     loadChats();
   }, [loadChats]);
 
+  // Handle initial conversation (deep link)
+  useEffect(() => {
+    if (initialConversation && userId) {
+      console.log('🚀 Opening initial conversation:', initialConversation);
+      const openInitialChat = async () => {
+        try {
+          // Find contact or user info to populate headers correctly
+          // If it's a known conversation/contact, we might have it in local cache or need to fetch
+          // Ideally we fetch recent info for this user
+
+          // For now, we try to startConversation to ensure it exists and get fresh conversationId
+          // This is safe (idempotent)
+          const response = await chatService.startConversation(userId, initialConversation.recipientId);
+
+          // We need the other user's name/phone to display nicely
+          // We can fetch from contactsService or Profiles
+          // Quick implementation: Fetch profile of other user
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('first_name, last_name, phone')
+            .eq('id', initialConversation.recipientId)
+            .single() as { data: any, error: any };
+
+          const displayName = profile
+            ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
+            : profile?.phone || 'Usuario';
+
+          setSelectedChat({
+            conversationId: response.conversationId,
+            otherUserName: displayName,
+            otherUserPhone: profile?.phone || '',
+            otherUserId: initialConversation.recipientId,
+            isUnknown: false, // Assume false for now or logic to check contact
+          });
+
+          if (onInitialConversationOpened) {
+            onInitialConversationOpened();
+          }
+        } catch (e) {
+          console.error('Error opening initial conversation:', e);
+        }
+      };
+      openInitialChat();
+    }
+  }, [initialConversation, userId]);
+
   // Sync when app comes to foreground (smart refresh)
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -451,41 +506,123 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
             const isCurrentChat = selectedChat?.conversationId === conversationId;
 
             // ✅ OPTIMIZATION: Update local database immediately
-            // This ensures the list shows the new message even before the API sync completes
             if (conversationId) {
-              updateConversationPreview(
-                conversationId,
-                newMsg.content,
-                newMsg.created_at,
-                !isMine && !isCurrentChat // Increment unread only if not mine and not currently open
-              );
+              let previewContent = newMsg.content;
+
+              if (!isMine) {
+                // Incoming: Encrypted payload -> Placeholder until sync
+                if (newMsg.type === 'text') {
+                  previewContent = 'Nuevo mensaje...';
+                } else if (newMsg.type === 'image') {
+                  previewContent = '📷 Foto';
+                } else if (newMsg.type === 'audio') {
+                  previewContent = '🎤 Audio';
+                }
+              } else {
+                // Outgoing (Mine): We likely have the REAL content in local DB from optimistic update
+                // But we need to fetch it to be sure, or trust that sendMessage updated 'messages' table
+                // We can't query SQLite synchronously easily inside this callback without imports or checks
+                // But 'loadFromLocalCache' below will reload the LIST from 'conversations'.
+                // We need to update 'conversations' table.
+
+                // If we simply use newMsg.content (encrypted), we break the UI.
+                // Ideally we shouldn't touch the preview for OWN messages here if we can't decrypt
+                // UNLESS we know what we sent.
+
+                // However, syncFromServer(true) will fix it. 
+                // To avoid "Nuevo mensaje..." flash, we SKIP updating preview content for isMine 
+                // and ONLY update the timestamp/order, OR we assume the list is already optimistic from sendMessage?
+                // Actually sendMessage OPTIMISTICALLY updates 'messages' but NOT 'conversations'.
+                // So we DO need to update 'conversations'.
+
+                // Let's try to pass the encrypted content? No.
+                // Let's set a generic "Tú: Mensaje" placeholder? No.
+
+                // Best bet: Don't overwrite content if isMine, just timestamp.
+                // But then the list order might update but empty preview? 
+                // Actually, let's trigger sync and rely on that for isMine content
+                // OR use 'Tu envió un mensaje'
+
+                // Better: Attempt to get content from local 'messages' table if possible?
+                // Easier: Check if we have the message in cache?
+                // Let's just use "..." for isMine if we can't get text, which is better than encrypted.
+                // But users hate "...".
+
+                // Allow sync to handle isMine content update, but force the timestamp update so it jumps to top.
+                // AND mark as unread? No, isMine doesn't increment unread.
+              }
+
+              // Update conversation metadata (moves to top)
+              // Only update content if !isMine (placeholder)
+              if (!isMine) {
+                updateConversationPreview(
+                  conversationId,
+                  previewContent,
+                  newMsg.created_at,
+                  !isCurrentChat // Increment unread
+                );
+              } else {
+                // For isMine, we just update timestamp to bump it?
+                // But we need to update 'last_message' too or it looks stale.
+                // We will skip local preview update for isMine and rely on sync, 
+                // BUT we must ensure sync happens fast.
+                // Actually, let's invoke syncFromServer immediately.
+              }
 
               // Reload list from cache to show update instantly
               loadFromLocalCache();
             }
 
-            syncFromServer(false, true); // Force sync!
+            // Always force sync to get decrypted content for both sides
+            syncFromServer(false, true);
           }
 
           // For UPDATE: Refresh if status changed (e.g. read) to update badges
-          if (payload.eventType === 'UPDATE') {
-            const msg = payload.new as any;
-            if (msg.read_at) {
-              console.log('👁️ Message marked as read, refreshing chat list');
-              syncFromServer(false, true); // Force sync!
-            }
+          else if (payload.eventType === 'UPDATE') {
+            console.log('� Message updated, syncing...');
+            syncFromServer(false, true);
           }
         }
       )
       .subscribe((status) => {
-        console.log('📡 Realtime subscription status:', status);
+        console.log('� Chat list realtime subscription:', status);
       });
 
     return () => {
-      console.log('🔌 Unsubscribing from realtime');
+      console.log('🔌 Unsubscribing from chat list updates');
       supabase.removeChannel(channel);
     };
-  }, [userId, selectedChat, loadChats]);
+  }, [userId]);
+
+  // EXPERIMENTAL: Subscribe to User Channel for DIRECT Broadcasts (Bypassing Postgres Lag)
+  useEffect(() => {
+    if (!userId) return;
+
+    const userChannel = supabase.channel(`user:${userId}`)
+      .on('broadcast', { event: 'new_message' }, (payload) => {
+        console.log('🚀 [Direct] New message broadcast received:', payload);
+        const newMsg = payload.payload;
+        if (newMsg) {
+          // Update preview instantly!
+          updateConversationPreview(
+            newMsg.conversationId,
+            newMsg.content, // Using decrypted/clean content from broadcast
+            newMsg.createdAt,
+            true // Increment unread
+          );
+          loadFromLocalCache();
+
+          // Still sync in background to be safe
+          syncFromServer(false, true);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(userChannel);
+    };
+  }, [userId]);
+
 
   // Combine chat items with synced contacts (excluding duplicates)
   const allItems = useMemo(() => {
@@ -542,6 +679,7 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
         alias: item.alias,
         customFirstName: item.customFirstName,
         customLastName: item.customLastName,
+        avatarUrl: item.avatarUrl,
       });
     } catch (err) {
       console.error('Error starting conversation:', err);
@@ -618,13 +756,14 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
     const keyboardOffset = Platform.OS === 'ios' ? 100 : 0;
 
     return (
-      <KeyboardSafeView style={styles.container} offset={keyboardOffset}>
+      <KeyboardSafeView style={styles.container} offset={keyboardOffset} dismissOnPress={false}>
         <StatusBar style="dark" />
         <ChatView
           conversationId={selectedChat.conversationId}
           otherUserName={selectedChat.otherUserName}
           otherUserPhone={selectedChat.otherUserPhone}
           otherUserId={selectedChat.otherUserId}
+          otherUserAvatar={selectedChat.avatarUrl}
           isUnknown={selectedChat.isUnknown}
           userId={userId}
           currentUser={user}
@@ -808,9 +947,18 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
                 <View style={[
                   styles.avatarContainer,
                   item.type === 'unknown' && { backgroundColor: '#9CA3AF' },
-                  item.type === 'synced' && { backgroundColor: '#3B82F6' }
+                  item.type === 'synced' && { backgroundColor: '#3B82F6' },
+                  // Remove background color if image exists so it doesn't bleed
+                  item.avatarUrl ? { backgroundColor: 'transparent' } : {}
                 ]}>
-                  <Text style={styles.avatarText}>{initials}</Text>
+                  {item.avatarUrl ? (
+                    <Image
+                      source={{ uri: item.avatarUrl }}
+                      style={{ width: 48, height: 48, borderRadius: 24 }}
+                    />
+                  ) : (
+                    <Text style={styles.avatarText}>{initials}</Text>
+                  )}
                 </View>
 
                 {/* Chat Info */}
@@ -828,14 +976,18 @@ export function ChatsScreen({ onNavigate }: ChatsScreenProps) {
                   <View style={styles.messageRow}>
                     <Text style={styles.lastMessage} numberOfLines={1}>
                       {item.lastMessage
-                        ? ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
-                          (item.lastMessage.includes('/chat-media/') ||
-                            item.lastMessage.match(/\.(jpg|jpeg|png|gif|webp)/i)))
-                          ? '📷 Imagen'
+                        ? (item.lastMessage.includes('📞') || item.lastMessage.includes('Llamada'))
+                          ? <Text style={{ color: item.lastMessage.includes('finalizada') ? '#EF4444' : '#3B82F6', fontWeight: '500' }}>
+                            {item.lastMessage.includes('finalizada') ? '☎️ Llamada finalizada' : '📞 Llamada entrante'}
+                          </Text>
                           : ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
-                            item.lastMessage.match(/\.(m4a|mp3|wav|ogg|aac)/i))
-                            ? '🎵 Audio'
-                            : item.lastMessage
+                            (item.lastMessage.includes('/chat-media/') ||
+                              item.lastMessage.match(/\.(jpg|jpeg|png|gif|webp)/i)))
+                            ? '📷 Imagen'
+                            : ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
+                              item.lastMessage.match(/\.(m4a|mp3|wav|ogg|aac)/i))
+                              ? '🎵 Audio'
+                              : item.lastMessage
                         : item.phone}
                     </Text>
                     {/* Unread count badge - green */}

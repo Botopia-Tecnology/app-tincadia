@@ -17,6 +17,7 @@ import {
     deleteMessage as deleteLocalMessage,
     softDeleteMessage,
     markConversationAsRead,
+    updateConversationPreview,
     LocalMessage,
     MessageStatus,
 } from '../database/chatDatabase';
@@ -39,7 +40,7 @@ export interface Message {
 
 interface UseChatReturn {
     messages: Message[];
-    sendMessage: (content: string, type?: 'text' | 'image' | 'audio' | 'call' | 'call_ended', metadata?: any, localContent?: string) => Promise<void>;
+    sendMessage: (content: string, type?: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended', metadata?: any, localContent?: string) => Promise<void>;
     editMessage: (messageId: string, content: string) => Promise<void>;
     deleteMessage: (messageId: string) => Promise<void>;
     isLoading: boolean;
@@ -366,7 +367,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
     }, [conversationId, userId, loadLocalMessages, syncFromServer, markMessagesAsRead]);
 
     // Send a message with optimistic update (WhatsApp style)
-    const sendMessage = useCallback(async (content: string, type: 'text' | 'image' | 'audio' | 'call' | 'call_ended' = 'text', metadata?: any, localContent?: string) => {
+    const sendMessage = useCallback(async (content: string, type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended' = 'text', metadata?: any, localContent?: string) => {
         if (!content.trim()) return;
 
         // Optimistic update
@@ -436,12 +437,23 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                         content: serverMsg.content, // Recipient gets server content (text/placeholder) + should fetch for signed URL logic ideally
                         type,
                         createdAt: serverMsgCreatedAt,
+                        conversation_id: serverMsgConvId, // Redundant but helpful if receiver uses snake_case payload
+                        sender_id: serverMsgSenderId,
+                        created_at: serverMsgCreatedAt,
                         isMine: false
-                        // Metadata typically not needed in broadcast for list view, 
-                        // but if receiver is in-chat, they might fetch fresh or we could include it.
                     },
                 });
             }
+
+            // Update conversation preview in local DB (optimistic list update)
+            // This ensures ChatsScreen shows the new message at the top immediately
+            const previewText = type === 'text' ? content : (type === 'image' ? '📷 Foto' : '🎤 Audio');
+            updateConversationPreview(
+                conversationId,
+                previewText,
+                serverMsgCreatedAt,
+                false // Don't increment unread for own message
+            );
 
             // Reload to show checkmark
             loadLocalMessages();

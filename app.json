@@ -9,13 +9,12 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
+      "usesAppleSignIn": true,
       "buildNumber": "10",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -28,6 +27,7 @@
     },
     "android": {
       "package": "com.tincadia.app",
+      "usesCleartextTraffic": true,
       "versionCode": 6,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
@@ -64,6 +64,12 @@
         {
           "photosPermission": "Tincadia necesita acceso a tu galería para cambiar tu foto de perfil.",
           "cameraPermission": "Tincadia necesita acceso a tu cámara para tomar fotos de perfil."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Necesitamos acceso a tu cámara para escanear códigos QR."
         }
       ],
       [

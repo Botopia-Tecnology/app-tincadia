@@ -21,7 +21,6 @@ export const bottomNavigationStyles = StyleSheet.create({
         borderRadius: 30,
         paddingVertical: 12,
         paddingHorizontal: 8,
-        marginRight: 16,
         shadowColor: '#000',
         shadowOffset: {
             width: 0,
@@ -71,14 +70,27 @@ export const bottomNavigationStyles = StyleSheet.create({
     floatingMenuContainer: {
         position: 'absolute',
         bottom: 90,
-        right: 24,
-        alignItems: 'flex-end',
+        left: 0,
+        right: 0,
+        alignItems: 'center', // Center items horizontally
         zIndex: 1001,
     },
     floatingMenuItem: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 16,
+    },
+    floatingLabelContainer: {
+        backgroundColor: '#FFF',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        marginRight: 12,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 1.41,
+        elevation: 2,
     },
     floatingLabel: {
         fontSize: 16,

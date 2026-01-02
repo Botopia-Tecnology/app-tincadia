@@ -18,6 +18,7 @@ export interface User {
     authProvider?: string;
     emailVerified: boolean;
     isProfileComplete?: boolean;
+    readReceiptsEnabled?: boolean;
 }
 
 export interface LoginDto {
@@ -53,6 +54,7 @@ export interface UpdateProfileDto {
     documentNumber?: string;
     phone?: string;
     pushToken?: string;
+    readReceiptsEnabled?: boolean;
 }
 
 /**

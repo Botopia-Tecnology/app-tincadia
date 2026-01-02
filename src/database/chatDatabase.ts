@@ -12,9 +12,47 @@ import * as SQLite from 'expo-sqlite';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
+// Database schema version - increment when adding new migrations
+const DB_SCHEMA_VERSION = 1;
 
 // Flag to track if database is initialized
 let isInitialized = false;
+
+/**
+ * Run database migrations for schema updates
+ * This handles upgrading existing installations to new schema versions
+ */
+function runMigrations(database: SQLite.SQLiteDatabase) {
+    console.log('🔄 Running database migrations...');
+
+    // Migration 1: Add server_id column to messages table if missing
+    try {
+        const columns = database.getAllSync<{ name: string }>(
+            `PRAGMA table_info(messages)`
+        );
+        const columnNames = columns.map(col => col.name);
+
+        // Check and add server_id if missing
+        if (!columnNames.includes('server_id')) {
+            console.log('🔄 Migration: Adding server_id column to messages table...');
+            database.execSync(`ALTER TABLE messages ADD COLUMN server_id TEXT`);
+            console.log('✅ Migration complete: server_id column added');
+        }
+
+        // Check and add deleted_at if missing (for completeness)
+        if (!columnNames.includes('deleted_at')) {
+            console.log('🔄 Migration: Adding deleted_at column to messages table...');
+            database.execSync(`ALTER TABLE messages ADD COLUMN deleted_at TEXT`);
+            console.log('✅ Migration complete: deleted_at column added');
+        }
+
+        console.log('✅ All migrations completed successfully');
+    } catch (error) {
+        console.error('❌ Migration error:', error);
+        // Don't throw - we want the app to continue even if migrations fail
+        // The error will be logged and we can investigate
+    }
+}
 
 // Track last sync times for smart polling
 const lastSyncTimes: Record<string, number> = {};
@@ -95,6 +133,10 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
         CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_id);
         CREATE INDEX IF NOT EXISTS idx_media_conv ON media_cache(conversation_id);
       `);
+
+            // Run migrations for existing databases (adds missing columns)
+            runMigrations(db);
+
             console.log('✅ Chat database initialized and tables verified');
         } catch (error) {
             console.error('❌ Failed to initialize chat database:', error);
@@ -590,6 +632,15 @@ export function saveMediaUrl(media: {
     conversationId?: string;
     type?: 'image' | 'audio' | 'video';
 }) {
+    // Validate required fields
+    if (!media.storageKey || !media.publicUrl) {
+        console.warn('⚠️ saveMediaUrl: Missing required field(s), skipping', {
+            hasStorageKey: !!media.storageKey,
+            hasPublicUrl: !!media.publicUrl,
+        });
+        return;
+    }
+
     const database = ensureInitialized();
     const now = new Date().toISOString();
     database.runSync(
