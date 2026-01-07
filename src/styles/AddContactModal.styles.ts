@@ -87,11 +87,8 @@ export const addContactModalStyles = StyleSheet.create({
         flexDirection: 'row',
         gap: 12,
     },
-    countryInput: {
-        flex: 0.35,
-    },
     phoneInput: {
-        flex: 0.65,
+        flex: 1, // Fill remaining space
     },
     countrySelector: {
         flexDirection: 'row',

@@ -19,6 +19,9 @@ import {
 import { contactService } from '../services/contact.service';
 import { addContactModalStyles as styles } from '../styles/AddContactModal.styles';
 
+import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
+import { SyncIcon } from './icons/NavigationIcons';
+
 interface AddContactModalProps {
     visible: boolean;
     onClose: () => void;
@@ -42,11 +45,10 @@ export function AddContactModal({
     const [alias, setAlias] = useState('');
     const [firstName, setFirstName] = useState(initialFirstName);
     const [lastName, setLastName] = useState(initialLastName);
-    const [countryCode, setCountryCode] = useState('CO +57');
+    const [selectedCountry, setSelectedCountry] = useState(defaultCountry);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Update form when initial values change
     useEffect(() => {
         if (visible) {
             setPhone(initialPhone);
@@ -77,10 +79,13 @@ export function AddContactModal({
         setIsLoading(true);
         setError(null);
 
+        // Format phone with dial code
+        const fullPhone = `${selectedCountry.dialCode}${phone.trim()}`;
+
         try {
             const response = await contactService.addContact({
                 ownerId: userId,
-                phone: phone.trim(),
+                phone: fullPhone,
                 alias: alias.trim() || undefined,
                 customFirstName: firstName.trim() || undefined,
                 customLastName: lastName.trim() || undefined,
@@ -106,8 +111,8 @@ export function AddContactModal({
         >
             <KeyboardAvoidingView
                 style={styles.overlay}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -150}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -50}
             >
                 <TouchableOpacity
                     style={styles.backdrop}
@@ -127,7 +132,15 @@ export function AddContactModal({
                             <Text style={styles.closeIcon}>✕</Text>
                         </TouchableOpacity>
                         <Text style={styles.title}>Nuevo contacto</Text>
-                        <View style={styles.closeButton} />
+                        <TouchableOpacity
+                            style={styles.closeButton}
+                            onPress={() => {
+                                // Sync logic placeholder (or just visual as requested)
+                                console.log('Sync clicked');
+                            }}
+                        >
+                            <SyncIcon size={20} color="#666" />
+                        </TouchableOpacity>
                     </View>
 
                     {/* Form */}
@@ -168,12 +181,11 @@ export function AddContactModal({
 
                         {/* País + Teléfono */}
                         <View style={styles.phoneRow}>
-                            <View style={[styles.inputContainer, styles.countryInput]}>
-                                <Text style={styles.floatingLabel}>País</Text>
-                                <View style={styles.countrySelector}>
-                                    <Text style={styles.countryText}>{countryCode}</Text>
-                                    <Text style={styles.dropdownArrow}>▼</Text>
-                                </View>
+                            <View style={{ marginRight: 8, marginTop: 24 }}>
+                                <CountryCodePicker
+                                    selectedCountry={selectedCountry}
+                                    onSelect={setSelectedCountry}
+                                />
                             </View>
 
                             <View style={[styles.inputContainer, styles.phoneInput]}>

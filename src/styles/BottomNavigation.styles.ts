@@ -72,7 +72,8 @@ export const bottomNavigationStyles = StyleSheet.create({
         bottom: 90,
         left: 0,
         right: 0,
-        alignItems: 'center', // Center items horizontally
+        alignItems: 'flex-end', // Align items to the right
+        paddingRight: 30, // Spacing from the right edge
         zIndex: 1001,
     },
     floatingMenuItem: {

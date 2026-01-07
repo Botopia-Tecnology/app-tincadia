@@ -1,5 +1,5 @@
 import React from 'react';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, Polygon } from 'react-native-svg';
 import { Image } from 'react-native';
 
 interface IconProps {
@@ -21,9 +21,9 @@ export function ChatIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
 export function CoursesIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
   return (
     <Image
-      source={require('../../../assets/courses.png')}
+      source={{ uri: 'https://res.cloudinary.com/do1mvhvms/image/upload/v1767650875/educacion_hu8sqk.png' }}
       style={{ width: size, height: size }}
-      resizeMode="contain"
+      resizeMode="cover"
     />
   );
 }
@@ -41,9 +41,9 @@ export function HandshakeIcon({ size = 24, color = '#000000' }: IconProps) {
 export function SOSIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
   return (
     <Image
-      source={require('../../../assets/sos.png')}
+      source={{ uri: 'https://res.cloudinary.com/do1mvhvms/image/upload/v1767650799/ghyqs2fshx30bsbj1m3i_akaakx.png' }}
       style={{ width: size, height: size }}
-      resizeMode="contain"
+      resizeMode="cover"
     />
   );
 }
@@ -51,9 +51,9 @@ export function SOSIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
 export function ProfileIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
   return (
     <Image
-      source={require('../../../assets/user.png')}
+      source={{ uri: 'https://res.cloudinary.com/dzi2p0pqa/image/upload/v1767366296/eypdcpyqef9wubgxukcs.png' }}
       style={{ width: size, height: size }}
-      resizeMode="contain"
+      resizeMode="cover"
     />
   );
 }
@@ -268,3 +268,166 @@ export function PencilIcon({ size = 24, color = '#000000' }: IconProps) {
     </Svg>
   );
 }
+
+// Media Control Icons
+
+export function PlayIcon({ size = 48, color = '#FFFFFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M8 5v14l11-7z" fill={color} />
+    </Svg>
+  );
+}
+
+export function PauseIcon({ size = 48, color = '#FFFFFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" fill={color} />
+    </Svg>
+  );
+}
+
+export function SkipForwardIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" fill={color} />
+    </Svg>
+  );
+}
+
+export function SkipBackwardIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z" fill={color} />
+    </Svg>
+  );
+}
+
+export function FullscreenIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" fill={color} />
+    </Svg>
+  );
+}
+
+// Biometric Authentication Icons
+
+/**
+ * Official Apple Face ID icon
+ * Based on Apple's SF Symbols guidelines
+ */
+export function FaceIdIcon({ size = 40, color = '#007AFF' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Outer frame corners */}
+      <Path
+        d="M6 2H4C2.9 2 2 2.9 2 4V6"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M18 2H20C21.1 2 22 2.9 22 4V6"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6 22H4C2.9 22 2 21.1 2 20V18"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M18 22H20C21.1 22 22 21.1 22 20V18"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Face features */}
+      {/* Eyes */}
+      <Path
+        d="M9 9V10"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <Path
+        d="M15 9V10"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      {/* Nose */}
+      <Path
+        d="M12 10V13H11"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Smile */}
+      <Path
+        d="M8.5 15.5C9.17 16.5 10.5 17.5 12 17.5C13.5 17.5 14.83 16.5 15.5 15.5"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/**
+ * Fingerprint icon for Android authentication
+ */
+export function FingerprintIcon({ size = 40, color = '#25D366' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.09.18-.26.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.98 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4.01-1.36.7-2.5 1.7-3.4 2.96-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.15-.37.15zm7.17-1.85c-1.19 0-2.24-.3-3.1-.89-1.49-1.01-2.38-2.65-2.38-4.39 0-.28.22-.5.5-.5s.5.22.5.5c0 1.41.72 2.74 1.94 3.56.71.48 1.54.71 2.54.71.24 0 .64-.03 1.04-.1.27-.05.53.13.58.41.05.27-.13.53-.41.58-.57.11-1.07.12-1.21.12zM14.91 22c-.04 0-.09-.01-.13-.02-1.59-.44-2.63-1.03-3.72-2.1-1.4-1.39-2.17-3.24-2.17-5.22 0-1.62 1.38-2.94 3.08-2.94 1.7 0 3.08 1.32 3.08 2.94 0 1.07.93 1.94 2.08 1.94s2.08-.87 2.08-1.94c0-3.77-3.25-6.83-7.25-6.83-2.84 0-5.44 1.58-6.61 4.03-.39.81-.59 1.76-.59 2.8 0 .78.07 2.01.67 3.61.1.26-.03.55-.29.64-.26.1-.55-.04-.64-.29-.49-1.31-.73-2.61-.73-3.96 0-1.2.23-2.29.68-3.24 1.33-2.79 4.28-4.6 7.51-4.6 4.55 0 8.25 3.51 8.25 7.83 0 1.62-1.38 2.94-3.08 2.94s-3.08-1.32-3.08-2.94c0-1.07-.93-1.94-2.08-1.94s-2.08.87-2.08 1.94c0 1.71.66 3.31 1.87 4.51.95.94 1.86 1.46 3.27 1.85.27.07.42.35.35.61-.05.23-.26.38-.47.38z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+/**
+ * Emergency Contact icon - Person with heart
+ * For emergency contacts section in profile
+ */
+export function EmergencyContactIcon({ size = 20, color = '#FF3B30' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Person silhouette */}
+      <Circle cx="9" cy="7" r="4" fill={color} />
+      <Path
+        d="M9 13c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z"
+        fill={color}
+      />
+      {/* Heart */}
+      <Path
+        d="M19.5 10c-1.24 0-2.25.66-2.5 1.5-.25-.84-1.26-1.5-2.5-1.5-1.49 0-2.5 1.17-2.5 2.5 0 2.27 3.33 4.5 5 5.5 1.67-1 5-3.23 5-5.5 0-1.33-1.01-2.5-2.5-2.5z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+export function SyncIcon({ size = 24, color = '#000000' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+

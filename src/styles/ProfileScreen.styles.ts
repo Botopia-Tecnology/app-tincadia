@@ -9,7 +9,7 @@ export const profileScreenStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 50,
+        paddingTop: 10,
         paddingHorizontal: 16,
         paddingBottom: 16,
         backgroundColor: '#FFFFFF',

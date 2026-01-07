@@ -15,7 +15,7 @@ import {
     Platform,
     ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useChat } from '../hooks/useChat';
 import { MessageBubble } from '../components/chat/MessageBubble';
@@ -31,6 +31,7 @@ interface ChatScreenProps {
 export function ChatScreen({ conversationId, otherUserName, onBack }: ChatScreenProps) {
     const { user } = useAuth();
     const userId = user?.id || '';
+    const insets = useSafeAreaInsets();
 
     const { messages, sendMessage, isLoading, error } = useChat(conversationId, userId);
     const flatListRef = useRef<FlatList>(null);
@@ -49,7 +50,7 @@ export function ChatScreen({ conversationId, otherUserName, onBack }: ChatScreen
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
             <StatusBar style="dark" />
 
             {/* Header */}
@@ -73,7 +74,7 @@ export function ChatScreen({ conversationId, otherUserName, onBack }: ChatScreen
             <KeyboardAvoidingView
                 style={styles.content}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                keyboardVerticalOffset={0}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
             >
                 {/* Loading State */}
                 {isLoading && messages.length === 0 && (
@@ -110,6 +111,7 @@ export function ChatScreen({ conversationId, otherUserName, onBack }: ChatScreen
 
                 {/* Input */}
                 <ChatInput onSend={handleSend} />
+                {Platform.OS === 'ios' && <View style={{ height: insets.bottom, backgroundColor: '#FFFFFF' }} />}
             </KeyboardAvoidingView>
         </SafeAreaView>
     );

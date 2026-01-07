@@ -26,6 +26,10 @@ import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
 import { registerScreenStyles as styles } from '../styles/RegisterScreen.styles';
 import { getDocumentTypeId } from '../types/auth.types';
 import Svg, { Circle } from 'react-native-svg';
+import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
+
+// Phone OTP verification temporarily disabled
+// import { PhoneVerificationModal } from './auth/PhoneVerificationModal';
 
 interface RegisterScreenProps {
   onBack: () => void;
@@ -42,7 +46,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
   const totalSteps = 2;
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Auto-scroll to bottom when step changes
+
   useEffect(() => {
     const timer = setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -50,7 +54,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
     return () => clearTimeout(timer);
   }, [step]);
 
-  // Form State
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -62,6 +66,11 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
   const [documentType, setDocumentType] = useState('');
   const [documentNumber, setDocumentNumber] = useState('');
   const [phone, setPhone] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState(defaultCountry);
+
+  // Verification State (OTP temporarily disabled - auto-verify when phone is valid)
+  // const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
+  const [isPhoneVerified, setIsPhoneVerified] = useState(true); // Auto-verified for now
 
   // Document Type Modal State
   const [modalVisible, setModalVisible] = useState(false);
@@ -104,6 +113,11 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
       setValidationError('Por favor ingresa un número de teléfono válido');
       return false;
     }
+    // Phone verification temporarily disabled
+    // if (!isPhoneVerified) {
+    //   setValidationError('Por favor valida tu número de teléfono');
+    //   return false;
+    // }
     setValidationError(null);
     return true;
   };
@@ -161,7 +175,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
         lastName,
         documentTypeId,
         documentNumber,
-        phone,
+        phone: `${selectedCountry.dialCode}${phone}`,
       });
       // Success - AuthContext will handle navigation
     } catch {
@@ -392,15 +406,30 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   editable={!isLoading}
                 />
               </View>
-              <TextInput
-                style={styles.input}
-                placeholder={t('register.phone')}
-                placeholderTextColor="#999"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-                editable={!isLoading}
-              />
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
+                <CountryCodePicker
+                  selectedCountry={selectedCountry}
+                  onSelect={setSelectedCountry}
+                />
+                <TextInput
+                  style={[styles.input, { flex: 1, marginBottom: 0, marginRight: 8 }]}
+                  placeholder={t('register.phone')}
+                  placeholderTextColor="#999"
+                  value={phone}
+                  onChangeText={(text) => {
+                    setPhone(text);
+                    setIsPhoneVerified(false);
+                  }}
+                  keyboardType="phone-pad"
+                  editable={!isLoading}
+                />
+                {/* Phone verification temporarily disabled - just show check if phone is valid */}
+                {phone.length > 7 && (
+                  <View style={{ justifyContent: 'center', alignItems: 'center', padding: 10 }}>
+                    <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>✓</Text>
+                  </View>
+                )}
+              </View>
             </>
           )}
         </View>
@@ -487,6 +516,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Phone verification modal temporarily disabled */}
     </KeyboardSafeView>
   );
 }

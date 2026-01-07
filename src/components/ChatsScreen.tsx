@@ -17,6 +17,7 @@ import {
   Platform,
   AppState,
   Image,
+  Alert,
 } from 'react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
@@ -45,12 +46,14 @@ import {
   NotificationIcon,
   SearchIcon,
   PlusIcon,
+  InviteIcon,
+  AccountIcon,
 } from './icons/NavigationIcons';
 import { AddContactModal } from './AddContactModal';
 
 interface ChatsScreenProps {
-  onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call', params?: { roomName?: string; username?: string; conversationId?: string; userId?: string }) => void;
-  initialConversation?: { conversationId: string; recipientId: string } | null;
+  onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'new_group', params?: { roomName?: string; username?: string; conversationId?: string; userId?: string }) => void;
+  initialConversation?: { conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null;
   onInitialConversationOpened?: () => void;
 }
 
@@ -80,7 +83,7 @@ const formatMessageTime = (dateString: string): string => {
 // Unified chat list item - can be contact, unknown conversation, or synced contact
 interface ChatListItem {
   id: string;
-  type: 'contact' | 'unknown' | 'synced';
+  type: 'contact' | 'unknown' | 'synced' | 'group';
   displayName: string;
   phone: string;
   otherUserId: string;
@@ -162,6 +165,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     customFirstName?: string;
     customLastName?: string;
     avatarUrl?: string;
+    isGroup?: boolean;
   } | null>(null);
 
   // Modal state
@@ -169,6 +173,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   const [prefillPhone, setPrefillPhone] = useState('');
   const [prefillFirstName, setPrefillFirstName] = useState('');
   const [prefillLastName, setPrefillLastName] = useState('');
+  const [showFabMenu, setShowFabMenu] = useState(false);
 
   // Contacts sync
   const { isSyncing, progress, matches, error: syncError, startSync } = useContactsSync();
@@ -223,13 +228,29 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   // Helper to transform local/server data to ChatListItem[]
   const transformToItems = useCallback((
     contacts: Contact[],
-    conversations: { id: string; otherUserId: string; otherUserPhone?: string; lastMessage?: string; lastMessageAt?: string; unreadCount?: number; otherUserAvatar?: string }[]
+    conversations: { id: string; otherUserId: string; otherUserPhone?: string; lastMessage?: string; lastMessageAt?: string; unreadCount?: number; otherUserAvatar?: string; isGroup?: boolean; title?: string; imageUrl?: string }[]
   ): ChatListItem[] => {
     const contactsByUserId = new Map(contacts.map(c => [c.contactUserId, c]));
     const conversationsByUserId = new Map(conversations.map(conv => [conv.otherUserId, conv]));
 
     // Conversations with contact info
     const items: ChatListItem[] = conversations.map(conv => {
+      // Handle Group
+      if (conv.isGroup) {
+        return {
+          id: conv.id,
+          type: 'group' as const,
+          displayName: conv.title || 'Grupo',
+          phone: '',
+          otherUserId: '', // No one specific user
+          conversationId: conv.id,
+          unreadCount: conv.unreadCount || 0,
+          lastMessage: conv.lastMessage,
+          lastMessageTime: conv.lastMessageAt,
+          avatarUrl: conv.imageUrl || conv.otherUserAvatar, // Use imageUrl preferably for groups
+        };
+      }
+
       const contact = contactsByUserId.get(conv.otherUserId);
       if (contact) {
         return {
@@ -341,6 +362,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     // Skip if synced recently (< 30 seconds) unless forced
     if (!force && !shouldSync(`chats-${userId}`, 30000)) {
       console.log('⏭️ Skipping sync (too recent)');
+      if (showLoading) setIsLoading(false);
       return;
     }
 
@@ -400,21 +422,21 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     }
   }, [userId, transformToItems]);
 
-  // Main load function: local-first, then background sync
+  // Main load function: local-first, then ALWAYS sync from server on mount
   const loadChats = useCallback(async () => {
     if (!userId) return;
 
-    // 1. Load from cache instantly (no loading spinner)
+    // 1. Load from cache instantly (no loading spinner) for immediate UI
     const hasCached = loadFromLocalCache();
 
     if (hasCached) {
-      // 2. Sync in background (no loading state)
+      // 2. Sync from server in background (FORCE to ensure fresh data after login)
       setIsLoading(false);
-      syncFromServer(false);
+      syncFromServer(false, true); // force=true to bypass throttle
     } else {
       // 3. No cache - show loading and fetch from server
       setIsLoading(true);
-      await syncFromServer(true);
+      await syncFromServer(true, true); // showLoading=true, force=true
     }
   }, [userId, loadFromLocalCache, syncFromServer]);
 
@@ -428,13 +450,34 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
       console.log('🚀 Opening initial conversation:', initialConversation);
       const openInitialChat = async () => {
         try {
-          // Find contact or user info to populate headers correctly
-          // If it's a known conversation/contact, we might have it in local cache or need to fetch
-          // Ideally we fetch recent info for this user
+          // Case 1: Direct open (Group)
+          if (initialConversation.conversationId && initialConversation.isGroup) {
+            setSelectedChat({
+              conversationId: initialConversation.conversationId,
+              otherUserName: initialConversation.title || 'Grupo',
+              otherUserPhone: '',
+              otherUserId: '',
+              isUnknown: false,
+              isGroup: true
+            });
+            if (onInitialConversationOpened) onInitialConversationOpened();
+            return;
+          }
+
+          // Case 2: User/Contact
+          const recipientId = initialConversation.recipientId;
+          let conversationId = initialConversation.conversationId;
+
+          if (!conversationId && recipientId) {
+            const response = await chatService.startConversation(userId, recipientId);
+            conversationId = response.conversationId;
+          }
+
+          if (!conversationId || !recipientId) return;
 
           // For now, we try to startConversation to ensure it exists and get fresh conversationId
           // This is safe (idempotent)
-          const response = await chatService.startConversation(userId, initialConversation.recipientId);
+          // const response = await chatService.startConversation(userId, initialConversation.recipientId);
 
           // We need the other user's name/phone to display nicely
           // We can fetch from contactsService or Profiles
@@ -442,7 +485,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
           const { data: profile } = await supabase
             .from('profiles')
             .select('first_name, last_name, phone')
-            .eq('id', initialConversation.recipientId)
+            .eq('id', recipientId)
             .single() as { data: any, error: any };
 
           const displayName = profile
@@ -450,11 +493,12 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
             : profile?.phone || 'Usuario';
 
           setSelectedChat({
-            conversationId: response.conversationId,
+            conversationId: conversationId,
             otherUserName: displayName,
             otherUserPhone: profile?.phone || '',
-            otherUserId: initialConversation.recipientId,
+            otherUserId: recipientId,
             isUnknown: false, // Assume false for now or logic to check contact
+            isGroup: false
           });
 
           if (onInitialConversationOpened) {
@@ -675,6 +719,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         otherUserPhone: item.phone,
         otherUserId: item.otherUserId,
         isUnknown: item.type === 'unknown',
+        isGroup: item.type === 'group',
         contactId: item.contactId,
         alias: item.alias,
         customFirstName: item.customFirstName,
@@ -685,6 +730,41 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
       console.error('Error starting conversation:', err);
       setError('Error al iniciar conversación');
     }
+  };
+
+  // Handle contact deletion
+  const handleDeleteContact = (item: ChatListItem) => {
+    if (item.type !== 'contact' || !item.contactId) return;
+
+    Alert.alert(
+      'Eliminar contacto',
+      `¿Estás seguro de que quieres eliminar a ${item.displayName}? Se borrarán todas las conversaciones y mensajes asociados.`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              if (item.contactId) {
+                await contactService.deleteContact(item.contactId);
+              }
+              // Refresh list
+              loadChats();
+            } catch (error) {
+              console.error('Error deleting contact:', error);
+              Alert.alert('Error', 'No se pudo eliminar el contacto');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Handle back from chat - load cache immediately, sync later
@@ -765,6 +845,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
           otherUserId={selectedChat.otherUserId}
           otherUserAvatar={selectedChat.avatarUrl}
           isUnknown={selectedChat.isUnknown}
+          isGroup={selectedChat.isGroup}
           userId={userId}
           currentUser={user}
           onBack={handleBack}
@@ -942,7 +1023,12 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
 
           return (
             <View style={styles.chatItemRow}>
-              <TouchableOpacity style={styles.chatItem} onPress={() => handleItemPress(item)}>
+              <TouchableOpacity
+                style={styles.chatItem}
+                onPress={() => handleItemPress(item)}
+                onLongPress={() => handleDeleteContact(item)}
+                delayLongPress={500}
+              >
                 {/* Avatar with initials */}
                 <View style={[
                   styles.avatarContainer,
@@ -1033,9 +1119,59 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         }
       />
 
-      {/* New Contact Floating Button */}
-      <TouchableOpacity style={styles.newChatButton} onPress={() => setShowAddContactModal(true)}>
-        <PlusIcon size={24} color="#FFFFFF" />
+      {/* FAB Menu Overlay */}
+      {showFabMenu && (
+        <TouchableOpacity
+          style={styles.fabOverlay}
+          activeOpacity={1}
+          onPress={() => setShowFabMenu(false)}
+        />
+      )}
+
+      {/* FAB Menu Items */}
+      {showFabMenu && (
+        <View style={styles.fabMenuContainer}>
+          <View style={styles.fabMenuItem}>
+            <View style={styles.fabMenuLabel}>
+              <Text style={styles.fabMenuLabelText}>Nuevo grupo</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.fabMenuButton}
+              onPress={() => {
+                setShowFabMenu(false);
+                onNavigate('new_group');
+              }}
+            >
+              <InviteIcon size={24} color="#374151" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.fabMenuItem}>
+            <View style={styles.fabMenuLabel}>
+              <Text style={styles.fabMenuLabelText}>Nuevo contacto</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.fabMenuButton}
+              onPress={() => {
+                setShowFabMenu(false);
+                setShowAddContactModal(true);
+              }}
+            >
+              <AccountIcon size={24} color="#374151" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Main FAB */}
+      <TouchableOpacity
+        style={styles.newChatButton}
+        onPress={() => setShowFabMenu(!showFabMenu)}
+        activeOpacity={0.8}
+      >
+        <View style={{ transform: [{ rotate: showFabMenu ? '45deg' : '0deg' }] }}>
+          <PlusIcon size={24} color="#FFFFFF" />
+        </View>
       </TouchableOpacity>
 
       {/* Add Contact Modal */}

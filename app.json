@@ -21,7 +21,9 @@
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
         "NSCameraUsageDescription": "Necesitamos acceso a tu cámara para las videollamadas.",
         "NSMicrophoneUsageDescription": "Necesitamos acceso a tu micrófono para las videollamadas.",
-        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para enviar fotos en el chat."
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para enviar fotos en el chat.",
+        "NSLocationWhenInUseUsageDescription": "Tincadia necesita tu ubicación para enviar coordenadas precisas en caso de emergencia SOS.",
+        "NSFaceIDUsageDescription": "Tincadia usa Face ID para iniciar sesión de forma rápida y segura."
       },
       "googleServicesFile": "./GoogleService-Info.plist"
     },
@@ -43,7 +45,9 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "notification": {
@@ -56,6 +60,27 @@
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.291627235984-al9qlsj9slos34mh9uca410q89oq7jl5"
+        }
+      ],
+      [
+        "@react-native-firebase/app",
+        {
+          "android": {
+            "firebaseBomVersion": "32.8.1"
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0"
+          },
+          "ios": {
+            "useFrameworks": "static"
+          }
         }
       ],
       "expo-notifications",

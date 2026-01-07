@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet, Image, Dimensions } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet, Image, Dimensions, TouchableWithoutFeedback } from 'react-native';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Slider from '@react-native-community/slider';
 import { contentService, Course } from '../services/content.service';
+import { PlayIcon, PauseIcon, SkipForwardIcon, SkipBackwardIcon, FullscreenIcon } from './icons/NavigationIcons';
 
 interface CoursePlayerScreenProps {
     courseId: string;
@@ -16,11 +18,17 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
     const [activeLesson, setActiveLesson] = useState<any | null>(null);
     const [expandedModules, setExpandedModules] = useState<string[]>([]);
 
-    // Video ref
+    // Player State
+    const [status, setStatus] = useState<AVPlaybackStatus | null>(null);
+    const [showControls, setShowControls] = useState(true);
+    const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const videoRef = useRef<Video>(null);
 
     useEffect(() => {
         fetchCourse();
+        return () => {
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        };
     }, [courseId]);
 
     const fetchCourse = async () => {
@@ -29,7 +37,6 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
             const data = await contentService.getCourseById(courseId);
             setCourse(data);
 
-            // Auto-select first lesson
             if (data.modules && data.modules.length > 0) {
                 setExpandedModules([data.modules[0].id]);
                 if (data.modules[0].lessons && data.modules[0].lessons.length > 0) {
@@ -53,7 +60,77 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
 
     const handleLessonSelect = (lesson: any) => {
         setActiveLesson(lesson);
-        // Optional: auto play logic
+        // Reset controls visibility on new video
+        resetControlsTimer();
+    };
+
+    // --- Custom Player Logic ---
+
+    const resetControlsTimer = () => {
+        if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        setShowControls(true);
+        controlsTimeoutRef.current = setTimeout(() => {
+            if (status && status.isLoaded && status.isPlaying) {
+                setShowControls(false);
+            }
+        }, 3000);
+    };
+
+    const handleVideoPress = () => {
+        if (showControls) {
+            setShowControls(false);
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        } else {
+            resetControlsTimer();
+        }
+    };
+
+    const togglePlayPause = async () => {
+        if (!videoRef.current) return;
+        if (status?.isLoaded && status.isPlaying) {
+            await videoRef.current.pauseAsync();
+            resetControlsTimer(); // Keep controls visible safely
+        } else {
+            await videoRef.current.playAsync();
+            resetControlsTimer();
+        }
+    };
+
+    const skipForward = async () => {
+        if (!videoRef.current || !status?.isLoaded) return;
+        const newPosition = status.positionMillis + 10000;
+        await videoRef.current.setPositionAsync(newPosition);
+        resetControlsTimer();
+    };
+
+    const skipBackward = async () => {
+        if (!videoRef.current || !status?.isLoaded) return;
+        const newPosition = Math.max(0, status.positionMillis - 10000);
+        await videoRef.current.setPositionAsync(newPosition);
+        resetControlsTimer();
+    };
+
+    const handleSeek = async (value: number) => {
+        if (!videoRef.current || !status?.isLoaded) return;
+        await videoRef.current.setPositionAsync(value);
+        resetControlsTimer();
+    };
+
+    const toggleFullscreen = async () => {
+        if (!videoRef.current) return;
+        // Basic full screen presentation
+        try {
+            await videoRef.current.presentFullscreenPlayer();
+        } catch (e) {
+            console.log("Fullscreen error", e);
+        }
+    };
+
+    const formatTime = (millis: number) => {
+        const totalSeconds = millis / 1000;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = Math.floor(totalSeconds % 60);
+        return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     };
 
     if (loading) {
@@ -75,33 +152,97 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
         );
     }
 
+    const isBuffering = status?.isLoaded ? status.isBuffering : false;
+    const isPlaying = status?.isLoaded ? status.isPlaying : false;
+    const duration = status?.isLoaded ? status.durationMillis || 0 : 0;
+    const position = status?.isLoaded ? status.positionMillis : 0;
+
     return (
         <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
             <StatusBar style="light" />
 
             {/* Video Player Section */}
             <View style={styles.videoContainer}>
-                {/* Header Overlay */}
-                <View style={styles.headerOverlay}>
-                    <TouchableOpacity onPress={onBack} style={styles.backButton}>
-                        <Text style={styles.backIcon}>←</Text>
-                    </TouchableOpacity>
-                </View>
-
                 {activeLesson?.videoUrl ? (
-                    <Video
-                        ref={videoRef}
-                        style={styles.video}
-                        source={{
-                            uri: activeLesson.videoUrl,
-                        }}
-                        useNativeControls
-                        resizeMode={ResizeMode.CONTAIN}
-                        isLooping={false}
-                        posterSource={course.thumbnailUrl ? { uri: course.thumbnailUrl } : undefined}
-                    />
+                    <TouchableWithoutFeedback onPress={handleVideoPress}>
+                        <View style={{ width: '100%', height: '100%' }}>
+                            <Video
+                                ref={videoRef}
+                                style={styles.video}
+                                source={{ uri: activeLesson.videoUrl }}
+                                useNativeControls={false} // Disabled Native Controls
+                                resizeMode={ResizeMode.CONTAIN}
+                                isLooping={false}
+                                onPlaybackStatusUpdate={status => setStatus(() => status)}
+                                posterSource={course.thumbnailUrl ? { uri: course.thumbnailUrl } : undefined}
+                            />
+
+                            {/* Custom Controls Overlay */}
+                            {(showControls || isBuffering) && (
+                                <View style={styles.controlsOverlay}>
+                                    {/* Top Bar (Back Button) */}
+                                    <View style={styles.controlsTop}>
+                                        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                                            <Text style={styles.backIcon}>←</Text>
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {/* Center Controls (Play/Pause/Skip/Buffer) */}
+                                    <View style={styles.controlsCenter}>
+                                        {isBuffering ? (
+                                            <ActivityIndicator size="large" color="#4CAF50" />
+                                        ) : (
+                                            <View style={styles.playPauseRow}>
+                                                <TouchableOpacity onPress={skipBackward} style={styles.skipButton}>
+                                                    <SkipBackwardIcon size={32} color="#FFF" />
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity onPress={togglePlayPause} style={styles.playButtonMain}>
+                                                    {isPlaying ? (
+                                                        <PauseIcon size={48} color="#FFF" />
+                                                    ) : (
+                                                        <PlayIcon size={48} color="#FFF" />
+                                                    )}
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity onPress={skipForward} style={styles.skipButton}>
+                                                    <SkipForwardIcon size={32} color="#FFF" />
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    {/* Bottom Bar (Seeker, Time, Fullscreen) */}
+                                    <View style={styles.controlsBottom}>
+                                        <Text style={styles.timeText}>{formatTime(position)}</Text>
+                                        <Slider
+                                            style={styles.slider}
+                                            minimumValue={0}
+                                            maximumValue={duration}
+                                            value={position}
+                                            onSlidingComplete={handleSeek}
+                                            minimumTrackTintColor="#4CAF50"
+                                            maximumTrackTintColor="#FFFFFF"
+                                            thumbTintColor="#4CAF50"
+                                        />
+                                        <Text style={styles.timeText}>{formatTime(duration)}</Text>
+
+                                        <TouchableOpacity onPress={toggleFullscreen} style={styles.fullscreenButton}>
+                                            <FullscreenIcon size={24} color="#FFF" />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    </TouchableWithoutFeedback>
                 ) : (
                     <View style={styles.noVideoContainer}>
+                        {/* Existing No Video Logic */}
+                        <View style={styles.headerOverlay}>
+                            <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                                <Text style={styles.backIcon}>←</Text>
+                            </TouchableOpacity>
+                        </View>
                         {course.thumbnailUrl && (
                             <Image source={{ uri: course.thumbnailUrl }} style={styles.videoPlaceholderImage} />
                         )}
@@ -194,6 +335,57 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
+    controlsOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        justifyContent: 'space-between',
+        padding: 10,
+        zIndex: 100,
+    },
+    controlsTop: {
+        flexDirection: 'row',
+        justifyContent: 'flex-start',
+    },
+    controlsCenter: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    playPauseRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 30,
+    },
+    playButtonMain: {
+        width: 64,
+        height: 64,
+        justifyContent: 'center',
+        alignItems: 'center',
+        // backgroundColor: 'rgba(0,0,0,0.5)',
+        // borderRadius: 32,
+    },
+    skipButton: {
+        padding: 10,
+    },
+    controlsBottom: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 5,
+    },
+    slider: {
+        flex: 1,
+        marginHorizontal: 10,
+        height: 40,
+    },
+    timeText: {
+        color: '#FFF',
+        fontSize: 12,
+        fontVariant: ['tabular-nums'],
+    },
+    fullscreenButton: {
+        marginLeft: 10,
+        padding: 5,
+    },
     noVideoContainer: {
         width: '100%',
         height: '100%',
@@ -237,7 +429,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
-        marginTop: -10, // Overlap slightly
+        // marginTop: -10, // Removed to prevent covering video controls
     },
     courseInfo: {
         padding: 20,

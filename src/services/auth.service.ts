@@ -7,6 +7,7 @@
 import { apiClient } from '../lib/api-client';
 import { tokenStorage, userStorage } from '../lib/secure-storage';
 import { API_ENDPOINTS } from '../config/api.config';
+import auth from '@react-native-firebase/auth';
 import type {
     LoginDto,
     RegisterDto,
@@ -305,4 +306,29 @@ export const authService = {
             await userStorage.setUser(JSON.stringify(user));
         }
     },
+
+    /**
+     * Send OTP to phone number
+     * Returns the confirmation object to be used for verification
+     */
+    async signInWithPhoneNumber(phoneNumber: string): Promise<any> {
+        const confirmation = await auth().signInWithPhoneNumber(phoneNumber);
+        return confirmation;
+    },
+
+    /**
+     * Verify the OTP code
+     */
+    async confirmCode(confirmResult: any, code: string): Promise<User | null> {
+        try {
+            const result = await confirmResult.confirm(code);
+            // The result.user contains the Firebase user.
+            // We usually want to link this to our backend user or return it.
+            // For now, we return the firebase user or handle backend syncing if needed.
+            return result.user;
+        } catch (error) {
+            console.error('Invalid code', error);
+            throw error;
+        }
+    }
 };
