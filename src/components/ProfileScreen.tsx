@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, Alert, ActivityIndicator, Linking, Share } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share } from 'react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { profileScreenStyles as styles } from '../styles/ProfileScreen.styles';
 import { useAuth } from '../contexts/AuthContext';
+import { useAlert } from './common/CustomAlert';
 import {
     ChatIcon,
     ProfileIcon,
@@ -13,6 +14,7 @@ import {
     InviteIcon,
     ChevronRightIcon,
     CameraIcon,
+    EmergencyContactIcon,
 } from './icons/NavigationIcons';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
@@ -21,6 +23,7 @@ import { appNotificationService } from '../services/appNotification.service';
 import * as Notifications from 'expo-notifications';
 import { EditProfileScreen } from './profile/EditProfileScreen';
 import { PrivacyScreen } from './profile/PrivacyScreen';
+import { EmergencyContactsScreen } from './profile/EmergencyContactsScreen';
 
 interface ProfileScreenProps {
     onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
@@ -36,35 +39,45 @@ export function ProfileScreen({
     onShowNotifications,
 }: ProfileScreenProps) {
     const { user, logout, isLoading } = useAuth();
+    const alert = useAlert();
     // Local state to manage sub-screen navigation
-    const [subScreen, setSubScreen] = useState<'none' | 'editProfile' | 'privacy'>('none');
+    const [subScreen, setSubScreen] = useState<'none' | 'editProfile' | 'privacy' | 'emergencyContacts'>('none');
 
     const handleTestPush = async () => {
         try {
             const { status } = await Notifications.getPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permiso denegado', 'Habilita las notificaciones en la configuración de tu dispositivo.');
+                alert.show({
+                    type: 'warning',
+                    title: 'Permiso denegado',
+                    message: 'Habilita las notificaciones en la configuración de tu dispositivo.',
+                });
                 return;
             }
-
-            // Send Remote Push via Backend
             const tokenData = await Notifications.getExpoPushTokenAsync();
             console.log('📱 Testing Push with Token:', tokenData.data);
-
             if (user?.id) {
                 await appNotificationService.sendTestPush(user.id, tokenData.data);
-                Alert.alert('Enviado', 'Notificación de prueba enviada 🚀');
+                alert.show({
+                    type: 'success',
+                    title: 'Enviado',
+                    message: 'Notificación de prueba enviada 🚀',
+                });
             }
         } catch (error) {
             console.error('Test Push Error:', error);
-            Alert.alert('Error', 'No se pudo enviar la notificación de prueba.');
+            alert.show({
+                type: 'error',
+                title: 'Error',
+                message: 'No se pudo enviar la notificación de prueba.',
+            });
         }
     };
 
     const handleInviteFriends = async () => {
         try {
-            const url = 'https://tincadia-frontend.vercel.app/';
-            const message = `¡Únete a Tincadia! La mejor plataforma para conectar. ${url}`;
+            const url = 'https://tincadia.com/';
+            const message = `¡Únete conmigo a Tincadia! La mejor plataforma inclusiva para conectar. ${url}`;
 
             await Share.share({
                 message: message, // Android (and iOS fallback)
@@ -73,15 +86,20 @@ export function ProfileScreen({
             });
         } catch (error) {
             console.error('Error sharing:', error);
-            Alert.alert('Error', 'No se pudo abrir el menú de compartir.');
+            alert.show({
+                type: 'error',
+                title: 'Error',
+                message: 'No se pudo abrir el menú de compartir.',
+            });
         }
     };
 
     const handleLogout = () => {
-        Alert.alert(
-            'Cerrar Sesión',
-            '¿Estás seguro de que deseas cerrar sesión?',
-            [
+        alert.show({
+            type: 'confirm',
+            title: 'Cerrar Sesión',
+            message: '¿Estás seguro de que deseas cerrar sesión?',
+            buttons: [
                 { text: 'Cancelar', style: 'cancel' },
                 {
                     text: 'Cerrar Sesión',
@@ -94,8 +112,8 @@ export function ProfileScreen({
                         }
                     }
                 },
-            ]
-        );
+            ],
+        });
     };
 
     // Render Sub-Screen if active
@@ -105,6 +123,10 @@ export function ProfileScreen({
 
     if (subScreen === 'privacy') {
         return <PrivacyScreen onBack={() => setSubScreen('none')} />;
+    }
+
+    if (subScreen === 'emergencyContacts') {
+        return <EmergencyContactsScreen onBack={() => setSubScreen('none')} />;
     }
 
     return (
@@ -177,6 +199,20 @@ export function ProfileScreen({
                             <ChatIcon size={20} color="#666666" />
                         </View>
                         <Text style={styles.menuLabel}>Chats</Text>
+                        <ChevronRightIcon size={20} color="#999999" />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Emergency Contacts */}
+                <View style={styles.menuGroup}>
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => setSubScreen('emergencyContacts')}
+                    >
+                        <View style={[styles.menuIcon, { backgroundColor: '#FFE5E5' }]}>
+                            <EmergencyContactIcon size={18} color="#FF3B30" />
+                        </View>
+                        <Text style={styles.menuLabel}>Contactos de Emergencia</Text>
                         <ChevronRightIcon size={20} color="#999999" />
                     </TouchableOpacity>
                 </View>

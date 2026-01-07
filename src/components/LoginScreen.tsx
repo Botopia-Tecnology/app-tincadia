@@ -7,7 +7,7 @@ import {
   Image,
   Platform,
   ScrollView,
-
+  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
@@ -18,9 +18,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import { useAppleAuth } from '../hooks/useAppleAuth';
 import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
+import { FaceIdIcon, FingerprintIcon } from './icons/NavigationIcons';
 import { RegisterScreen } from './RegisterScreen';
 import { ForgotPasswordScreen } from './ForgotPasswordScreen';
 import { loginScreenStyles as styles } from '../styles/LoginScreen.styles';
+import { biometricService } from '../services/biometric.service';
 
 interface LoginScreenProps {
   onLoginSuccess?: () => void;
@@ -37,6 +39,47 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+  // Biometric state
+  const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
+  const [biometricType, setBiometricType] = useState('Biometría');
+
+  // Check biometrics on mount
+  React.useEffect(() => {
+    checkBiometrics();
+  }, []);
+
+  const checkBiometrics = async () => {
+    const { available, biometricType } = await biometricService.isAvailable();
+    setIsBiometricAvailable(available);
+    if (biometricType) setBiometricType(biometricType);
+
+    if (available) {
+      // Check if we have stored credentials to auto-login
+      const credentials = await biometricService.getCredentials();
+      if (credentials) {
+        attemptBiometricLogin(credentials);
+      }
+    }
+  };
+
+  const attemptBiometricLogin = async (credentials?: { email: string; password: string }) => {
+    const creds = credentials || await biometricService.getCredentials();
+    if (!creds) return; // Nothing stored
+
+    const success = await biometricService.authenticate();
+    if (success) {
+      // Auto-fill and login
+      setEmail(creds.email);
+      setPassword(creds.password);
+      try {
+        await login({ email: creds.email, password: creds.password });
+      } catch (e) {
+        // Login failed (maybe changed password), let user try manually
+        console.log('Biometric auto-login failed:', e);
+      }
+    }
+  };
 
   const handleGoogleLogin = async () => {
     clearError();
@@ -55,7 +98,30 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     clearError();
     try {
       await login({ email, password });
-      // onLoginSuccess is no longer needed - AuthContext handles navigation
+
+      // If login successful and biometrics available, ask to save
+      if (isBiometricAvailable) {
+        const stored = await biometricService.getCredentials();
+        // Only ask if not already saved or if different
+        if (!stored || stored.email !== email) {
+          Alert.alert(
+            `Habilitar ${biometricType}`,
+            `¿Quieres usar ${biometricType} para iniciar sesión más rápido la próxima vez?`,
+            [
+              { text: 'No', style: 'cancel' },
+              {
+                text: 'Sí',
+                onPress: async () => {
+                  await biometricService.saveCredentials({ email, password });
+                }
+              }
+            ]
+          );
+        } else if (stored.email === email && stored.password !== password) {
+          // Update password silently if email matches
+          await biometricService.saveCredentials({ email, password });
+        }
+      }
     } catch {
       // Error is handled by AuthContext
     }
@@ -64,11 +130,6 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const handleAppleLogin = async () => {
     clearError();
     await signInWithApple();
-  };
-
-  const handleMicrosoftLogin = async () => {
-    clearError();
-    await signInWithMicrosoft();
   };
 
   const handleRegister = () => {
@@ -175,6 +236,37 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               <Text style={styles.loginButtonText}>{t('login.loginButton')}</Text>
             )}
           </TouchableOpacity>
+
+          {/* Biometric Button (Manual Trigger) */}
+          {isBiometricAvailable && (
+            <TouchableOpacity
+              onPress={() => attemptBiometricLogin()}
+              style={{
+                alignSelf: 'center',
+                marginTop: 20,
+                padding: 12,
+                alignItems: 'center',
+                backgroundColor: Platform.OS === 'ios' ? '#F0F8FF' : '#E8F5E9',
+                borderRadius: 16,
+                minWidth: 100,
+              }}
+            >
+              {Platform.OS === 'ios' ? (
+                <FaceIdIcon size={48} color="#007AFF" />
+              ) : (
+                <FingerprintIcon size={48} color="#25D366" />
+              )}
+              <Text style={{
+                textAlign: 'center',
+                fontSize: 13,
+                fontWeight: '500',
+                color: Platform.OS === 'ios' ? '#007AFF' : '#25D366',
+                marginTop: 8,
+              }}>
+                {Platform.OS === 'ios' ? 'Face ID' : 'Huella dactilar'}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <View style={styles.registerContainer}>
             <Text style={styles.registerText}>

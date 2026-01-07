@@ -9,7 +9,7 @@ export const coursesScreenStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 50,
+        paddingTop: 10,
         paddingHorizontal: 16,
         paddingBottom: 16,
         backgroundColor: '#FFFFFF',
@@ -45,7 +45,7 @@ export const coursesScreenStyles = StyleSheet.create({
         backgroundColor: '#f8fafc',
     },
     scrollContent: {
-        paddingBottom: 20,
+        paddingBottom: 120,
     },
     sectionContainer: {
         marginTop: 24,

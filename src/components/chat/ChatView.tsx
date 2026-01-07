@@ -51,6 +51,7 @@ export interface ChatViewProps {
     customFirstName?: string;
     customLastName?: string;
     otherUserAvatar?: string;
+    isGroup?: boolean;
 }
 
 export function ChatView({
@@ -70,6 +71,7 @@ export function ChatView({
     customFirstName,
     customLastName,
     otherUserAvatar,
+    isGroup,
 }: ChatViewProps) {
     const { messages, sendMessage, isLoading } = useChat(conversationId, userId);
     const [messageText, setMessageText] = useState('');

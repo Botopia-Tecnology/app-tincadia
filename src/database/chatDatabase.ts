@@ -46,6 +46,13 @@ function runMigrations(database: SQLite.SQLiteDatabase) {
             console.log('✅ Migration complete: deleted_at column added');
         }
 
+        // Check and add status if missing (critical fix for crash)
+        if (!columnNames.includes('status')) {
+            console.log('🔄 Migration: Adding status column to messages table...');
+            database.execSync(`ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'pending'`);
+            console.log('✅ Migration complete: status column added');
+        }
+
         console.log('✅ All migrations completed successfully');
     } catch (error) {
         console.error('❌ Migration error:', error);
@@ -80,7 +87,48 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
             console.log('🔄 Opening database connection...');
             db = SQLite.openDatabaseSync('chat.db');
 
-            // Ensure tables exist on every open (idempotent)
+            // ============================================================
+            // CRITICAL: Run migrations FIRST before any CREATE TABLE
+            // This fixes the "no column named status" crash on iOS
+            // ============================================================
+            try {
+                // Check if messages table exists before trying to migrate it
+                const tables = db.getAllSync<{ name: string }>(
+                    `SELECT name FROM sqlite_master WHERE type='table' AND name='messages'`
+                );
+
+                if (tables.length > 0) {
+                    // Table exists, check for missing columns
+                    const columns = db.getAllSync<{ name: string }>(
+                        `PRAGMA table_info(messages)`
+                    );
+                    const columnNames = columns.map(col => col.name);
+
+                    // Add status column if missing (CRITICAL for iOS)
+                    if (!columnNames.includes('status')) {
+                        console.log('🔧 CRITICAL FIX: Adding missing status column...');
+                        db.execSync(`ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'pending'`);
+                        console.log('✅ status column added successfully');
+                    }
+
+                    // Add server_id if missing
+                    if (!columnNames.includes('server_id')) {
+                        console.log('🔧 Adding server_id column...');
+                        db.execSync(`ALTER TABLE messages ADD COLUMN server_id TEXT`);
+                    }
+
+                    // Add deleted_at if missing
+                    if (!columnNames.includes('deleted_at')) {
+                        console.log('🔧 Adding deleted_at column...');
+                        db.execSync(`ALTER TABLE messages ADD COLUMN deleted_at TEXT`);
+                    }
+                }
+            } catch (migrationError) {
+                console.error('⚠️ Migration check failed (table may not exist yet):', migrationError);
+                // Continue - table will be created below with all columns
+            }
+
+            // Now create tables (this is idempotent for new installs)
             db.execSync(`
         CREATE TABLE IF NOT EXISTS conversations (
           id TEXT PRIMARY KEY,
@@ -133,9 +181,6 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
         CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_id);
         CREATE INDEX IF NOT EXISTS idx_media_conv ON media_cache(conversation_id);
       `);
-
-            // Run migrations for existing databases (adds missing columns)
-            runMigrations(db);
 
             console.log('✅ Chat database initialized and tables verified');
         } catch (error) {

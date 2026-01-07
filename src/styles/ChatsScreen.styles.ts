@@ -481,7 +481,7 @@ export const chatsListStyles = StyleSheet.create({
   // New Chat Button
   newChatButton: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 100, // Adjusted to match BottomNavigation
     right: 24,
     width: 56,
     height: 56,
@@ -494,11 +494,61 @@ export const chatsListStyles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+    zIndex: 100,
   },
   newChatIcon: {
     color: '#FFFFFF',
     fontSize: 28,
     fontWeight: '300',
+  },
+
+  // FAB Menu
+  fabOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 90,
+  },
+  fabMenuContainer: {
+    position: 'absolute',
+    bottom: 170,
+    right: 24,
+    alignItems: 'flex-end',
+    zIndex: 100,
+  },
+  fabMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  fabMenuLabel: {
+    backgroundColor: 'white',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  fabMenuLabelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  fabMenuButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
 
   // Chat View

@@ -78,10 +78,11 @@ export function ChatInput({ onSend, disabled = false, placeholder = 'Escribe un 
             setIsSending(true); // Block input while uploading
 
             // Upload
-            const storageKey = await mediaService.uploadMedia(media.uri);
+            // Upload
+            const uploadResult = await mediaService.uploadMedia(media);
 
             // Send
-            await onSend(storageKey, media.type, {
+            await onSend(uploadResult.publicId, media.type, {
                 width: media.width,
                 height: media.height,
                 fileSize: media.fileSize,

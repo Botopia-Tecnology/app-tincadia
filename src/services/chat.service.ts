@@ -27,6 +27,10 @@ export interface Conversation {
     lastMessage?: string;
     lastMessageAt?: string;
     unreadCount: number;
+    // Group fields
+    isGroup?: boolean;
+    title?: string;
+    imageUrl?: string;
 }
 
 interface SendMessageDto {
@@ -84,6 +88,16 @@ export const chatService = {
      */
     async createConversation(data: CreateConversationDto): Promise<{ conversation: Conversation }> {
         return apiClient(API_ENDPOINTS.CONVERSATIONS, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    },
+
+    /**
+     * Create a new group chat
+     */
+    async createGroup(data: { creatorId: string; title: string; participants: string[]; imageUrl?: string; description?: string }): Promise<{ conversationId: string }> {
+        return apiClient(`${API_URL}/chat/groups`, { // Ensure direct path if endpoints config not updated
             method: 'POST',
             body: JSON.stringify(data),
         });
@@ -271,6 +285,12 @@ export const chatService = {
             };
 
             xhr.send(JSON.stringify({ text }));
+        });
+    },
+    async inviteInterpreters(data: { roomName: string; userId: string; username: string }): Promise<{ success: boolean; count?: number; message?: string }> {
+        return apiClient(`${API_URL}/chat/calls/interpreters`, {
+            method: 'POST',
+            body: JSON.stringify(data),
         });
     },
 };

@@ -78,4 +78,5 @@ export const API_ENDPOINTS = {
     CATEGORIES: '/content/categories',
     UPLOAD_CHAT_MEDIA: '/content/chat/media',
     GET_SIGNED_URL: '/content/chat/media/url',
+    EMERGENCY_AUDIO: '/emergency/generate-audio',
 } as const;

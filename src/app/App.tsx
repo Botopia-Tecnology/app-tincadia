@@ -23,6 +23,7 @@ import { SplashScreen } from '../components/SplashScreen';
 import { LoginScreen } from '../components/LoginScreen';
 import { CompleteProfileScreen } from '../components/CompleteProfileScreen';
 import { ChatsScreen } from '../components/ChatsScreen';
+import { NewGroupScreen } from '../components/NewGroupScreen';
 import { CoursesScreen } from '../components/CoursesScreen';
 import { CoursePlayerScreen } from '../components/CoursePlayerScreen';
 import { SOSScreen } from '../components/SOSScreen';
@@ -31,6 +32,7 @@ import { NotificationsScreen } from '../components/NotificationsScreen';
 import { AnimatedScreen } from '../components/AnimatedScreen';
 import { CallScreen } from '../screens/CallScreen';
 import { IncomingCallModal } from '../components/IncomingCallModal';
+import { AlertProvider } from '../components/common/CustomAlert';
 import { appStyles as styles } from '../styles/App.styles';
 
 // Initialize Sentry with Session Replay
@@ -88,6 +90,11 @@ async function registerForPushNotificationsAsync() {
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      // Get the token from Expo
+      const expoPushTokenResponse = await Notifications.getExpoPushTokenAsync({
+        projectId: '8bf6b071-622c-4428-a2f8-b83b95fa2d99',
+      });
+      token = expoPushTokenResponse.data;
     }
     if (finalStatus !== 'granted') {
       console.warn('Failed to get push token for push notification!');
@@ -96,11 +103,6 @@ async function registerForPushNotificationsAsync() {
     }
 
     try {
-      // Get the token from Expo
-      const expoPushTokenResponse = await Notifications.getExpoPushTokenAsync({
-        projectId: '8bf6b071-622c-4428-a2f8-b83b95fa2d99',
-      });
-      token = expoPushTokenResponse.data;
       console.log('✅ Expo Push Token:', token);
       // Alert.alert('Token Generado', token); // Optional: Uncomment to verify specific token
     } catch (e: any) {
@@ -114,7 +116,7 @@ async function registerForPushNotificationsAsync() {
   return token;
 }
 
-type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'notifications' | 'course_player';
+type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'notifications' | 'course_player' | 'new_group';
 
 function AppContent() {
   const { isAuthenticated, profileComplete, isLoading, user } = useAuth();
@@ -126,7 +128,7 @@ function AppContent() {
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
   const [callParams, setCallParams] = useState<{ roomName: string; username: string; conversationId?: string; userId?: string } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
-  const [initialChatParams, setInitialChatParams] = useState<{ conversationId: string; recipientId: string } | null>(null);
+  const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null>(null);
   const [incomingCall, setIncomingCall] = useState<{ conversationId: string; senderId: string; callerName: string } | null>(null);
 
   // Keep ref for listeners
@@ -245,6 +247,14 @@ function AppContent() {
     if (next === 'course_player' && params?.courseId) {
       setSelectedCourseId(params.courseId);
     }
+    if (next === 'chats' && params?.conversationId) {
+      setInitialChatParams({
+        conversationId: params.conversationId,
+        recipientId: params.recipientId,
+        isGroup: params.isGroup,
+        title: params.title
+      });
+    }
     setScreenStack((prev) => {
       const last = prev[prev.length - 1];
       if (last === next) return prev;
@@ -313,6 +323,12 @@ function AppContent() {
             initialConversation={initialChatParams}
             onInitialConversationOpened={() => setInitialChatParams(null)}
           />
+        ) : currentScreen === 'new_group' ? (
+          <NewGroupScreen
+            onNavigate={navigate}
+            onBack={goBack}
+            userId={userId}
+          />
         ) : currentScreen === 'courses' ? (
           <CoursesScreen
             onNavigate={navigate}
@@ -369,15 +385,17 @@ export default function App() {
   try {
     return (
       <PostHogProvider
-        apiKey={process.env.EXPO_PUBLIC_POSTHOG_API_KEY!}
+        apiKey={process.env.EXPO_PUBLIC_POSTHOG_KEY}
         options={{
-          host: 'https://us.i.posthog.com',
+          host: process.env.EXPO_PUBLIC_POSTHOG_HOST,
         }}
       >
         <SafeAreaProvider>
           <I18nProvider>
             <AuthProvider>
-              <AppContent />
+              <AlertProvider>
+                <AppContent />
+              </AlertProvider>
             </AuthProvider>
           </I18nProvider>
         </SafeAreaProvider>

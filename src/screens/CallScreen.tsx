@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, SafeAreaView, Alert, Image } from 'react-native';
 import {
     LiveKitRoom,
     useTracks,
@@ -89,6 +89,8 @@ export const CallScreen = ({ roomName, username, conversationId, userId, onBack 
                     onHangup={onBack}
                     conversationId={conversationId}
                     userId={userId}
+                    roomName={roomName}
+                    username={username}
                 />
                 <RoomEvents onLeave={onBack} />
             </LiveKitRoom>
@@ -143,10 +145,12 @@ function VideoView() {
     );
 }
 
-function ControlsView({ onHangup, conversationId, userId }: {
+function ControlsView({ onHangup, conversationId, userId, roomName, username }: {
     onHangup: () => void;
     conversationId?: string;
     userId?: string;
+    roomName: string;
+    username: string;
 }) {
     const { isMicrophoneEnabled, isCameraEnabled, localParticipant } = useLocalParticipant();
     const room = useRoomContext();
@@ -182,6 +186,42 @@ function ControlsView({ onHangup, conversationId, userId }: {
         onHangup();
     };
 
+    const handleInviteInterpreters = async () => {
+        if (!userId) return;
+
+        try {
+            Alert.alert(
+                'Solicitar Intérprete',
+                '¿Desea solicitar un intérprete para unirse a esta llamada?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                        text: 'Solicitar',
+                        onPress: async () => {
+                            try {
+                                const result = await chatService.inviteInterpreters({
+                                    roomName,
+                                    userId,
+                                    username
+                                });
+                                if (result.success) {
+                                    Alert.alert('Solicitud enviada', `Se ha notificado a ${result.count || 1} intérprete(s).`);
+                                } else {
+                                    Alert.alert('Info', result.message || 'No se pudo completar la solicitud.');
+                                }
+                            } catch (error) {
+                                console.error('Error initiating invite:', error);
+                                Alert.alert('Error', 'Hubo un error al solicitar intérprete.');
+                            }
+                        }
+                    }
+                ]
+            );
+        } catch (e) {
+            console.error('Invite error', e);
+        }
+    };
+
     return (
         <View style={styles.controlsContainer}>
             <TouchableOpacity
@@ -189,6 +229,18 @@ function ControlsView({ onHangup, conversationId, userId }: {
                 onPress={toggleMic}
             >
                 <MicrophoneIcon size={24} color={isMicrophoneEnabled ? '#000' : '#fff'} />
+            </TouchableOpacity>
+
+            {/* Interpreter Button */}
+            <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#fff' }]}
+                onPress={handleInviteInterpreters}
+            >
+                <Image
+                    source={require('../../assets/icon.png')}
+                    style={{ width: 32, height: 32, borderRadius: 16 }}
+                    resizeMode="cover"
+                />
             </TouchableOpacity>
 
             <TouchableOpacity

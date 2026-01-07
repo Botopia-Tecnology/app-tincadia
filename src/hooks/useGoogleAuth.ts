@@ -16,6 +16,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 // Web Client ID from Google Cloud Console (also configured in Supabase)
 const WEB_CLIENT_ID = '432950882488-80s791qdafaslmilmos19mndc9427n60.apps.googleusercontent.com';
+const IOS_CLIENT_ID = '432950882488-3i05sq8v8tfdrpq1l2tdplt364qco4e7.apps.googleusercontent.com';
 
 // Configure Google Sign-In once
 let isConfigured = false;
@@ -25,7 +26,8 @@ function configureGoogleSignIn() {
 
     GoogleSignin.configure({
         webClientId: WEB_CLIENT_ID,
-        offlineAccess: true, // Required to get idToken
+        iosClientId: IOS_CLIENT_ID,
+        // offlineAccess: true, // Removed to fix iOS nonce error
         scopes: ['profile', 'email'],
     });
 
