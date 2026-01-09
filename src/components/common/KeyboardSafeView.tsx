@@ -67,9 +67,8 @@ export const KeyboardSafeView = ({
     const content = (
         <KeyboardAvoidingView
             style={[styles.flex, contentContainerStyle]}
-            behavior={behavior}
-            keyboardVerticalOffset={offset}
-            enabled={Platform.OS !== 'ios'} // Disable on iOS to prevent visual bugs
+            behavior={Platform.OS === 'ios' ? 'padding' : behavior}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : offset}
         >
             {children}
         </KeyboardAvoidingView>

@@ -283,6 +283,36 @@ export const chatsListStyles = StyleSheet.create({
     color: '#111827',
   },
 
+  // Filters
+  filtersContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  filterChipActive: {
+    backgroundColor: '#EEF7F0',
+    borderColor: '#7FA889',
+  },
+  filterText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  filterTextActive: {
+    color: '#7FA889',
+    fontWeight: '600',
+  },
+
   // Chat Item
   chatItemRow: {
     flexDirection: 'row',

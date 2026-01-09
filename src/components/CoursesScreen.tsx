@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Image, FlatList } from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Image, FlatList, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
+import { SearchIcon } from './icons/NavigationIcons';
 import { contentService, Course } from '../services/content.service';
+import { useCourses } from '../hooks/useCourses';
 
 interface CourseCategory {
     title: string;
@@ -28,46 +30,49 @@ export function CoursesScreen({
     onCourseSelect,
 }: CoursesScreenProps) {
     const [categories, setCategories] = useState<CourseCategory[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
+    const { courses, isLoading, isSyncing, refresh } = useCourses();
     const [refreshing, setRefreshing] = useState(false);
 
-    const fetchCourses = async () => {
-        try {
-            const allCourses = await contentService.getAllCourses();
-
-            // Group by category
-            const groups: Record<string, Course[]> = {};
-            // Sort by creation date if possible, currently just fetching
-
-            allCourses.forEach(course => {
-                const catName = course.category?.name || 'Otros';
-                if (!groups[catName]) groups[catName] = [];
-                groups[catName].push(course);
-            });
-
-            // Transform to array
-            const result = Object.entries(groups).map(([title, courses]) => ({
-                title,
-                courses
-            }));
-
-            setCategories(result);
-        } catch (error) {
-            console.error('Failed to load courses', error);
-        } finally {
-            setIsLoading(false);
-            setRefreshing(false);
-        }
-    };
+    // Filter courses based on search query
+    const filteredCourses = useMemo(() => {
+        if (!searchQuery.trim()) return courses;
+        const query = searchQuery.toLowerCase();
+        return courses.filter(course =>
+            course.title.toLowerCase().includes(query) ||
+            (course.instructor && course.instructor.toLowerCase().includes(query))
+        );
+    }, [courses, searchQuery]);
 
     useEffect(() => {
-        fetchCourses();
-    }, []);
+        // Group by category
+        const groups: Record<string, Course[]> = {};
+        filteredCourses.forEach((course: Course) => {
+            const catName = course.category?.name || 'Otros';
+            if (!groups[catName]) groups[catName] = [];
+            groups[catName].push(course);
+        });
 
-    const onRefresh = () => {
-        setRefreshing(true);
-        fetchCourses();
+        // Transform to array
+        const result = Object.entries(groups).map(([title, courses]) => ({
+            title,
+            courses
+        }));
+
+        setCategories(result);
+    }, [filteredCourses]);
+
+    const handleSearch = (text: string) => {
+        setSearchQuery(text);
     };
+
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await refresh();
+        setRefreshing(false);
+    };
+
+
 
     const renderCourseCard = ({ item: course }: { item: Course }) => (
         <TouchableOpacity
@@ -116,19 +121,30 @@ export function CoursesScreen({
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={onBack}>
-                    <Text style={styles.backIcon}>←</Text>
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Cursos</Text>
-                {userId && onShowNotifications ? (
-                    <NotificationBell
-                        userId={userId}
-                        onPress={onShowNotifications}
-                        color="#000000"
+                <View style={styles.headerTop}>
+                    <Text style={styles.headerTitle}>Cursos</Text>
+                    {userId && onShowNotifications ? (
+                        <NotificationBell
+                            userId={userId}
+                            onPress={onShowNotifications}
+                            color="#333333"
+                        />
+                    ) : (
+                        <View style={styles.notificationButton} />
+                    )}
+                </View>
+
+                {/* Search Bar */}
+                <View style={styles.searchContainer}>
+                    <SearchIcon size={20} color="#666666" />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Buscar cursos"
+                        value={searchQuery}
+                        onChangeText={handleSearch}
+                        placeholderTextColor="#666666"
                     />
-                ) : (
-                    <View style={styles.notificationButton} />
-                )}
+                </View>
             </View>
 
             {/* Content */}

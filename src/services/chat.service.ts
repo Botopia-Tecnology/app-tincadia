@@ -28,6 +28,7 @@ export interface Conversation {
     lastMessageAt?: string;
     unreadCount: number;
     // Group fields
+    type?: 'direct' | 'group';
     isGroup?: boolean;
     title?: string;
     imageUrl?: string;
@@ -125,8 +126,12 @@ export const chatService = {
     /**
      * Get messages for a conversation
      */
-    async getMessages(conversationId: string): Promise<{ messages: Message[] }> {
-        return apiClient(API_ENDPOINTS.CONVERSATION_MESSAGES(conversationId), {
+    async getMessages(conversationId: string, after?: string): Promise<{ messages: Message[] }> {
+        let url = API_ENDPOINTS.CONVERSATION_MESSAGES(conversationId);
+        if (after) {
+            url += `?after=${encodeURIComponent(after)}`;
+        }
+        return apiClient(url, {
             method: 'GET',
         });
     },
@@ -288,9 +293,78 @@ export const chatService = {
         });
     },
     async inviteInterpreters(data: { roomName: string; userId: string; username: string }): Promise<{ success: boolean; count?: number; message?: string }> {
-        return apiClient(`${API_URL}/chat/calls/interpreters`, {
+        return apiClient('/chat/calls/interpreters', {
             method: 'POST',
             body: JSON.stringify(data),
+        });
+    },
+
+    /**
+     * Update interpreter busy status
+     */
+    async updateInterpreterStatus(userId: string, isBusy: boolean): Promise<{ success: boolean }> {
+        return apiClient('/chat/interpreter/status', {
+            method: 'POST',
+            body: JSON.stringify({ userId, isBusy }),
+        });
+    },
+
+    /**
+     * Remove a participant from a group (Admin only)
+     */
+    async removeParticipant(conversationId: string, adminId: string, userIdToRemove: string): Promise<{ success: boolean }> {
+        return apiClient('/chat/groups/remove', {
+            method: 'POST',
+            body: JSON.stringify({ conversationId, adminId, userIdToRemove }),
+        });
+    },
+
+    /**
+     * Add a participant to a group (Admin only)
+     */
+    async addParticipant(conversationId: string, adminId: string, userIdToAdd: string): Promise<{ success: boolean }> {
+        return apiClient('/chat/groups/add', {
+            method: 'POST',
+            body: JSON.stringify({ conversationId, adminId, userIdToAdd }),
+        });
+    },
+
+    /**
+     * Promote a participant to administrator (Admin only)
+     */
+    async promoteToAdmin(conversationId: string, adminId: string, userIdToPromote: string): Promise<{ success: boolean }> {
+        return apiClient('/chat/groups/promote', {
+            method: 'POST',
+            body: JSON.stringify({ conversationId, adminId, userIdToPromote }),
+        });
+    },
+
+    /**
+     * Leave a group
+     */
+    async leaveGroup(conversationId: string, userId: string): Promise<{ success: boolean }> {
+        return apiClient('/chat/groups/leave', {
+            method: 'POST',
+            body: JSON.stringify({ conversationId, userId }),
+        });
+    },
+
+    /**
+     * Update group information (Admin only)
+     */
+    async updateGroup(data: { conversationId: string; adminId: string; title?: string; imageUrl?: string; description?: string }): Promise<{ group: any }> {
+        return apiClient('/chat/groups', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    },
+
+    /**
+     * Get participants of a group
+     */
+    async getGroupParticipants(conversationId: string): Promise<any[]> {
+        return apiClient(`/chat/groups/${conversationId}/participants`, {
+            method: 'GET',
         });
     },
 };

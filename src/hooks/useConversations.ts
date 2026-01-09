@@ -12,12 +12,16 @@ import { chatService, Conversation as ApiConversation } from '../services/chat.s
 
 export interface Conversation {
     id: string;
-    otherUserId: string;
+    otherUserId?: string; // Optional for groups
     otherUserName: string;
     otherUserAvatar: string;
     lastMessage: string;
     lastMessageAt: string;
     unreadCount: number;
+    // Group fields
+    type?: 'direct' | 'group';
+    title?: string;
+    imageUrl?: string;
 }
 
 interface UseConversationsReturn {
@@ -36,20 +40,26 @@ export function useConversations(userId: string): UseConversationsReturn {
     // Transform local DB conversation to our interface
     const transformLocalConversation = (c: {
         id: string;
-        other_user_id: string;
+        other_user_id: string | null;
         other_user_name: string;
         other_user_avatar: string;
         last_message: string;
         last_message_at: string;
         unread_count: number;
+        type?: string | null;
+        title?: string | null;
+        image_url?: string | null;
     }): Conversation => ({
         id: c.id,
-        otherUserId: c.other_user_id,
+        otherUserId: c.other_user_id || undefined,
         otherUserName: c.other_user_name,
         otherUserAvatar: c.other_user_avatar,
         lastMessage: c.last_message,
         lastMessageAt: c.last_message_at,
         unreadCount: c.unread_count,
+        type: (c.type as 'direct' | 'group') || 'direct',
+        title: c.title || undefined,
+        imageUrl: c.image_url || undefined,
     });
 
     // Load conversations from local SQLite
@@ -79,12 +89,16 @@ export function useConversations(userId: string): UseConversationsReturn {
             serverConvs.forEach((conv: ApiConversation) => {
                 saveConversation({
                     id: conv.id,
-                    otherUserId: conv.otherUserId,
+                    otherUserId: conv.otherUserId || undefined,
                     otherUserName: conv.otherUserName,
                     otherUserAvatar: conv.otherUserAvatar,
                     lastMessage: conv.lastMessage,
                     lastMessageAt: conv.lastMessageAt,
                     unreadCount: conv.unreadCount,
+                    // Group fields
+                    type: conv.type as 'direct' | 'group' || 'direct',
+                    title: conv.title,
+                    imageUrl: conv.imageUrl,
                 });
             });
 

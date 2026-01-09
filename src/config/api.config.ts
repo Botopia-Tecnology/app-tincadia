@@ -70,6 +70,7 @@ export const API_ENDPOINTS = {
     NOTIFICATIONS: '/notifications',
     NOTIFICATIONS_UNREAD_COUNT: (userId: string) => `/notifications/unread-count/${userId}`,
     NOTIFICATION_MARK_READ: (notificationId: string) => `/notifications/${notificationId}/read`,
+    NOTIFICATIONS_MARK_ALL_READ: (userId: string) => `/notifications/mark-all-read/${userId}`,
     PUSH_TEST: '/notifications/push-test',
 
     // Content endpoints

@@ -122,6 +122,59 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
                         console.log('🔧 Adding deleted_at column...');
                         db.execSync(`ALTER TABLE messages ADD COLUMN deleted_at TEXT`);
                     }
+
+                    // Add reply_to_id if missing
+                    if (!columnNames.includes('reply_to_id')) {
+                        console.log('🔧 Adding reply_to_id column...');
+                        db.execSync(`ALTER TABLE messages ADD COLUMN reply_to_id TEXT`);
+                    }
+
+                    // Add reply_to_content if missing
+                    if (!columnNames.includes('reply_to_content')) {
+                        console.log('🔧 Adding reply_to_content column...');
+                        db.execSync(`ALTER TABLE messages ADD COLUMN reply_to_content TEXT`);
+                    }
+
+                    // Add reply_to_sender if missing
+                    if (!columnNames.includes('reply_to_sender')) {
+                        console.log('🔧 Adding reply_to_sender column...');
+                        db.execSync(`ALTER TABLE messages ADD COLUMN reply_to_sender TEXT`);
+                    }
+                }
+
+                // Migrate conversations table for groups support
+                const convTables = db.getAllSync<{ name: string }>(
+                    `SELECT name FROM sqlite_master WHERE type='table' AND name='conversations'`
+                );
+                if (convTables.length > 0) {
+                    const convColumns = db.getAllSync<{ name: string }>(
+                        `PRAGMA table_info(conversations)`
+                    );
+                    const convColumnNames = convColumns.map(col => col.name);
+
+                    // Add type column if missing
+                    if (!convColumnNames.includes('type')) {
+                        console.log('🔧 Adding type column to conversations...');
+                        db.execSync(`ALTER TABLE conversations ADD COLUMN type TEXT DEFAULT 'direct'`);
+                    }
+
+                    // Add title column if missing
+                    if (!convColumnNames.includes('title')) {
+                        console.log('🔧 Adding title column to conversations...');
+                        db.execSync(`ALTER TABLE conversations ADD COLUMN title TEXT`);
+                    }
+
+                    // Add image_url column if missing
+                    if (!convColumnNames.includes('image_url')) {
+                        console.log('🔧 Adding image_url column to conversations...');
+                        db.execSync(`ALTER TABLE conversations ADD COLUMN image_url TEXT`);
+                    }
+
+                    // Add description column if missing
+                    if (!convColumnNames.includes('description')) {
+                        console.log('🔧 Adding description column to conversations...');
+                        db.execSync(`ALTER TABLE conversations ADD COLUMN description TEXT`);
+                    }
                 }
             } catch (migrationError) {
                 console.error('⚠️ Migration check failed (table may not exist yet):', migrationError);
@@ -132,14 +185,18 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
             db.execSync(`
         CREATE TABLE IF NOT EXISTS conversations (
           id TEXT PRIMARY KEY,
-          other_user_id TEXT NOT NULL,
+          other_user_id TEXT,
           other_user_name TEXT,
           other_user_avatar TEXT,
           other_user_phone TEXT,
           last_message TEXT,
           last_message_at TEXT,
           unread_count INTEGER DEFAULT 0,
-          updated_at TEXT
+          updated_at TEXT,
+          type TEXT DEFAULT 'direct',
+          title TEXT,
+          image_url TEXT,
+          description TEXT
         );
         
         CREATE TABLE IF NOT EXISTS messages (
@@ -154,7 +211,10 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
           updated_at TEXT,
           read_at TEXT,
           is_mine INTEGER DEFAULT 0,
-          deleted_at TEXT
+          deleted_at TEXT,
+          reply_to_id TEXT,
+          reply_to_content TEXT,
+          reply_to_sender TEXT
         );
         
         CREATE TABLE IF NOT EXISTS contacts (
@@ -206,6 +266,10 @@ export interface LocalMessage {
     readAt?: string;
     isMine: boolean;
     deletedAt?: string;
+    // Reply metadata
+    replyToId?: string;
+    replyToContent?: string;
+    replyToSender?: string;
 }
 
 /**
@@ -224,6 +288,10 @@ export function saveMessage(msg: {
     readAt?: string;
     isMine: boolean;
     deletedAt?: string;
+    // Reply metadata
+    replyToId?: string;
+    replyToContent?: string;
+    replyToSender?: string;
 }) {
     const database = ensureInitialized();
 
@@ -270,8 +338,8 @@ export function saveMessage(msg: {
 
     database.runSync(
         `INSERT OR REPLACE INTO messages 
-     (id, server_id, conversation_id, sender_id, content, type, status, created_at, updated_at, read_at, is_mine, deleted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, server_id, conversation_id, sender_id, content, type, status, created_at, updated_at, read_at, is_mine, deleted_at, reply_to_id, reply_to_content, reply_to_sender)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             msg.id,
             msg.serverId || null,
@@ -285,6 +353,9 @@ export function saveMessage(msg: {
             msg.readAt || null,
             msg.isMine ? 1 : 0,
             msg.deletedAt || null,
+            msg.replyToId || null,
+            msg.replyToContent || null,
+            msg.replyToSender || null,
         ]
     );
 }
@@ -337,6 +408,9 @@ export function getMessages(conversationId: string): LocalMessage[] {
         read_at: string | null;
         is_mine: number;
         deleted_at: string | null;
+        reply_to_id: string | null;
+        reply_to_content: string | null;
+        reply_to_sender: string | null;
     }>(
         `SELECT * FROM messages 
      WHERE conversation_id = ? AND deleted_at IS NULL
@@ -357,6 +431,9 @@ export function getMessages(conversationId: string): LocalMessage[] {
         readAt: row.read_at || undefined,
         isMine: row.is_mine === 1,
         deletedAt: row.deleted_at || undefined,
+        replyToId: row.reply_to_id || undefined,
+        replyToContent: row.reply_to_content || undefined,
+        replyToSender: row.reply_to_sender || undefined,
     }));
 }
 
@@ -434,27 +511,32 @@ export function softDeleteMessage(messageId: string) {
 // ==================== CONVERSATIONS ====================
 
 /**
- * Save or update a conversation
+ * Save or update a conversation (supports both direct chats and groups)
  */
 export function saveConversation(conv: {
     id: string;
-    otherUserId: string;
+    otherUserId?: string; // Optional for groups
     otherUserName?: string;
     otherUserAvatar?: string;
     otherUserPhone?: string;
     lastMessage?: string;
     lastMessageAt?: string;
     unreadCount?: number;
+    // Group-specific fields
+    type?: 'direct' | 'group';
+    title?: string;
+    imageUrl?: string;
+    description?: string;
 }) {
     const database = ensureInitialized();
     const now = new Date().toISOString();
     database.runSync(
         `INSERT OR REPLACE INTO conversations 
-     (id, other_user_id, other_user_name, other_user_avatar, other_user_phone, last_message, last_message_at, unread_count, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, other_user_id, other_user_name, other_user_avatar, other_user_phone, last_message, last_message_at, unread_count, updated_at, type, title, image_url, description)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             conv.id,
-            conv.otherUserId,
+            conv.otherUserId || null, // Allow null for groups
             conv.otherUserName || '',
             conv.otherUserAvatar || '',
             conv.otherUserPhone || '',
@@ -462,6 +544,10 @@ export function saveConversation(conv: {
             conv.lastMessageAt || '',
             conv.unreadCount || 0,
             now,
+            conv.type || 'direct',
+            conv.title || '',
+            conv.imageUrl || '',
+            conv.description || '',
         ]
     );
 }
@@ -473,7 +559,7 @@ export function getConversations() {
     const database = ensureInitialized();
     return database.getAllSync<{
         id: string;
-        other_user_id: string;
+        other_user_id: string | null; // Can be null for groups
         other_user_name: string;
         other_user_avatar: string;
         other_user_phone: string;
@@ -481,6 +567,11 @@ export function getConversations() {
         last_message_at: string;
         unread_count: number;
         updated_at: string;
+        // Group fields
+        type: string | null;
+        title: string | null;
+        image_url: string | null;
+        description: string | null;
     }>(
         `SELECT * FROM conversations ORDER BY last_message_at DESC`
     );

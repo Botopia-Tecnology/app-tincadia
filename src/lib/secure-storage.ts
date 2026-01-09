@@ -10,6 +10,7 @@ import { Platform } from 'react-native';
 
 const TOKEN_KEY = 'tincadia_accessToken';
 const USER_KEY = 'tincadia_user';
+const SESSION_KEY = 'tincadia_supabaseSession';
 
 // Web fallback using localStorage (less secure, but SecureStore doesn't work on web)
 // NOTE: This project is typed for React Native (no DOM lib), so we must not reference `window` directly.

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Linking, ActivityIndicator, Animated, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Linking, ActivityIndicator, Animated, Alert, TextInput } from 'react-native';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
@@ -20,8 +20,11 @@ import {
     Play,
     Square,
     ChevronLeft,
-    MessageCircle
+    MessageCircle,
+    Pause,
+    Search
 } from 'lucide-react-native';
+import { SearchIcon } from './icons/NavigationIcons';
 
 interface EmergencyType {
     id: string;
@@ -293,19 +296,29 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={onBack}>
-                    <ChevronLeft size={28} color="#1F2937" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Centro de Ayuda</Text>
-                {userId && onShowNotifications ? (
-                    <NotificationBell
-                        userId={userId}
-                        onPress={onShowNotifications}
-                        color="#1F2937"
+                <View style={styles.headerTop}>
+                    <Text style={styles.headerTitle}>Centro de Ayuda</Text>
+                    {userId && onShowNotifications ? (
+                        <NotificationBell
+                            userId={userId}
+                            onPress={onShowNotifications}
+                            color="#333333"
+                        />
+                    ) : (
+                        <View style={styles.notificationButton} />
+                    )}
+                </View>
+
+                {/* Decorative Search Bar (for visual consistency) */}
+                <View style={styles.searchContainer}>
+                    <SearchIcon size={20} color="#666666" />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Buscar ayuda"
+                        placeholderTextColor="#666666"
+                        editable={false}
                     />
-                ) : (
-                    <View style={styles.notificationButton} />
-                )}
+                </View>
             </View>
 
             <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
@@ -350,12 +363,12 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
                                         onPress={togglePlayback}
                                     >
                                         {isPlaying ? (
-                                            <Square size={24} color="white" fill="white" />
+                                            <Pause size={24} color="white" fill="white" />
                                         ) : (
                                             <Play size={24} color="white" fill="white" />
                                         )}
                                         <Text style={styles.playButtonText}>
-                                            {isPlaying ? 'DETENER' : 'REPRODUCIR'}
+                                            {isPlaying ? 'PAUSAR' : 'REPRODUCIR'}
                                         </Text>
                                     </TouchableOpacity>
 

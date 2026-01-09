@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Dimensio
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { messageBubbleStyles as styles } from '../../styles/ChatComponents.styles';
 import { Ionicons } from '@expo/vector-icons';
+import { mediaService } from '../../services/media.service';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -14,9 +15,24 @@ interface MessageBubbleProps {
     isSynced?: boolean;
     isRead?: boolean;
     type?: string;
+    replyToContent?: string;
+    replyToSender?: string;
+    publicId?: string;
+    duration?: number; // New prop for audio duration in seconds
 }
 
-export function MessageBubble({ content, time, isMine, isSynced = true, isRead = false, type = 'text' }: MessageBubbleProps) {
+export function MessageBubble({
+    content,
+    time,
+    isMine,
+    isSynced = true,
+    isRead = false,
+    type = 'text',
+    replyToContent,
+    replyToSender,
+    publicId,
+    duration
+}: MessageBubbleProps) {
     const [mediaUri, setMediaUri] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -25,11 +41,38 @@ export function MessageBubble({ content, time, isMine, isSynced = true, isRead =
 
     // Auto-load media when component mounts
     useEffect(() => {
-        if ((type === 'image' || type === 'video' || type === 'audio') && content) {
-            // Content is now always a URI (local file:// or remote https:// signed url)
-            setMediaUri(content);
-        }
-    }, [content, type]);
+        const loadMedia = async () => {
+            if ((type === 'image' || type === 'video' || type === 'audio') && content) {
+                // 1. If it's a local file (e.g. pending upload), use it immediately
+                if (content.startsWith('file://')) {
+                    setMediaUri(content);
+                    return;
+                }
+
+                // 2. If we have a publicId, it's likely a secure asset needing a signed URL
+                if (publicId) {
+                    setIsLoading(true);
+                    try {
+                        const localUri = await mediaService.downloadMedia(publicId);
+                        if (localUri) {
+                            setMediaUri(localUri);
+                        } else {
+                            setMediaUri(content);
+                        }
+                    } catch (e) {
+                        console.error('Failed to load secure media:', e);
+                        setMediaUri(content);
+                    } finally {
+                        setIsLoading(false);
+                    }
+                } else {
+                    // 3. Fallback to normal URL (public assets)
+                    setMediaUri(content);
+                }
+            }
+        };
+        loadMedia();
+    }, [content, type, publicId]);
 
     const handlePlayAudio = async () => {
         if (!mediaUri) return;
@@ -49,6 +92,7 @@ export function MessageBubble({ content, time, isMine, isSynced = true, isRead =
                 sound.setOnPlaybackStatusUpdate((status) => {
                     if (status.isLoaded && status.didJustFinish) {
                         setIsPlaying(false);
+                        // Optional: seek to start?
                     }
                 });
                 await sound.playAsync();
@@ -63,6 +107,13 @@ export function MessageBubble({ content, time, isMine, isSynced = true, isRead =
         if (!dateString) return '';
         const date = new Date(dateString);
         return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    // Helper to format duration
+    const formatDuration = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
     };
 
     const renderCheckmarks = () => {
@@ -142,6 +193,17 @@ export function MessageBubble({ content, time, isMine, isSynced = true, isRead =
                             />
                         ))}
                     </View>
+                    {duration !== undefined && duration > 0 ? (
+                        <Text style={{
+                            color: isMine ? 'rgba(255,255,255,0.8)' : '#666',
+                            fontSize: 11,
+                            marginLeft: 8,
+                            alignSelf: 'flex-end',
+                            marginBottom: 4
+                        }}>
+                            {formatDuration(duration)}
+                        </Text>
+                    ) : null}
                 </TouchableOpacity>
             );
         }
@@ -170,11 +232,45 @@ export function MessageBubble({ content, time, isMine, isSynced = true, isRead =
         </Modal>
     );
 
+    // Render reply quote if present
+    const renderReplyQuote = () => {
+        if (!replyToContent || !replyToSender) return null;
+        return (
+            <View style={{
+                backgroundColor: isMine ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.08)',
+                borderLeftWidth: 3,
+                borderLeftColor: '#4F46E5',
+                borderRadius: 4,
+                padding: 6,
+                marginBottom: 4,
+            }}>
+                <Text style={{
+                    color: '#4F46E5',
+                    fontSize: 11,
+                    fontWeight: '600',
+                    marginBottom: 2
+                }}>
+                    {replyToSender}
+                </Text>
+                <Text
+                    numberOfLines={2}
+                    style={{
+                        color: isMine ? 'rgba(255,255,255,0.8)' : '#666',
+                        fontSize: 12
+                    }}
+                >
+                    {replyToContent}
+                </Text>
+            </View>
+        );
+    };
+
     // Regular text message
     if (type === 'text' || type === 'call' || type === 'call_ended') {
         return (
             <View style={[styles.container, isMine ? styles.containerMine : styles.containerOther]}>
                 <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                    {renderReplyQuote()}
                     <Text style={[styles.content, isMine ? styles.contentMine : styles.contentOther]}>
                         {content}
                     </Text>
@@ -193,6 +289,7 @@ export function MessageBubble({ content, time, isMine, isSynced = true, isRead =
     return (
         <View style={[styles.container, isMine ? styles.containerMine : styles.containerOther]}>
             <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther, { padding: 4 }]}>
+                {renderReplyQuote()}
                 {renderMedia()}
                 <View style={[styles.footer, { paddingHorizontal: 8, paddingBottom: 4 }]}>
                     <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>

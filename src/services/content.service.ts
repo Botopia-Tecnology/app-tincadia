@@ -30,10 +30,14 @@ export const contentService = {
     /**
      * Get all courses
      */
-    getAllCourses: async (): Promise<Course[]> => {
+    getAllCourses: async (after?: string): Promise<Course[]> => {
         try {
             const token = await authService.getToken();
-            const response = await fetch(buildUrl(API_ENDPOINTS.COURSES), {
+            const url = after
+                ? `${buildUrl(API_ENDPOINTS.COURSES)}?after=${encodeURIComponent(after)}`
+                : buildUrl(API_ENDPOINTS.COURSES);
+
+            const response = await fetch(url, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',

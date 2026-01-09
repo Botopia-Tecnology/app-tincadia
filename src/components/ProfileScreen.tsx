@@ -19,8 +19,6 @@ import {
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
 
-import { appNotificationService } from '../services/appNotification.service';
-import * as Notifications from 'expo-notifications';
 import { EditProfileScreen } from './profile/EditProfileScreen';
 import { PrivacyScreen } from './profile/PrivacyScreen';
 import { EmergencyContactsScreen } from './profile/EmergencyContactsScreen';
@@ -43,36 +41,7 @@ export function ProfileScreen({
     // Local state to manage sub-screen navigation
     const [subScreen, setSubScreen] = useState<'none' | 'editProfile' | 'privacy' | 'emergencyContacts'>('none');
 
-    const handleTestPush = async () => {
-        try {
-            const { status } = await Notifications.getPermissionsAsync();
-            if (status !== 'granted') {
-                alert.show({
-                    type: 'warning',
-                    title: 'Permiso denegado',
-                    message: 'Habilita las notificaciones en la configuración de tu dispositivo.',
-                });
-                return;
-            }
-            const tokenData = await Notifications.getExpoPushTokenAsync();
-            console.log('📱 Testing Push with Token:', tokenData.data);
-            if (user?.id) {
-                await appNotificationService.sendTestPush(user.id, tokenData.data);
-                alert.show({
-                    type: 'success',
-                    title: 'Enviado',
-                    message: 'Notificación de prueba enviada 🚀',
-                });
-            }
-        } catch (error) {
-            console.error('Test Push Error:', error);
-            alert.show({
-                type: 'error',
-                title: 'Error',
-                message: 'No se pudo enviar la notificación de prueba.',
-            });
-        }
-    };
+
 
     const handleInviteFriends = async () => {
         try {
@@ -237,10 +206,13 @@ export function ProfileScreen({
                         <ChevronRightIcon size={20} color="#999999" />
                     </TouchableOpacity>
 
-                    {/* Test Notification Button */}
-                    <TouchableOpacity style={styles.menuItem} onPress={handleTestPush}>
+                    {/* Become Interpreter Button */}
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => Linking.openURL('https://www.tincadia.com/ser-interprete')}
+                    >
                         <Text style={[styles.menuLabel, { marginLeft: 0, color: '#007AFF' }]}>
-                            Probar Notificación Push
+                            Conviértete en intérprete
                         </Text>
                         <ChevronRightIcon size={20} color="#007AFF" />
                     </TouchableOpacity>

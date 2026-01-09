@@ -8,12 +8,12 @@ export const loginScreenStyles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
+    paddingTop: 40,
+    paddingBottom: 30,
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 24,
   },
   logo: {
     width: 150,
@@ -29,7 +29,7 @@ export const loginScreenStyles = StyleSheet.create({
   },
   formContainer: {
     width: '100%',
-    marginBottom: 32,
+    marginBottom: 16,
     alignItems: 'center',
   },
   input: {
@@ -78,7 +78,7 @@ export const loginScreenStyles = StyleSheet.create({
     fontWeight: '600',
   },
   separator: {
-    marginVertical: 32,
+    marginVertical: 16,
     alignItems: 'center',
   },
   separatorLine: {
