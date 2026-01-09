@@ -126,6 +126,15 @@ export function NotificationsScreen({ userId, onBack }: NotificationsScreenProps
 
     const loadNotifications = useCallback(async () => {
         try {
+            // 1. Optimistic load from cache
+            const cached = await appNotificationService.getCachedNotifications();
+            if (cached && cached.length > 0) {
+                setNotifications(cached);
+                // Only turn off loading if we have data to show
+                setIsLoading(false);
+            }
+
+            // 2. Fetch fresh data
             const data = await appNotificationService.getNotifications(userId);
             setNotifications(data);
         } catch (error) {
@@ -134,6 +143,18 @@ export function NotificationsScreen({ userId, onBack }: NotificationsScreenProps
             setIsLoading(false);
             setIsRefreshing(false);
         }
+    }, [userId]);
+
+    // Mark all notifications as read when screen opens
+    useEffect(() => {
+        const markAllRead = async () => {
+            try {
+                await appNotificationService.markAllAsRead(userId);
+            } catch (error) {
+                console.error('Error marking all as read:', error);
+            }
+        };
+        markAllRead();
     }, [userId]);
 
     useEffect(() => {

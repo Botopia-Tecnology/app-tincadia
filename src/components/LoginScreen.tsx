@@ -243,7 +243,8 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               onPress={() => attemptBiometricLogin()}
               style={{
                 alignSelf: 'center',
-                marginTop: 20,
+                marginTop: 10,
+                marginBottom: 10,
                 padding: 12,
                 alignItems: 'center',
                 backgroundColor: Platform.OS === 'ios' ? '#F0F8FF' : '#E8F5E9',

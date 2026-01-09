@@ -6,8 +6,9 @@
 
 import { apiClient } from '../lib/api-client';
 import { tokenStorage, userStorage } from '../lib/secure-storage';
-import { API_ENDPOINTS } from '../config/api.config';
+import { API_ENDPOINTS, API_URL } from '../config/api.config';
 import auth from '@react-native-firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
     LoginDto,
     RegisterDto,
@@ -102,69 +103,129 @@ export const authService = {
      */
     async getCurrentUser(forceRefresh = false): Promise<{ user: User; isProfileComplete: boolean } | null> {
         try {
-            // Try to get from cache first (unless forcing refresh)
+            const PROFILE_ETAG_KEY = 'tincadia_profile_etag';
+            let cachedUserStr: string | null = null;
+            let cachedUser: User | null = null;
+            let etag: string | null = null;
+
+            // 1. Get cached data and ETag
             if (!forceRefresh) {
-                const cachedUser = await userStorage.getUser();
-                if (cachedUser) {
+                [cachedUserStr, etag] = await Promise.all([
+                    userStorage.getUser(),
+                    AsyncStorage.getItem(PROFILE_ETAG_KEY)
+                ]);
+
+                if (cachedUserStr) {
                     try {
-                        const user = JSON.parse(cachedUser) as User;
-                        console.log('📦 Using cached user profile');
-
-                        // Determine isProfileComplete from cached data
-                        let isComplete = user.isProfileComplete;
-                        if (typeof isComplete !== 'boolean') {
-                            isComplete = !!(
-                                (user.documentTypeId || user.documentType) &&
-                                user.documentNumber &&
-                                user.phone
-                            );
-                        }
-
-                        // Return cached data immediately, validate in background
-                        this.validateAndRefreshInBackground();
-
-                        return { user, isProfileComplete: isComplete };
-                    } catch (parseError) {
-                        console.warn('Failed to parse cached user, fetching from server');
+                        cachedUser = JSON.parse(cachedUserStr);
+                        // If we have cached user, we can optimistically return it while validating?
+                        // But logic below handles validation.
+                        // Let's rely on 304 check.
+                    } catch (e) {
+                        console.warn('Failed to parse cached user');
                     }
                 }
             }
 
-            // Fetch from backend
-            const response = await apiClient<AuthResponse>(API_ENDPOINTS.ME, {
+            // 2. Prepare headers
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+            };
+            const token = await tokenStorage.getToken();
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            if (etag && !forceRefresh) {
+                headers['If-None-Match'] = etag;
+            }
+
+            // 3. Fetch
+            const url = `${API_URL}${API_ENDPOINTS.ME}`;
+            console.log('🔍 Fetching /auth/me with ETag:', etag);
+
+            const response = await fetch(url, {
                 method: 'GET',
+                headers
             });
 
-            console.log('🔍 /auth/me response received');
+            // 4. Handle 304 Not Modified
+            if (response.status === 304) {
+                console.log('📦 304 Not Modified: Using cached profile');
+                if (cachedUser) {
+                    let isComplete = cachedUser.isProfileComplete;
+                    // Ensure boolean
+                    if (typeof isComplete !== 'boolean') {
+                        isComplete = !!(
+                            (cachedUser.documentTypeId || cachedUser.documentType) &&
+                            cachedUser.documentNumber &&
+                            cachedUser.phone
+                        );
+                    }
+                    return { user: cachedUser, isProfileComplete: isComplete };
+                }
+            }
 
-            // Use isProfileComplete from response, fallback to user object, then check fields
-            let isComplete = response.isProfileComplete;
+            // 5. Handle Errors
+            if (!response.ok) {
+                // If 401, handle logout? internal apiClient does. 
+                // We should manually trigger same logic if needed or throw.
+                if (response.status === 401) {
+                    await tokenStorage.clearToken();
+                    await userStorage.clearUser();
+                    // Maybe notify listener
+                }
+                throw new Error(`Profile fetch failed: ${response.status}`);
+            }
+
+            // 6. Handle 200 OK
+            const data: AuthResponse = await response.json();
+            console.log('🔍 /auth/me 200 OK response received');
+
+            // Save new ETag
+            const newEtag = response.headers.get('etag');
+            if (newEtag) {
+                await AsyncStorage.setItem(PROFILE_ETAG_KEY, newEtag);
+            }
+
+            // Calculate status
+            let isComplete = data.isProfileComplete;
             if (typeof isComplete !== 'boolean') {
-                isComplete = response.user?.isProfileComplete;
+                isComplete = data.user?.isProfileComplete;
             }
             if (typeof isComplete !== 'boolean') {
-                // Fallback: check if required fields exist
                 isComplete = !!(
-                    (response.user?.documentTypeId || response.user?.documentType) &&
-                    response.user?.documentNumber &&
-                    response.user?.phone
+                    (data.user?.documentTypeId || data.user?.documentType) &&
+                    data.user?.documentNumber &&
+                    data.user?.phone
                 );
             }
 
-            // Update cache with fresh data
-            if (response.user) {
+            // Save user
+            if (data.user) {
                 await userStorage.setUser(JSON.stringify({
-                    ...response.user,
+                    ...data.user,
                     isProfileComplete: isComplete,
                 }));
             }
 
             return {
-                user: response.user,
+                user: data.user,
                 isProfileComplete: isComplete,
             };
+
         } catch (error) {
             console.error('🔍 /auth/me error:', error);
+            // If network fails (e.g. offline) and we have cache, return it?
+            // "Offline First" - yes.
+            try {
+                const cached = await userStorage.getUser();
+                if (cached) {
+                    const u = JSON.parse(cached);
+                    console.log('⚠️ Network error, using fallback cache');
+                    return { user: u, isProfileComplete: !!u.isProfileComplete };
+                }
+            } catch (e) { }
+
             return null;
         }
     },

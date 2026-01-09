@@ -300,7 +300,7 @@ export function ContactProfileScreen({
     }
 
     return (
-        <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.container}>
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {/* Header Section */}
                 <View style={styles.header}>
@@ -489,6 +489,6 @@ export function ContactProfileScreen({
                 {/* Bottom spacing */}
                 <View style={{ height: 32 }} />
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 }

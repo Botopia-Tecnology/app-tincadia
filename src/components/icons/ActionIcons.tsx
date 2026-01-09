@@ -1,9 +1,10 @@
 import React from 'react';
-import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient, Stop, Circle, Rect } from 'react-native-svg';
 
 interface IconProps {
     size?: number;
     style?: any;
+    color?: string;
 }
 
 export function MagicPencilIcon({ size = 24, style }: IconProps) {
@@ -44,3 +45,39 @@ export function MagicPencilIcon({ size = 24, style }: IconProps) {
         </Svg>
     );
 }
+
+export function CameraIcon({ size = 24, color = '#FF6B6B', style }: IconProps) {
+    return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+            {/* Camera body */}
+            <Rect
+                x="2"
+                y="6"
+                width="15"
+                height="12"
+                rx="2"
+                fill={color}
+            />
+            {/* Lens */}
+            <Circle
+                cx="9.5"
+                cy="12"
+                r="3"
+                fill="white"
+                opacity={0.9}
+            />
+            <Circle
+                cx="9.5"
+                cy="12"
+                r="1.5"
+                fill={color}
+            />
+            {/* Video play triangle */}
+            <Path
+                d="M17 9l5 3-5 3V9z"
+                fill={color}
+            />
+        </Svg>
+    );
+}
+

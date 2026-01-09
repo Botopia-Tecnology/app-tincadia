@@ -19,6 +19,7 @@ export interface User {
     emailVerified: boolean;
     isProfileComplete?: boolean;
     readReceiptsEnabled?: boolean;
+    role?: string;
 }
 
 export interface LoginDto {

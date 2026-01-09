@@ -130,6 +130,7 @@ function AppContent() {
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null>(null);
   const [incomingCall, setIncomingCall] = useState<{ conversationId: string; senderId: string; callerName: string } | null>(null);
+  const [interpreterInvite, setInterpreterInvite] = useState<{ roomName: string; senderId: string; senderName: string } | null>(null);
 
   // Keep ref for listeners
   const backStateRef = useRef({
@@ -170,6 +171,16 @@ function AppContent() {
           }
         }
 
+        // Detect interpreter call invite
+        if (data?.type === 'call_invite' && data?.roomName && data?.senderId) {
+          setInterpreterInvite({
+            roomName: String(data.roomName),
+            senderId: String(data.senderId),
+            senderName: String(data.senderName || 'Usuario')
+          });
+          Notifications.dismissNotificationAsync(notification.request.identifier).catch(() => { });
+        }
+
         setNotification(notification);
       });
 
@@ -184,6 +195,19 @@ function AppContent() {
             roomName: String(data.conversationId),
             username: user.email?.split('@')[0] || user.id,
             conversationId: String(data.conversationId),
+            userId: user.id
+          });
+          setScreenStack(prev => [...prev, 'call']);
+          return;
+        }
+
+        // Tap on interpreter invite notification -> go to call screen
+        if (data?.type === 'call_invite' && data?.roomName) {
+          setInterpreterInvite(null);
+          setCallParams({
+            roomName: String(data.roomName),
+            username: user.email?.split('@')[0] || user.id,
+            conversationId: String(data.roomName),
             userId: user.id
           });
           setScreenStack(prev => [...prev, 'call']);
@@ -206,8 +230,17 @@ function AppContent() {
     }
   }, [isAuthenticated, user?.id]);
 
-  const handleAcceptCall = () => {
+  const handleAcceptCall = async () => {
     if (!incomingCall || !user) return;
+
+    // Update status if interpreter
+    if (user.role === 'interpreter') {
+      try {
+        await chatService.updateInterpreterStatus(user.id, true);
+      } catch (e) {
+        console.error('Error updating status:', e);
+      }
+    }
 
     setCallParams({
       roomName: incomingCall.conversationId,
@@ -233,6 +266,32 @@ function AppContent() {
       }
     }
     setIncomingCall(null);
+  };
+
+  // Interpreter invite handlers
+  const handleAcceptInterpreterInvite = async () => {
+    if (!interpreterInvite || !user) return;
+
+    if (user.role === 'interpreter') {
+      try {
+        await chatService.updateInterpreterStatus(user.id, true);
+      } catch (e) {
+        console.error('Error updating status:', e);
+      }
+    }
+
+    setCallParams({
+      roomName: interpreterInvite.roomName,
+      username: user.email?.split('@')[0] || user.id,
+      conversationId: interpreterInvite.roomName,
+      userId: user.id
+    });
+    setInterpreterInvite(null);
+    setScreenStack(prev => [...prev, 'call']);
+  };
+
+  const handleDeclineInterpreterInvite = () => {
+    setInterpreterInvite(null);
   };
 
   const currentScreen = useMemo(
@@ -315,6 +374,15 @@ function AppContent() {
         callerName={incomingCall?.callerName || 'Desconocido'}
         onAccept={handleAcceptCall}
         onDecline={handleDeclineCall}
+      />
+      <IncomingCallModal
+        visible={!!interpreterInvite}
+        callerName={interpreterInvite?.senderName || 'Usuario'}
+        subtitle="Solicita un intérprete en su llamada..."
+        acceptText="Unirse"
+        declineText="Ignorar"
+        onAccept={handleAcceptInterpreterInvite}
+        onDecline={handleDeclineInterpreterInvite}
       />
       <AnimatedScreen key={currentScreen}>
         {currentScreen === 'chats' ? (

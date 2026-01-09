@@ -19,6 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 import { BackArrowIcon, ChevronRightIcon } from '../icons/NavigationIcons';
 import { Plus, Trash2, Phone, User } from 'lucide-react-native';
 import { emergencyContactsStorage, EmergencyContact } from '../../services/emergencyContacts.storage';
+import { CountryCodePicker, defaultCountry } from '../common/CountryCodePicker';
 
 interface Props {
     onBack: () => void;
@@ -30,6 +31,7 @@ export function EmergencyContactsScreen({ onBack }: Props) {
     const [showAddForm, setShowAddForm] = useState(false);
     const [newName, setNewName] = useState('');
     const [newPhone, setNewPhone] = useState('');
+    const [selectedCountry, setSelectedCountry] = useState(defaultCountry);
 
     useEffect(() => {
         loadContacts();
@@ -48,11 +50,8 @@ export function EmergencyContactsScreen({ onBack }: Props) {
             return;
         }
 
-        // Format phone with country code if needed
-        let formattedPhone = newPhone.trim();
-        if (!formattedPhone.startsWith('+')) {
-            formattedPhone = '+57' + formattedPhone.replace(/^0+/, '');
-        }
+        // Format phone with selected country code
+        const formattedPhone = `${selectedCountry.dialCode}${newPhone.trim().replace(/^0+/, '')}`;
 
         try {
             await emergencyContactsStorage.addContact({
@@ -61,6 +60,7 @@ export function EmergencyContactsScreen({ onBack }: Props) {
             });
             setNewName('');
             setNewPhone('');
+            setSelectedCountry(defaultCountry);
             setShowAddForm(false);
             await loadContacts();
             Alert.alert('Éxito', 'Contacto de emergencia agregado');
@@ -151,14 +151,20 @@ export function EmergencyContactsScreen({ onBack }: Props) {
                             value={newName}
                             onChangeText={setNewName}
                         />
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Teléfono (ej: 3001234567)"
-                            placeholderTextColor="#999"
-                            value={newPhone}
-                            onChangeText={setNewPhone}
-                            keyboardType="phone-pad"
-                        />
+                        <View style={styles.phoneInputRow}>
+                            <CountryCodePicker
+                                selectedCountry={selectedCountry}
+                                onSelect={setSelectedCountry}
+                            />
+                            <TextInput
+                                style={[styles.input, styles.phoneInput]}
+                                placeholder="3001234567"
+                                placeholderTextColor="#999"
+                                value={newPhone}
+                                onChangeText={setNewPhone}
+                                keyboardType="phone-pad"
+                            />
+                        </View>
                         <View style={styles.formButtons}>
                             <TouchableOpacity
                                 style={[styles.formButton, styles.cancelButton]}
@@ -291,6 +297,15 @@ const styles = StyleSheet.create({
         padding: 14,
         fontSize: 16,
         marginBottom: 12,
+    },
+    phoneInputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    phoneInput: {
+        flex: 1,
+        marginBottom: 0,
     },
     formButtons: {
         flexDirection: 'row',

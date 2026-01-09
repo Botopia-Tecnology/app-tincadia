@@ -37,8 +37,12 @@ export const contactService = {
     /**
      * Get all contacts for a specific user
      */
-    async getContacts(userId: string): Promise<{ contacts: Contact[] }> {
-        return apiClient(API_ENDPOINTS.CONTACTS(userId), {
+    async getContacts(userId: string, since?: string): Promise<{ contacts: Contact[] }> {
+        let url = API_ENDPOINTS.CONTACTS(userId);
+        if (since) {
+            url += `?since=${encodeURIComponent(since)}`;
+        }
+        return apiClient(url, {
             method: 'GET',
         });
     },

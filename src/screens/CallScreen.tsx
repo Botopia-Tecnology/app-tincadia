@@ -16,6 +16,7 @@ import { Audio } from 'expo-av';
 import { API_URL } from '../config/api.config';
 import { CameraIcon, MicrophoneIcon, PhoneIcon } from '../components/icons/NavigationIcons';
 import { chatService } from '../services/chat.service';
+import { useAuth } from '../contexts/AuthContext';
 
 interface CallScreenProps {
     roomName: string;
@@ -152,6 +153,7 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username }: 
     roomName: string;
     username: string;
 }) {
+    const { user } = useAuth();
     const { isMicrophoneEnabled, isCameraEnabled, localParticipant } = useLocalParticipant();
     const room = useRoomContext();
 
@@ -177,6 +179,16 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username }: 
                 });
             } catch (e) {
                 console.log('Could not send call_ended message:', e);
+            }
+        }
+
+        // Reset interpreter status if applicable
+        if (user?.role === 'interpreter' && user.id) {
+            try {
+                console.log('🔄 Setting interpreter status to available...');
+                await chatService.updateInterpreterStatus(user.id, false);
+            } catch (e) {
+                console.error('Error updating interpreter status:', e);
             }
         }
 

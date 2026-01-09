@@ -79,10 +79,94 @@ class MediaService {
     }
 
     /**
+     * Record a video using the camera
+     */
+    async recordVideo(): Promise<MediaFile | null> {
+        // Request camera permissions
+        const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+        if (cameraPermission.granted === false) {
+            Alert.alert('Permiso requerido', 'Se requiere acceso a la cámara para grabar video.');
+            return null;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+            allowsEditing: false,
+            quality: 0.8,
+            videoMaxDuration: 60, // 1 minute max
+        });
+
+        if (!result.canceled && result.assets[0]) {
+            const asset = result.assets[0];
+
+            if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE) {
+                Alert.alert('Video muy grande', 'El video debe ser menor a 50MB.');
+                return null;
+            }
+
+            return {
+                uri: asset.uri,
+                type: 'video',
+                width: asset.width,
+                height: asset.height,
+                fileSize: asset.fileSize,
+                mimeType: asset.mimeType || 'video/mp4',
+                fileName: asset.fileName || `video_${Date.now()}.mp4`,
+                duration: asset.duration ?? undefined,
+            };
+        }
+
+        return null;
+    }
+
+    /**
+     * Send video to the video-to-text translation endpoint
+     * Returns the translated text
+     */
+    async videoToText(videoUri: string): Promise<string | null> {
+        try {
+            const token = await authService.getToken();
+            if (!token) throw new Error('No authenticated');
+
+            const endpoint = `${API_URL}/model/video-to-text`;
+
+            console.log('🎬 Sending video for translation:', videoUri);
+
+            const response = await FileSystem.uploadAsync(endpoint, videoUri, {
+                httpMethod: 'POST',
+                uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+                fieldName: 'file',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            console.log('📝 Video-to-text response:', response.status, response.body);
+
+            if (response.status !== 200 && response.status !== 201) {
+                console.error('Video-to-text failed:', response.status, response.body);
+                throw new Error(`Translation failed: ${response.status}`);
+            }
+
+            const data = JSON.parse(response.body);
+
+            if (data.success && data.text) {
+                console.log('✅ Translation result:', data.text);
+                return data.text;
+            }
+
+            return null;
+        } catch (error) {
+            console.error('Video-to-text error:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Upload media to Cloudinary via API Gateway
      * Returns the Public ID (essential for signed URLs) and Type
      */
-    async uploadMedia(media: MediaFile): Promise<{ publicId: string; type: string }> {
+    async uploadMedia(media: MediaFile): Promise<{ publicId: string; type: string; url: string }> {
         try {
             const token = await authService.getToken();
             if (!token) throw new Error('No authenticated');
@@ -114,11 +198,12 @@ class MediaService {
             }
 
             const data: UploadResponse = JSON.parse(response.body);
-            console.log('✅ Upload success:', data.public_id);
+            console.log('✅ Upload success:', data.public_id, 'URL:', data.url);
 
             return {
                 publicId: data.public_id,
-                type: media.type
+                type: media.type,
+                url: data.url // Return full Cloudinary URL for direct playback
             };
 
         } catch (error) {

@@ -16,8 +16,10 @@ import {
     KeyboardAvoidingView,
     Platform,
 } from 'react-native';
+import * as Contacts from 'expo-contacts';
 import { contactService } from '../services/contact.service';
 import { addContactModalStyles as styles } from '../styles/AddContactModal.styles';
+import { showAlert } from './common/CustomAlert';
 
 import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
 import { SyncIcon } from './icons/NavigationIcons';
@@ -47,11 +49,23 @@ export function AddContactModal({
     const [lastName, setLastName] = useState(initialLastName);
     const [selectedCountry, setSelectedCountry] = useState(defaultCountry);
     const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (visible) {
-            setPhone(initialPhone);
+            let cleanPhone = initialPhone.trim();
+            const dialCode = selectedCountry.dialCode;
+
+            // Remove dial code if present (handling + or no +)
+            if (cleanPhone.startsWith(dialCode)) {
+                cleanPhone = cleanPhone.substring(dialCode.length).trim();
+            } else if (cleanPhone.startsWith(dialCode.replace('+', ''))) {
+                cleanPhone = cleanPhone.substring(dialCode.length - 1).trim();
+            }
+
+            // Also remove internal spaces if any
+            cleanPhone = cleanPhone.replace(/\s/g, '');
+
+            setPhone(cleanPhone);
             setFirstName(initialFirstName);
             setLastName(initialLastName);
         }
@@ -62,7 +76,6 @@ export function AddContactModal({
         setAlias('');
         setFirstName('');
         setLastName('');
-        setError(null);
     };
 
     const handleClose = () => {
@@ -72,15 +85,19 @@ export function AddContactModal({
 
     const handleAddContact = async () => {
         if (!phone.trim()) {
-            setError('El número de teléfono es requerido');
+            showAlert({
+                type: 'error',
+                title: 'Error',
+                message: 'El número de teléfono es requerido',
+            });
             return;
         }
 
         setIsLoading(true);
-        setError(null);
 
-        // Format phone with dial code
-        const fullPhone = `${selectedCountry.dialCode}${phone.trim()}`;
+        // Format phone with dial code: Strip non-numeric characters from input
+        const cleanInput = phone.replace(/\D/g, '');
+        const fullPhone = `${selectedCountry.dialCode}${cleanInput}`; // e.g. +573001234567
 
         try {
             const response = await contactService.addContact({
@@ -96,9 +113,40 @@ export function AddContactModal({
             onClose();
         } catch (err: any) {
             console.error('Error adding contact:', err);
-            setError(err?.message || 'No se encontró un usuario con ese número');
+            const msg = err?.message || 'No se encontró un usuario con ese número';
+
+            showAlert({
+                type: 'error',
+                title: 'Error',
+                message: msg,
+                buttons: [{ text: 'Entendido', style: 'default' }]
+            });
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handlePickContact = async () => {
+        try {
+            const { status } = await Contacts.requestPermissionsAsync();
+            if (status !== 'granted') {
+                showAlert({
+                    type: 'error',
+                    title: 'Permiso denegado',
+                    message: 'Se necesita permiso para acceder a los contactos.',
+                });
+                return;
+            }
+
+            const { data } = await Contacts.getContactsAsync({
+                fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails],
+            });
+
+            if (data.length > 0) {
+                // Placeholder for future implementation
+            }
+        } catch (e) {
+            console.log(e);
         }
     };
 
@@ -199,13 +247,6 @@ export function AddContactModal({
                                 />
                             </View>
                         </View>
-
-                        {/* Error Message */}
-                        {error && (
-                            <View style={styles.errorContainer}>
-                                <Text style={styles.errorText}>{error}</Text>
-                            </View>
-                        )}
                     </View>
 
                     {/* Save Button */}

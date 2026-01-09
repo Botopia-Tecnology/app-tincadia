@@ -3,7 +3,7 @@
     "name": "Tincadia",
     "slug": "tincadia",
     "scheme": "tincadia",
-    "version": "3.0.2",
+    "version": "3.0.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,22 +15,28 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
       "usesAppleSignIn": true,
-      "buildNumber": "11",
+      "buildNumber": "17",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
-        "NSCameraUsageDescription": "Necesitamos acceso a tu cámara para las videollamadas.",
-        "NSMicrophoneUsageDescription": "Necesitamos acceso a tu micrófono para las videollamadas.",
-        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para enviar fotos en el chat.",
         "NSLocationWhenInUseUsageDescription": "Tincadia necesita tu ubicación para enviar coordenadas precisas en caso de emergencia SOS.",
-        "NSFaceIDUsageDescription": "Tincadia usa Face ID para iniciar sesión de forma rápida y segura."
+        "NSFaceIDUsageDescription": "Tincadia usa Face ID para iniciar sesión de forma rápida y segura.",
+        "UIBackgroundModes": [
+          "audio",
+          "voip",
+          "fetch",
+          "remote-notification"
+        ],
+        "NSCameraUsageDescription": "Necesitamos acceso a tu cámara para videollamadas y enviar fotos.",
+        "NSMicrophoneUsageDescription": "Necesitamos acceso a tu micrófono para llamadas de voz y mensajes de audio.",
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para enviar imágenes y videos."
       },
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "package": "com.tincadia.app",
       "usesCleartextTraffic": true,
-      "versionCode": 7,
+      "versionCode": 10,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -47,7 +53,12 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ]
     },
     "notification": {

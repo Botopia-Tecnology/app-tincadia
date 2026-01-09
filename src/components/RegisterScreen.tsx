@@ -12,6 +12,7 @@ import {
   FlatList,
   ActivityIndicator,
   BackHandler,
+  Linking,
   // KeyboardAvoidingView, // Replaced by KeyboardSafeView
 } from 'react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
@@ -478,8 +479,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
 
           <Text style={styles.termsText}>
             Al continuar estás aceptando nuestros{' '}
-            <Text style={styles.linkText}>términos y condiciones</Text> y{' '}
-            <Text style={styles.linkText}>tratamiento de mis datos personales</Text>.
+            <Text style={styles.linkText} onPress={() => Linking.openURL('https://www.tincadia.com/terminos')}>términos y condiciones</Text> y{' '}
+            <Text style={styles.linkText} onPress={() => Linking.openURL('https://www.tincadia.com/privacidad')}>tratamiento de mis datos personales</Text>.
           </Text>
         </View>
       </ScrollView>

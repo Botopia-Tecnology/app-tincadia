@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tincadia Streaming LSC</title>
+    <!-- MediaPipe Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1635989137/holistic.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1640029074/camera_utils.js"
+        crossorigin="anonymous"></script>
+    <!-- Socket.io -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            /* Mirror effect */
+        }
+
+        canvas {
+            display: none;
+        }
+
+        /* Hide canvas unless debugging needed */
+
+        .overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            pointer-events: none;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #EF4444;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .status-dot.connected {
+            background: #22C55E;
+        }
+
+        .status-text {
+            color: white;
+            font-size: 14px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .prediction-box {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 12px;
+            text-align: center;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            pointer-events: auto;
+            /* Enable clicks */
+            cursor: pointer;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(5px);
+            min-width: 200px;
+        }
+
+        .prediction-box.active {
+            background: rgba(79, 70, 229, 0.9);
+            border-color: #4F46E5;
+            transform: translateX(-50%) scale(1.05);
+            box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
+        }
+
+        .word {
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .confidence {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            margin-top: 10px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #22C55E;
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        #error-msg {
+            color: #EF4444;
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <video id="input_video" playsinline></video>
+        <div class="overlay">
+            <div id="status-container">
+                <div class="status-dot" id="status-dot"></div>
+                <span class="status-text" id="status-text">Desconectado</span>
+            </div>
+            <div id="error-msg"></div>
+            <div id="debug-info"
+                style="color: yellow; font-size: 10px; background: rgba(0,0,0,0.5); padding: 5px; margin-top: 50px;">
+                Waiting for data...</div>
+        </div>
+
+        <div id="prediction-container" class="prediction-box" style="display: none;">
+            <div class="word" id="prediction-word"></div>
+            <div class="confidence" id="prediction-conf"></div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="prediction-timer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const videoElement = document.getElementById('input_video');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const predictionContainer = document.getElementById('prediction-container');
+        const predictionWord = document.getElementById('prediction-word');
+        const predictionConf = document.getElementById('prediction-conf');
+        const predictionTimer = document.getElementById('prediction-timer');
+        const errorMsg = document.getElementById('error-msg');
+
+        let socket;
+        let holistic;
+        let camera;
+        let lastPrediction = null;
+        let timerInterval;
+        let autoConfirmTimeout;
+        const AUTO_CONFIRM_DELAY = 3000; // 3 seconds
+        let isConfirming = false;
+
+        // --- Communication with React Native ---
+        function sendToRN(type, payload) {
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type, payload }));
+            }
+        }
+
+        // --- Socket.io Setup ---
+        function connectSocket() {
+            // In production, this should be passed dynamically or use the correct domain
+            // React Native will pass the socket URL via injection if needed, but for now hardcoded to dev or relative
+            // Assuming the WebView can hit localhost for dev, but in production we need the real URL.
+            // Best practice: Pass API_URL via URL params or injection.
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const apiUrl = urlParams.get('apiUrl') || 'http://localhost:3001';
+            // IMPORTANT: app-tincadia connects to backend. If physical device, localhost won't work.
+            // But let's assume the device can access the API Gateway.
+
+            socket = io(`${apiUrl}/model-stream`, {
+                transports: ['websocket'],
+                reconnection: true
+            });
+
+            socket.on('connect', () => {
+                statusDot.classList.add('connected');
+                statusText.innerText = 'Conectado - Listo para señas';
+                sendToRN('status', 'connected');
+            });
+
+            socket.on('disconnect', () => {
+                statusDot.classList.remove('connected');
+                statusText.innerText = 'Desconectado';
+                sendToRN('status', 'disconnected');
+            });
+
+            socket.on('prediction', (data) => {
+                handlePrediction(data);
+            });
+
+            socket.on('error', (err) => {
+                console.error('Socket error:', err);
+                statusText.innerText = 'Error de conexión';
+            });
+        }
+
+        // --- Prediction Handling ---
+        // --- Prediction Handling ---
+        function handlePrediction(data) {
+            // Debug output
+            const debugEl = document.getElementById('debug-info');
+            if (debugEl) debugEl.innerText = `Last: ${JSON.stringify(data)}`;
+
+            // data: { word: string | null, confidence: number, status: string }
+            // Lowered threshold to 0.5 for easier testing
+            if (data.word && data.confidence > 0.4) {
+                // Determine display word
+                const displayWord = data.word.replace('Letra_', '');
+
+                // Show UI
+                predictionContainer.style.display = 'block';
+                predictionWord.innerText = displayWord;
+                predictionConf.innerText = `${Math.round(data.confidence * 100)}% de confianza`;
+
+                // Only start timer if it's a new steady word or we aren't already confirming
+                if (lastPrediction !== displayWord && !isConfirming) {
+                    startAutoConfirmTimer(displayWord);
+                }
+
+                lastPrediction = displayWord;
+            } else {
+                // If confidence drops or word is null
+                // Only hide if we are NOT currently in the middle of a confirming countdown
+                // This prevents flickering if one frame is bad
+                if (!isConfirming) {
+                    // predictionContainer.style.display = 'none'; // Optional: keep last prediction visible for a bit?
+                }
+            }
+        }
+
+        function startAutoConfirmTimer(word) {
+            clearTimer();
+            isConfirming = true;
+            predictionContainer.classList.add('active');
+
+            let progress = 0;
+            const step = 100 / (AUTO_CONFIRM_DELAY / 100);
+
+            timerInterval = setInterval(() => {
+                progress += step;
+                predictionTimer.style.width = `${Math.min(progress, 100)}%`;
+
+                if (progress >= 100) {
+                    confirmWord(word);
+                }
+            }, 100);
+        }
+
+        function clearTimer() {
+            clearInterval(timerInterval);
+            predictionTimer.style.width = '0%';
+            predictionContainer.classList.remove('active');
+            isConfirming = false;
+        }
+
+        function confirmWord(word) {
+            clearTimer();
+            sendToRN('confirmed', word);
+
+            // Visual feedback
+            predictionWord.innerText = `✅ ${word}`;
+
+            // Send confirmation to backend
+            fetch(`${socket.io.uri.replace('/model-stream', '')}/api/model/confirm-word`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    word: word,
+                    timestamp: new Date()
+                })
+            }).catch(console.error);
+
+            // Reset after delay
+            setTimeout(() => {
+                predictionContainer.style.display = 'none';
+                lastPrediction = null;
+                // Tell backend to reset buffer
+                if (socket) socket.emit('reset');
+            }, 1500);
+        }
+
+        // Manual click confirmation
+        predictionContainer.addEventListener('click', () => {
+            if (lastPrediction) {
+                confirmWord(lastPrediction);
+            }
+        });
+
+        // --- MediaPipe Setup ---
+        function onResults(results) {
+            if (!socket || !socket.connected) return;
+
+            const landmarks = extractLandmarks(results);
+            if (landmarks && landmarks.length === 226) {
+                socket.emit('landmarks', { data: landmarks });
+            }
+        }
+
+        function extractLandmarks(results) {
+            const landmarks = [];
+
+            // Pose (25 landmarks × 4: x, y, z, visibility)
+            if (results.poseLandmarks) {
+                // We only need the first 25 pose landmarks (upper body mainly)
+                // MediaPipe Pose has 33 landmarks, user guide says slice(0, 25)
+                const poseLms = results.poseLandmarks;
+                for (let i = 0; i < 25; i++) {
+                    if (poseLms[i]) {
+                        landmarks.push(poseLms[i].x, poseLms[i].y, poseLms[i].z, poseLms[i].visibility);
+                    } else {
+                        landmarks.push(0, 0, 0, 0);
+                    }
+                }
+            } else {
+                for (let i = 0; i < 100; i++) landmarks.push(0);
+            }
+
+            // Right Hand (21 landmarks × 3: x, y, z)
+            if (results.rightHandLandmarks) {
+                for (const lm of results.rightHandLandmarks) {
+                    landmarks.push(lm.x, lm.y, lm.z);
+                }
+            } else {
+                for (let i = 0; i < 63; i++) landmarks.push(0);
+            }
+
+            // Left Hand (21 landmarks × 3: x, y, z)
+            if (results.leftHandLandmarks) {
+                for (const lm of results.leftHandLandmarks) {
+                    landmarks.push(lm.x, lm.y, lm.z);
+                }
+            } else {
+                for (let i = 0; i < 63; i++) landmarks.push(0);
+            }
+
+            return landmarks.length === 226 ? landmarks : null;
+        }
+
+        // Initialize
+        async function init() {
+            try {
+                // 1. Load MediaPipe Holistic
+                holistic = new Holistic({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1635989137/${file}`
+                });
+
+                holistic.setOptions({
+                    modelComplexity: 1,
+                    smoothLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                holistic.onResults(onResults);
+
+                // 2. Start Camera
+                camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        await holistic.send({ image: videoElement });
+                    },
+                    width: 640,
+                    height: 480
+                });
+
+                await camera.start();
+                connectSocket();
+
+            } catch (err) {
+                console.error('Initialization error:', err);
+                errorMsg.style.display = 'block';
+                errorMsg.innerText = `Error iniciando cámara: ${err.message}. Asegúrate de dar permisos.`;
+                sendToRN('error', err.message);
+            }
+        }
+
+        // Trigger init when loaded
+        window.addEventListener('load', init);
+
+    </script>
+</body>
+
+</html>

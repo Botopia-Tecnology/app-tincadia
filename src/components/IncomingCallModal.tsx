@@ -7,9 +7,20 @@ interface IncomingCallModalProps {
     callerName: string;
     onAccept: () => void;
     onDecline: () => void;
+    subtitle?: string; // Optional custom subtitle
+    acceptText?: string; // Optional custom accept button text
+    declineText?: string; // Optional custom decline button text
 }
 
-export const IncomingCallModal = ({ visible, callerName, onAccept, onDecline }: IncomingCallModalProps) => {
+export const IncomingCallModal = ({
+    visible,
+    callerName,
+    onAccept,
+    onDecline,
+    subtitle = 'Llamada entrante de Tincadia...',
+    acceptText = 'Contestar',
+    declineText = 'Rechazar'
+}: IncomingCallModalProps) => {
     const vibrationInterval = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
@@ -65,21 +76,21 @@ export const IncomingCallModal = ({ visible, callerName, onAccept, onDecline }: 
                     </View>
 
                     <Text style={styles.callerName}>{callerName}</Text>
-                    <Text style={styles.callStatus}>Llamada entrante de Tincadia...</Text>
+                    <Text style={styles.callStatus}>{subtitle}</Text>
 
                     <View style={styles.actions}>
                         <View style={styles.actionButtonContainer}>
                             <TouchableOpacity style={[styles.button, styles.declineButton]} onPress={onDecline}>
                                 <PhoneIcon size={32} color="white" />
                             </TouchableOpacity>
-                            <Text style={styles.buttonText}>Rechazar</Text>
+                            <Text style={styles.buttonText}>{declineText}</Text>
                         </View>
 
                         <View style={styles.actionButtonContainer}>
                             <TouchableOpacity style={[styles.button, styles.acceptButton]} onPress={onAccept}>
                                 <PhoneIcon size={32} color="white" />
                             </TouchableOpacity>
-                            <Text style={styles.buttonText}>Contestar</Text>
+                            <Text style={styles.buttonText}>{acceptText}</Text>
                         </View>
                     </View>
                 </View>

@@ -15,13 +15,15 @@ interface NotificationBellProps {
     onPress: () => void;
     color?: string;
     size?: number;
+    refreshTrigger?: number; // Increment this to force refresh
 }
 
 export function NotificationBell({
     userId,
     onPress,
     color = '#333333',
-    size = 24
+    size = 24,
+    refreshTrigger = 0
 }: NotificationBellProps) {
     const [unreadCount, setUnreadCount] = useState(0);
 
@@ -36,7 +38,7 @@ export function NotificationBell({
             }
         };
         loadUnreadCount();
-    }, [userId]);
+    }, [userId, refreshTrigger]);
 
     return (
         <TouchableOpacity style={styles.container} onPress={onPress}>

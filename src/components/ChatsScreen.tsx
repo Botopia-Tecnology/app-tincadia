@@ -97,6 +97,7 @@ interface ChatListItem {
   customFirstName?: string;
   customLastName?: string;
   avatarUrl?: string;
+  description?: string;
 }
 
 // Contact List Item Component
@@ -150,6 +151,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   const [chatItems, setChatItems] = useState<ChatListItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<ChatListItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'contacts' | 'groups'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -166,6 +168,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     customLastName?: string;
     avatarUrl?: string;
     isGroup?: boolean;
+    description?: string;
   } | null>(null);
 
   // Modal state
@@ -228,9 +231,10 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   // Helper to transform local/server data to ChatListItem[]
   const transformToItems = useCallback((
     contacts: Contact[],
-    conversations: { id: string; otherUserId: string; otherUserPhone?: string; lastMessage?: string; lastMessageAt?: string; unreadCount?: number; otherUserAvatar?: string; isGroup?: boolean; title?: string; imageUrl?: string }[]
+    conversations: { id: string; otherUserId: string; otherUserName?: string; otherUserPhone?: string; lastMessage?: string; lastMessageAt?: string; unreadCount?: number; otherUserAvatar?: string; isGroup?: boolean; title?: string; imageUrl?: string; description?: string }[]
   ): ChatListItem[] => {
-    const contactsByUserId = new Map(contacts.map(c => [c.contactUserId, c]));
+    const contactsByUserId = new Map(contacts.filter(c => c.contactUserId).map(c => [c.contactUserId, c]));
+    const contactsByPhone = new Map(contacts.filter(c => c.phone).map(c => [c.phone.replace(/\D/g, ''), c]));
     const conversationsByUserId = new Map(conversations.map(conv => [conv.otherUserId, conv]));
 
     // Conversations with contact info
@@ -248,10 +252,31 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
           lastMessage: conv.lastMessage,
           lastMessageTime: conv.lastMessageAt,
           avatarUrl: conv.imageUrl || conv.otherUserAvatar, // Use imageUrl preferably for groups
+          description: conv.description,
         };
       }
 
-      const contact = contactsByUserId.get(conv.otherUserId);
+      // Try to find contact by userId first, then by phone as fallback
+      let contact = contactsByUserId.get(conv.otherUserId);
+
+      // Fallback: try to find by phone number
+      if (!contact && conv.otherUserPhone) {
+        const normalizedPhone = conv.otherUserPhone.replace(/\D/g, '');
+        contact = contactsByPhone.get(normalizedPhone);
+
+        // Also try with different phone formats
+        if (!contact) {
+          // Try last 10 digits (without country code)
+          const last10 = normalizedPhone.slice(-10);
+          for (const [phone, c] of contactsByPhone.entries()) {
+            if (phone.endsWith(last10) || last10.endsWith(phone.slice(-10))) {
+              contact = c;
+              break;
+            }
+          }
+        }
+      }
+
       if (contact) {
         return {
           id: conv.id,
@@ -275,7 +300,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         return {
           id: conv.id,
           type: 'unknown' as const,
-          displayName: conv.otherUserPhone || 'Usuario desconocido',
+          displayName: conv.otherUserName || conv.otherUserPhone || 'Usuario desconocido',
           phone: conv.otherUserPhone || '',
           otherUserId: conv.otherUserId,
           conversationId: conv.id,
@@ -336,12 +361,18 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
 
         const conversations = localConvs.map(c => ({
           id: c.id,
-          otherUserId: c.other_user_id,
+          otherUserId: c.other_user_id || '', // Empty string for groups (type safety)
+          otherUserName: c.other_user_name, // Map from local DB - CRITICAL for cache display
           otherUserPhone: c.other_user_phone,
           lastMessage: c.last_message,
           lastMessageAt: c.last_message_at,
           unreadCount: c.unread_count, // Use stored server count
           otherUserAvatar: c.other_user_avatar, // Map from local DB
+          // Group fields
+          type: c.type as 'direct' | 'group' || 'direct',
+          title: c.title || undefined,
+          imageUrl: c.image_url || undefined,
+          isGroup: c.type === 'group',
         }));
 
         const items = transformToItems(contacts, conversations);
@@ -371,8 +402,13 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
 
     try {
       console.log('📡 Syncing from server...');
+
+      // 1. Get last contact sync time
+      const CONTACTS_SYNC_KEY = `tincadia_contacts_last_sync_${userId}`;
+      const lastContactSync = await AsyncStorage.getItem(CONTACTS_SYNC_KEY);
+
       const [contactsResponse, conversationsResponse] = await Promise.all([
-        contactService.getContacts(userId),
+        contactService.getContacts(userId, lastContactSync || undefined),
         chatService.getConversations(userId),
       ]);
 
@@ -396,22 +432,43 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         }
       });
 
+      // Update contact sync time if we got contacts (or just always update if success)
+      if (contacts.length > 0) {
+        await AsyncStorage.setItem(CONTACTS_SYNC_KEY, new Date().toISOString());
+      }
+
+      // Note: We need to reload FULL contact list from SQLite because response only has updates
+      const fullContacts = getLocalContacts(userId).map(c => ({
+        id: c.id,
+        ownerId: c.owner_id,
+        contactUserId: c.contact_user_id,
+        phone: c.phone,
+        alias: c.alias || undefined,
+        customFirstName: c.custom_first_name || undefined,
+        customLastName: c.custom_last_name || undefined,
+        createdAt: c.updated_at || new Date().toISOString(),
+      }));
+
       conversations.forEach(conv => saveConversation({
         id: conv.id,
         otherUserId: conv.otherUserId,
         otherUserPhone: conv.otherUserPhone,
+        otherUserName: conv.otherUserName, // Save name if available
         lastMessage: conv.lastMessage,
         lastMessageAt: conv.lastMessageAt,
         unreadCount: conv.unreadCount,
         otherUserAvatar: conv.otherUserAvatar, // Save avatar to DB
+        // Group fields - CRITICAL for cache persistence
+        type: conv.type,
+        title: conv.title,
+        imageUrl: conv.imageUrl,
       }));
 
       updateSyncTime(`chats-${userId}`);
 
       // Update UI with fresh data
-      // Use server provided unreadCount for the list view as it is the source of truth
-      // Local calculation (getUnreadCountForConversation) only works if messages are synced locally
-      const items = transformToItems(contacts, conversations);
+      // Use fullContacts from SQLite merged with conversations
+      const items = transformToItems(fullContacts, conversations);
       setChatItems(items);
       console.log('✅ Synced:', items.length, 'items');
     } catch (err) {
@@ -668,33 +725,52 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   }, [userId]);
 
 
-  // Combine chat items with synced contacts (excluding duplicates)
+  // Combine chat items with synced contacts (excluding duplicates) and SORT BY TIME
   const allItems = useMemo(() => {
-    const existingUserIds = new Set(chatItems.map(c => c.otherUserId));
+    const existingUserIds = new Set(chatItems.map(c => c.otherUserId).filter(Boolean));
     const uniqueSynced = syncedContacts.filter(s => !existingUserIds.has(s.otherUserId));
-    return [...chatItems, ...uniqueSynced];
+
+    const merged = [...chatItems, ...uniqueSynced];
+
+    // Explicitly sort by last message time (newest first)
+    // This fixes the issue where latest chats might appear out of order initially
+    return merged.sort((a, b) => {
+      const timeA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
+      const timeB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
+
+      if (timeA !== timeB) return timeB - timeA;
+      // If no time, preserve original order (alphabetical or similar)
+      return (a.displayName || '').localeCompare(b.displayName || '');
+    });
   }, [chatItems, syncedContacts]);
 
-  // Update filtered items when allItems changes
+  // Update filtered items when allItems, searchQuery, or activeFilter changes
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredItems(allItems);
-    }
-  }, [allItems, searchQuery]);
+    let result = allItems;
 
-  // Handle search
+    // Apply Tab Filter
+    if (activeFilter === 'groups') {
+      result = result.filter(item => item.type === 'group');
+    } else if (activeFilter === 'contacts') {
+      result = result.filter(item => item.type !== 'group');
+    }
+
+    // Apply Search Query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(
+        (item) =>
+          item.displayName?.toLowerCase().includes(query) ||
+          item.phone?.includes(query)
+      );
+    }
+
+    setFilteredItems(result);
+  }, [allItems, searchQuery, activeFilter]);
+
+  // Handle search (just updates state now, useEffect handles the logic)
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    if (!text.trim()) {
-      setFilteredItems(allItems);
-      return;
-    }
-    const filtered = allItems.filter(
-      (item) =>
-        item.displayName?.toLowerCase().includes(text.toLowerCase()) ||
-        item.phone?.includes(text)
-    );
-    setFilteredItems(filtered);
   };
 
   // Handle chat item tap - start or get conversation
@@ -720,6 +796,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         otherUserId: item.otherUserId,
         isUnknown: item.type === 'unknown',
         isGroup: item.type === 'group',
+        description: item.description,
         contactId: item.contactId,
         alias: item.alias,
         customFirstName: item.customFirstName,
@@ -854,6 +931,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
           alias={selectedChat.alias}
           customFirstName={selectedChat.customFirstName}
           customLastName={selectedChat.customLastName}
+          groupDescription={selectedChat.description}
           onContactUpdate={(contact) => {
             // Save contact to local cache immediately
             if (contact && userId) {
@@ -985,6 +1063,36 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
           <Text style={styles.errorText}>{syncError}</Text>
         </View>
       )}
+
+      {/* Filters Bar */}
+      <View style={styles.filtersContainer}>
+        <TouchableOpacity
+          style={[styles.filterChip, activeFilter === 'all' && styles.filterChipActive]}
+          onPress={() => setActiveFilter('all')}
+        >
+          <Text style={[styles.filterText, activeFilter === 'all' && styles.filterTextActive]}>
+            Todos
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterChip, activeFilter === 'contacts' && styles.filterChipActive]}
+          onPress={() => setActiveFilter('contacts')}
+        >
+          <Text style={[styles.filterText, activeFilter === 'contacts' && styles.filterTextActive]}>
+            Contactos
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterChip, activeFilter === 'groups' && styles.filterChipActive]}
+          onPress={() => setActiveFilter('groups')}
+        >
+          <Text style={[styles.filterText, activeFilter === 'groups' && styles.filterTextActive]}>
+            Grupos
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Error Message */}
       {error && (

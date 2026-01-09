@@ -36,6 +36,10 @@ export interface Message {
     updatedAt?: string;
     readAt?: string;
     isMine: boolean;
+    // Reply metadata
+    replyToId?: string;
+    replyToContent?: string;
+    replyToSender?: string;
 }
 
 interface UseChatReturn {
@@ -70,6 +74,9 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         updatedAt: m.updatedAt,
         readAt: m.readAt,
         isMine: m.isMine,
+        replyToId: m.replyToId,
+        replyToContent: m.replyToContent,
+        replyToSender: m.replyToSender,
     }), []);
 
     // Load messages from local SQLite (instant)
@@ -94,7 +101,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
             console.log('📡 Syncing messages since:', lastTimestamp || 'beginning');
 
             // Fetch messages (server should support `since` param)
-            const { messages: serverMessages } = await chatService.getMessages(conversationId);
+            const { messages: serverMessages } = await chatService.getMessages(conversationId, lastTimestamp || undefined);
 
             // Filter only new messages if we have a timestamp (client-side filter as fallback)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -142,6 +149,10 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     updatedAt: msgUpdatedAt,
                     readAt: msgReadAt,
                     isMine,
+                    // Reply metadata from server
+                    replyToId: msg.replyToId || msg.reply_to_id || msg.metadata?.replyToId,
+                    replyToContent: msg.replyToContent || msg.reply_to_content || msg.metadata?.replyToContent,
+                    replyToSender: msg.replyToSender || msg.reply_to_sender || msg.metadata?.replyToSender,
                 });
             });
 
@@ -384,7 +395,10 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
             createdAt: now,
             isMine: true,
             updatedAt: now,
-            // Note: Local DB might not store metadata yet, but UI shows content/type
+            // Reply metadata
+            replyToId: metadata?.replyToId,
+            replyToContent: metadata?.replyToContent,
+            replyToSender: metadata?.replyToSender,
         };
 
         saveMessage(localMessage);
@@ -422,6 +436,10 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 updatedAt: serverMsgCreatedAt,
                 readAt: undefined,
                 isMine: true,
+                // Reply metadata from server or local
+                replyToId: serverMsg.replyToId || serverMsg.reply_to_id || metadata?.replyToId,
+                replyToContent: serverMsg.replyToContent || serverMsg.reply_to_content || metadata?.replyToContent,
+                replyToSender: serverMsg.replyToSender || serverMsg.reply_to_sender || metadata?.replyToSender,
             });
 
             // --- BROADCAST FAST PATH (Send) ---
