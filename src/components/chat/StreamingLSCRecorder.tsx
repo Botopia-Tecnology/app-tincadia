@@ -53,14 +53,17 @@ export function StreamingLSCRecorder({
                     let content = await FileSystem.readAsStringAsync(asset.localUri);
 
                     // Inject correct API URL
-                    // Remove '/api' suffix if present because Socket.io connects to root + namespace
+                    // Remove '/api' suffix if present: Socket.io now connects to root namespace
                     const socketUrl = API_URL.replace(/\/api\/?$/, '');
+                    console.log('🔌 Socket URL for LSC:', socketUrl);
+                    
                     content = content.replace(
                         "const apiUrl = urlParams.get('apiUrl') || 'http://localhost:3001';",
                         `const apiUrl = '${socketUrl}';`
                     );
 
                     setHtmlContent(content);
+                    console.log('✅ HTML content loaded and URL injected');
                 }
             } catch (error) {
                 console.error('Failed to load HTML asset:', error);
@@ -139,7 +142,7 @@ export function StreamingLSCRecorder({
                                 ref={webViewRef}
                                 source={{
                                     html: htmlContent,
-                                    baseUrl: 'https://app.tincadia.com/' // TRICK: Force Secure Context
+                                    baseUrl: 'http://localhost/' // Use HTTP to avoid mixed content issues
                                 }}
                                 style={styles.webview}
                                 javaScriptEnabled={true}
@@ -152,6 +155,12 @@ export function StreamingLSCRecorder({
                                     window.API_URL = "${API_URL}";
                                 `}
                                 androidLayerType="hardware"
+                                mixedContentMode="always"
+                                allowUniversalAccessFromFileURLs={true}
+                                onError={(syntheticEvent) => {
+                                    const { nativeEvent } = syntheticEvent;
+                                    console.warn('WebView error:', nativeEvent);
+                                }}
                             />
                         ) : (
                             <View style={styles.loadingContainer}>

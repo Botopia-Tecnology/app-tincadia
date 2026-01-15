@@ -17,6 +17,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
     const [loading, setLoading] = useState(true);
     const [activeLesson, setActiveLesson] = useState<any | null>(null);
     const [expandedModules, setExpandedModules] = useState<string[]>([]);
+    const [hasPaidAccess] = useState(false); // TODO: conectar con suscripción real
 
     // Player State
     const [status, setStatus] = useState<AVPlaybackStatus | null>(null);
@@ -31,17 +32,46 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
         };
     }, [courseId]);
 
+    const isLessonLocked = useCallback((c: Course, module: any, lesson: any) => {
+        if (lesson?.locked) return true;
+        if (lesson?.videoUrl) return false;
+
+        const scope = c.accessScope || 'course';
+        const isPreview = lesson?.isFreePreview;
+        if (isPreview) return false;
+        if (hasPaidAccess) return false;
+
+        if (scope === 'course') return !!c.isPaid;
+        if (scope === 'module') return !!module?.isPaid;
+        if (scope === 'lesson') return !!lesson?.isPaid;
+        return false;
+    }, [hasPaidAccess]);
+
     const fetchCourse = async () => {
         try {
             setLoading(true);
             const data = await contentService.getCourseById(courseId);
             setCourse(data);
 
-            if (data.modules && data.modules.length > 0) {
-                setExpandedModules([data.modules[0].id]);
-                if (data.modules[0].lessons && data.modules[0].lessons.length > 0) {
-                    setActiveLesson(data.modules[0].lessons[0]);
+            // Seleccionar primera lección accesible
+            const modules = data.modules || [];
+            let firstModuleId: string | undefined;
+            let firstLesson: any | null = null;
+            for (const mod of modules) {
+                for (const les of mod.lessons || []) {
+                    if (!isLessonLocked(data, mod, les)) {
+                        firstModuleId = mod.id;
+                        firstLesson = les;
+                        break;
+                    }
                 }
+                if (firstLesson) break;
+            }
+            if (firstModuleId) {
+                setExpandedModules([firstModuleId]);
+                setActiveLesson(firstLesson);
+            } else if (modules.length > 0) {
+                setExpandedModules([modules[0].id]);
             }
         } catch (error) {
             console.error('Failed to load course details', error);
@@ -58,7 +88,12 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
         );
     };
 
-    const handleLessonSelect = (lesson: any) => {
+    const handleLessonSelect = (module: any, lesson: any) => {
+        if (!course) return;
+        if (isLessonLocked(course, module, lesson)) {
+            alert('Contenido de pago. Desbloquea para continuar.');
+            return;
+        }
         setActiveLesson(lesson);
         // Reset controls visibility on new video
         resetControlsTimer();
@@ -163,7 +198,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
 
             {/* Video Player Section */}
             <View style={styles.videoContainer}>
-                {activeLesson?.videoUrl ? (
+                {activeLesson && !isLessonLocked(course, { lessons: [] }, activeLesson) && activeLesson?.videoUrl ? (
                     <TouchableWithoutFeedback onPress={handleVideoPress}>
                         <View style={{ width: '100%', height: '100%' }}>
                             <Video
@@ -237,18 +272,17 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
                     </TouchableWithoutFeedback>
                 ) : (
                     <View style={styles.noVideoContainer}>
-                        {/* Existing No Video Logic */}
                         <View style={styles.headerOverlay}>
                             <TouchableOpacity onPress={onBack} style={styles.backButton}>
                                 <Text style={styles.backIcon}>←</Text>
                             </TouchableOpacity>
                         </View>
-                        {course.thumbnailUrl && (
-                            <Image source={{ uri: course.thumbnailUrl }} style={styles.videoPlaceholderImage} />
-                        )}
+        {course.thumbnailUrl && (
+            <Image source={{ uri: course.thumbnailUrl }} style={styles.videoPlaceholderImage} />
+        )}
                         <View style={styles.lockOverlay}>
                             <Text style={styles.lockText}>
-                                {activeLesson ? 'Video no disponible' : 'Selecciona una lección'}
+                                {activeLesson ? 'Esta lección está bloqueada o no tiene video disponible.' : 'Selecciona una lección'}
                             </Text>
                         </View>
                     </View>
@@ -279,33 +313,34 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
                                 <Text>{expandedModules.includes(module.id) ? '▲' : '▼'}</Text>
                             </TouchableOpacity>
 
-                            {expandedModules.includes(module.id) && (
-                                <View style={styles.lessonsContainer}>
-                                    {module.lessons?.map((lesson: any) => (
-                                        <TouchableOpacity
-                                            key={lesson.id}
-                                            style={[
-                                                styles.lessonItem,
-                                                activeLesson?.id === lesson.id && styles.activeLessonItem
-                                            ]}
-                                            onPress={() => handleLessonSelect(lesson)}
-                                        >
-                                            <Text style={styles.playIcon}>
-                                                {activeLesson?.id === lesson.id ? '▶' : '•'}
-                                            </Text>
-                                            <Text style={[
-                                                styles.lessonText,
-                                                activeLesson?.id === lesson.id && styles.activeLessonText
-                                            ]}>
-                                                {lesson.title}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                    {(!module.lessons || module.lessons.length === 0) && (
-                                        <Text style={styles.emptyModuleText}>Sin lecciones</Text>
+                                    {expandedModules.includes(module.id) && (
+                                        <View style={styles.lessonsContainer}>
+                                            {module.lessons?.map((lesson: any) => (
+                                                <TouchableOpacity
+                                                    key={lesson.id}
+                                                    style={[
+                                                        styles.lessonItem,
+                                                        activeLesson?.id === lesson.id && styles.activeLessonItem
+                                                    ]}
+                                                    onPress={() => handleLessonSelect(module, lesson)}
+                                                >
+                                                    <Text style={styles.playIcon}>
+                                                        {activeLesson?.id === lesson.id ? '▶' : '•'}
+                                                    </Text>
+                                                    <Text style={[
+                                                        styles.lessonText,
+                                                        activeLesson?.id === lesson.id && styles.activeLessonText
+                                                    ]}>
+                                                        {lesson.title}
+                                                    </Text>
+                                                    {lesson.locked && <Text style={styles.lockBadge}>BLOQUEADO</Text>}
+                                                </TouchableOpacity>
+                                            ))}
+                                            {(!module.lessons || module.lessons.length === 0) && (
+                                                <Text style={styles.emptyModuleText}>Sin lecciones</Text>
+                                            )}
+                                        </View>
                                     )}
-                                </View>
-                            )}
                         </View>
                     ))}
                 </View>
@@ -404,6 +439,13 @@ const styles = StyleSheet.create({
     lockText: {
         color: '#FFF',
         fontSize: 16,
+        fontWeight: '600',
+    },
+    lockBadge: {
+        color: '#facc15',
+        fontSize: 12,
+        marginLeft: 8,
+        fontWeight: '700',
     },
     headerOverlay: {
         position: 'absolute',

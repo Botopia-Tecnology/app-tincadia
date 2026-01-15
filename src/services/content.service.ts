@@ -15,7 +15,24 @@ export interface Course {
     isPublished: boolean;
     instructor?: string; // Not in backend entity explicitly but in UI mock?
     level?: string; // Not in backend entity explicitly
-    modules?: any[];
+    accessScope?: 'course' | 'module' | 'lesson';
+    isPaid?: boolean;
+    previewLimit?: number | null;
+    modules?: {
+        id: string;
+        title: string;
+        description?: string;
+        isPaid?: boolean;
+        lessons?: Array<{
+            id: string;
+            title: string;
+            videoUrl?: string | null;
+            durationSeconds?: number;
+            isPaid?: boolean;
+            isFreePreview?: boolean;
+            locked?: boolean;
+        }>;
+    }[];
 }
 
 export interface Category {
@@ -79,10 +96,10 @@ export const contentService = {
     /**
      * Get course by ID with modules and lessons
      */
-    getCourseById: async (id: string): Promise<Course> => {
+    getCourseById: async (id: string, opts?: { hasAccess?: boolean }): Promise<Course> => {
         try {
             const token = await authService.getToken();
-            const url = buildUrl(API_ENDPOINTS.DETAILS.replace(':id', id));
+            const url = buildUrl(API_ENDPOINTS.DETAILS.replace(':id', id)) + (opts?.hasAccess ? `?hasAccess=${opts.hasAccess}` : '');
             const response = await fetch(url, {
                 headers: {
                     'Authorization': `Bearer ${token}`,

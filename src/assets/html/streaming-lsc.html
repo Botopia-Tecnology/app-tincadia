@@ -169,7 +169,7 @@
         let lastPrediction = null;
         let timerInterval;
         let autoConfirmTimeout;
-        const AUTO_CONFIRM_DELAY = 3000; // 3 seconds
+        const AUTO_CONFIRM_DELAY = 1500; // 1.5 seconds for faster response
         let isConfirming = false;
 
         // --- Communication with React Native ---
@@ -181,31 +181,39 @@
 
         // --- Socket.io Setup ---
         function connectSocket() {
-            // In production, this should be passed dynamically or use the correct domain
-            // React Native will pass the socket URL via injection if needed, but for now hardcoded to dev or relative
-            // Assuming the WebView can hit localhost for dev, but in production we need the real URL.
-            // Best practice: Pass API_URL via URL params or injection.
-
             const urlParams = new URLSearchParams(window.location.search);
             const apiUrl = urlParams.get('apiUrl') || 'http://localhost:3001';
-            // IMPORTANT: app-tincadia connects to backend. If physical device, localhost won't work.
-            // But let's assume the device can access the API Gateway.
+            
+            // Debug: show URL being used
+            const debugEl = document.getElementById('debug-info');
+            if (debugEl) debugEl.innerText = `Connecting to: ${apiUrl}`;
+            statusText.innerText = `Conectando a ${apiUrl}...`;
 
-            socket = io(`${apiUrl}/model-stream`, {
-                transports: ['websocket'],
-                reconnection: true
+            // Connect to root namespace (default) which matches Gateway config
+            socket = io(apiUrl, {
+                transports: ['websocket', 'polling'], // Allow polling fallback
+                reconnection: true,
+                timeout: 10000
             });
 
             socket.on('connect', () => {
+                if (debugEl) debugEl.innerText = `Connected! Socket ID: ${socket.id}`;
                 statusDot.classList.add('connected');
                 statusText.innerText = 'Conectado - Listo para señas';
                 sendToRN('status', 'connected');
             });
 
-            socket.on('disconnect', () => {
+            socket.on('disconnect', (reason) => {
+                if (debugEl) debugEl.innerText = `Disconnected: ${reason}`;
                 statusDot.classList.remove('connected');
                 statusText.innerText = 'Desconectado';
                 sendToRN('status', 'disconnected');
+            });
+
+            socket.on('connect_error', (err) => {
+                if (debugEl) debugEl.innerText = `Connection error: ${err.message}`;
+                statusText.innerText = `Error: ${err.message}`;
+                sendToRN('error', err.message);
             });
 
             socket.on('prediction', (data) => {
@@ -285,7 +293,12 @@
             predictionWord.innerText = `✅ ${word}`;
 
             // Send confirmation to backend
-            fetch(`${socket.io.uri.replace('/model-stream', '')}/api/model/confirm-word`, {
+            // Use API_URL (variable injected or from params) directly since socket connects to root
+            // Ensure no double slashes
+            const urlParams = new URLSearchParams(window.location.search);
+            const apiUrl = urlParams.get('apiUrl') || 'http://localhost:3001';
+
+            fetch(`${apiUrl}/api/model/confirm-word`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -369,8 +382,8 @@
                 });
 
                 holistic.setOptions({
-                    modelComplexity: 1,
-                    smoothLandmarks: true,
+                    modelComplexity: 0, // Lite model for faster performance (~30 FPS)
+                    smoothLandmarks: false, // Disable for lower latency
                     minDetectionConfidence: 0.5,
                     minTrackingConfidence: 0.5
                 });

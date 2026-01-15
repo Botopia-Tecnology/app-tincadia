@@ -40,6 +40,8 @@ export interface Message {
     replyToId?: string;
     replyToContent?: string;
     replyToSender?: string;
+    // General metadata (audio duration, publicId, etc.)
+    metadata?: Record<string, any>;
 }
 
 interface UseChatReturn {
@@ -77,6 +79,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         replyToId: m.replyToId,
         replyToContent: m.replyToContent,
         replyToSender: m.replyToSender,
+        metadata: m.metadata,
     }), []);
 
     // Load messages from local SQLite (instant)
@@ -153,6 +156,8 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     replyToId: msg.replyToId || msg.reply_to_id || msg.metadata?.replyToId,
                     replyToContent: msg.replyToContent || msg.reply_to_content || msg.metadata?.replyToContent,
                     replyToSender: msg.replyToSender || msg.reply_to_sender || msg.metadata?.replyToSender,
+                    // Metadata (duration, publicId, etc.)
+                    metadata: msg.metadata,
                 });
             });
 

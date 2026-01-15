@@ -303,8 +303,10 @@ class MediaService {
     }
     /**
      * Download media to local file system
+     * @param storageKeyOrUrl - The public ID or URL of the media
+     * @param mediaType - The type of media ('image' | 'video' | 'audio') to determine resource type
      */
-    async downloadMedia(storageKeyOrUrl: string): Promise<string | null> {
+    async downloadMedia(storageKeyOrUrl: string, mediaType?: 'image' | 'video' | 'audio'): Promise<string | null> {
         try {
             let urlToDownload = storageKeyOrUrl;
 
@@ -313,6 +315,11 @@ class MediaService {
                 console.log(`🔑 Fetching signed URL for key: ${storageKeyOrUrl}`);
                 try {
                     const token = await authService.getToken();
+                    // Map mediaType to Cloudinary resourceType
+                    let resourceType: 'image' | 'video' | 'raw' = 'image';
+                    if (mediaType === 'audio') resourceType = 'raw';
+                    else if (mediaType === 'video') resourceType = 'video';
+
                     // We need to fetch the signed URL from the backend
                     const response = await fetch(API_URL + API_ENDPOINTS.GET_SIGNED_URL, {
                         method: 'POST',
@@ -320,7 +327,7 @@ class MediaService {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${token}`
                         },
-                        body: JSON.stringify({ publicId: storageKeyOrUrl })
+                        body: JSON.stringify({ publicId: storageKeyOrUrl, resourceType })
                     });
                     if (response.ok) {
                         const data = await response.json();
