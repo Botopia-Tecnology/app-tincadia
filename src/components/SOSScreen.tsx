@@ -10,6 +10,8 @@ import { StatusBar } from 'expo-status-bar';
 import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
+import { useAuth } from '../contexts/AuthContext';
+import { chatService } from '../services/chat.service';
 import {
     Siren,
     Ambulance,
@@ -22,7 +24,8 @@ import {
     ChevronLeft,
     MessageCircle,
     Pause,
-    Search
+    Search,
+    Video
 } from 'lucide-react-native';
 import { SearchIcon } from './icons/NavigationIcons';
 
@@ -34,7 +37,7 @@ interface EmergencyType {
 }
 
 interface SOSScreenProps {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call', params?: { roomName?: string; username?: string; conversationId?: string; userId?: string }) => void;
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
@@ -49,6 +52,7 @@ export function SOSScreen({
     userId,
     onShowNotifications,
 }: SOSScreenProps) {
+    const { user } = useAuth();
     const emergencyTypes: EmergencyType[] = [
         { id: '1', icon: Flame, color: '#EF4444', label: 'BOMBEROS' },
         { id: '2', icon: Ambulance, color: '#3B82F6', label: 'AMBULANCIA' },
@@ -63,6 +67,7 @@ export function SOSScreen({
     const [address, setAddress] = useState<string | null>(null);
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
     const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+    const [isRequestingInterpreter, setIsRequestingInterpreter] = useState(false);
 
     const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -290,6 +295,38 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
         Alert.alert('WhatsApp no disponible', 'Por favor instala WhatsApp para usar esta función.');
     };
 
+    const handleInterpreterEmergencyCall = async () => {
+        if (!userId) {
+            Alert.alert('Inicia sesión', 'Necesitamos tu usuario para contactar a un intérprete.');
+            return;
+        }
+
+        const username = user?.firstName || user?.email || 'Usuario';
+        const roomName = `sos-${userId}-${Date.now()}`;
+
+        setIsRequestingInterpreter(true);
+        try {
+            const result = await chatService.inviteInterpreters({
+                roomName,
+                userId,
+                username,
+            });
+
+            if (result?.success) {
+                Alert.alert('Solicitud enviada', `Se notificó a ${result.count || 1} intérprete(s).`);
+            } else if (result?.message) {
+                Alert.alert('Aviso', result.message);
+            }
+
+            onNavigate('call', { roomName, username, userId });
+        } catch (error) {
+            console.error('Error solicitando intérprete SOS:', error);
+            Alert.alert('Error', 'No pudimos contactar a un intérprete. Intenta de nuevo.');
+        } finally {
+            setIsRequestingInterpreter(false);
+        }
+    };
+
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar style="dark" />
@@ -407,6 +444,30 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
                             <Text style={styles.gridLabel}>{item.label}</Text>
                         </TouchableOpacity>
                     ))}
+                </View>
+
+                {/* Interpreter urgent call */}
+                <View style={styles.interpreterCard}>
+                    <View style={styles.interpreterHeader}>
+                        <Video size={24} color="#1E3A8A" />
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.interpreterTitle}>Videollamada urgente con intérprete</Text>
+                            <Text style={styles.interpreterSubtitle}>
+                                Conecta ya con un intérprete para comunicarte con emergencias.
+                            </Text>
+                        </View>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.interpreterButton}
+                        onPress={handleInterpreterEmergencyCall}
+                        disabled={isRequestingInterpreter}
+                    >
+                        {isRequestingInterpreter ? (
+                            <ActivityIndicator color="white" />
+                        ) : (
+                            <Text style={styles.interpreterButtonText}>Llamar a intérprete</Text>
+                        )}
+                    </TouchableOpacity>
                 </View>
 
                 {/* Location Footer */}

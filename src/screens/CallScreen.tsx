@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, SafeAreaView, Alert, Image } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, SafeAreaView, Alert, Image, Dimensions } from 'react-native';
 import {
     LiveKitRoom,
     useTracks,
@@ -7,6 +7,7 @@ import {
     registerGlobals,
     useLocalParticipant,
     useRoomContext,
+    useParticipants,
 } from '@livekit/react-native';
 
 // Initialize WebRTC
@@ -17,6 +18,8 @@ import { API_URL } from '../config/api.config';
 import { CameraIcon, MicrophoneIcon, PhoneIcon } from '../components/icons/NavigationIcons';
 import { chatService } from '../services/chat.service';
 import { useAuth } from '../contexts/AuthContext';
+
+type LayoutMode = 'grid' | 'interpreter';
 
 interface CallScreenProps {
     roomName: string;
@@ -74,6 +77,8 @@ export const CallScreen = ({ roomName, username, conversationId, userId, onBack 
         );
     }
 
+    const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
+
     return (
         <View style={{ flex: 1, backgroundColor: '#000' }}>
             <LiveKitRoom
@@ -85,13 +90,15 @@ export const CallScreen = ({ roomName, username, conversationId, userId, onBack 
                 video={true}
                 onDisconnected={onBack}
             >
-                <VideoView />
+                <VideoView layoutMode={layoutMode} />
                 <ControlsView
                     onHangup={onBack}
                     conversationId={conversationId}
                     userId={userId}
                     roomName={roomName}
                     username={username}
+                    layoutMode={layoutMode}
+                    onToggleLayout={() => setLayoutMode(m => m === 'grid' ? 'interpreter' : 'grid')}
                 />
                 <RoomEvents onLeave={onBack} />
             </LiveKitRoom>
@@ -123,35 +130,112 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
     return null;
 }
 
-function VideoView() {
+function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
     const tracks = useTracks([Track.Source.Camera]);
+    const participants = useParticipants();
+    const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-    return (
-        <View style={styles.videoGrid}>
-            {tracks.map((track) => (
-                <View key={track.participant.identity} style={styles.participant}>
-                    {track.publication.isMuted ? (
-                        <View style={[styles.video, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
-                            {/* Optional: Add an icon or text indicating camera is off */}
+    // Detect interpreter by checking if identity contains 'interpreter' or metadata
+    const isInterpreter = (identity: string) => {
+        return identity.toLowerCase().includes('interp') || identity.toLowerCase().includes('intérp');
+    };
+
+    const interpreterTracks = tracks.filter(t => isInterpreter(t.participant.identity));
+    const otherTracks = tracks.filter(t => !isInterpreter(t.participant.identity));
+
+    // Grid layout (default)
+    if (layoutMode === 'grid' || interpreterTracks.length === 0) {
+        return (
+            <View style={styles.videoGrid}>
+                {tracks.map((track) => (
+                    <View key={track.participant.identity} style={styles.participant}>
+                        {track.publication.isMuted ? (
+                            <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
+                                <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
+                            </View>
+                        ) : (
+                            <VideoTrack
+                                trackRef={track}
+                                style={styles.video}
+                            />
+                        )}
+                        <View style={styles.participantLabel}>
+                            <Text style={styles.participantName} numberOfLines={1}>
+                                {track.participant.identity}
+                            </Text>
                         </View>
-                    ) : (
-                        <VideoTrack
-                            trackRef={track}
-                            style={styles.video}
-                        />
-                    )}
-                </View>
-            ))}
+                    </View>
+                ))}
+            </View>
+        );
+    }
+
+    // Interpreter layout: interpreter on the right side (vertical), others on the left
+    return (
+        <View style={styles.interpreterLayout}>
+            {/* Main area - other participants */}
+            <View style={styles.mainVideoArea}>
+                {otherTracks.length > 0 ? (
+                    otherTracks.map((track) => (
+                        <View key={track.participant.identity} style={styles.mainParticipant}>
+                            {track.publication.isMuted ? (
+                                <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
+                                    <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
+                                </View>
+                            ) : (
+                                <VideoTrack
+                                    trackRef={track}
+                                    style={styles.video}
+                                />
+                            )}
+                            <View style={styles.participantLabel}>
+                                <Text style={styles.participantName} numberOfLines={1}>
+                                    {track.participant.identity}
+                                </Text>
+                            </View>
+                        </View>
+                    ))
+                ) : (
+                    <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
+                        <Text style={{ color: '#666' }}>Esperando participantes...</Text>
+                    </View>
+                )}
+            </View>
+
+            {/* Interpreter sidebar (vertical) */}
+            <View style={styles.interpreterSidebar}>
+                {interpreterTracks.map((track) => (
+                    <View key={track.participant.identity} style={styles.interpreterVideo}>
+                        {track.publication.isMuted ? (
+                            <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
+                                <Text style={{ color: '#666', fontSize: 12 }}>Cámara off</Text>
+                            </View>
+                        ) : (
+                            <VideoTrack
+                                trackRef={track}
+                                style={styles.video}
+                            />
+                        )}
+                        <View style={styles.interpreterLabel}>
+                            <Text style={styles.interpreterName} numberOfLines={1}>
+                                🤟 Intérprete
+                            </Text>
+                        </View>
+                    </View>
+                ))}
+            </View>
         </View>
     );
 }
 
-function ControlsView({ onHangup, conversationId, userId, roomName, username }: {
+function ControlsView({ onHangup, conversationId, userId, roomName, username, layoutMode, onToggleLayout }: {
     onHangup: () => void;
     conversationId?: string;
     userId?: string;
     roomName: string;
     username: string;
+    layoutMode: LayoutMode;
+    onToggleLayout: () => void;
 }) {
     const { user } = useAuth();
     const { isMicrophoneEnabled, isCameraEnabled, localParticipant } = useLocalParticipant();
@@ -235,40 +319,55 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username }: 
     };
 
     return (
-        <View style={styles.controlsContainer}>
+        <>
+            {/* Layout toggle button - top right */}
             <TouchableOpacity
-                style={[styles.button, !isMicrophoneEnabled && styles.buttonDisabled]}
-                onPress={toggleMic}
+                style={styles.layoutToggleButton}
+                onPress={onToggleLayout}
             >
-                <MicrophoneIcon size={24} color={isMicrophoneEnabled ? '#000' : '#fff'} />
+                <Text style={styles.layoutToggleText}>
+                    {layoutMode === 'grid' ? '⬜' : '📱'}
+                </Text>
+                <Text style={styles.layoutToggleLabel}>
+                    {layoutMode === 'grid' ? 'Intérprete' : 'Cuadrícula'}
+                </Text>
             </TouchableOpacity>
 
-            {/* Interpreter Button */}
-            <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#fff' }]}
-                onPress={handleInviteInterpreters}
-            >
-                <Image
-                    source={require('../../assets/icon.png')}
-                    style={{ width: 32, height: 32, borderRadius: 16 }}
-                    resizeMode="cover"
-                />
-            </TouchableOpacity>
+            <View style={styles.controlsContainer}>
+                <TouchableOpacity
+                    style={[styles.button, !isMicrophoneEnabled && styles.buttonDisabled]}
+                    onPress={toggleMic}
+                >
+                    <MicrophoneIcon size={24} color={isMicrophoneEnabled ? '#000' : '#fff'} />
+                </TouchableOpacity>
 
-            <TouchableOpacity
-                style={[styles.button, styles.hangupButton]}
-                onPress={handleDisconnect}
-            >
-                <PhoneIcon size={32} color="#fff" />
-            </TouchableOpacity>
+                {/* Interpreter Button */}
+                <TouchableOpacity
+                    style={[styles.button, { backgroundColor: '#fff' }]}
+                    onPress={handleInviteInterpreters}
+                >
+                    <Image
+                        source={require('../../assets/icon.png')}
+                        style={{ width: 32, height: 32, borderRadius: 16 }}
+                        resizeMode="cover"
+                    />
+                </TouchableOpacity>
 
-            <TouchableOpacity
-                style={[styles.button, !isCameraEnabled && styles.buttonDisabled]}
-                onPress={toggleCam}
-            >
-                <CameraIcon size={24} color={isCameraEnabled ? '#000' : '#fff'} />
-            </TouchableOpacity>
-        </View>
+                <TouchableOpacity
+                    style={[styles.button, styles.hangupButton]}
+                    onPress={handleDisconnect}
+                >
+                    <PhoneIcon size={32} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.button, !isCameraEnabled && styles.buttonDisabled]}
+                    onPress={toggleCam}
+                >
+                    <CameraIcon size={24} color={isCameraEnabled ? '#000' : '#fff'} />
+                </TouchableOpacity>
+            </View>
+        </>
     );
 }
 
@@ -288,10 +387,84 @@ const styles = StyleSheet.create({
     },
     participant: {
         flex: 1,
+        position: 'relative',
     },
     video: {
         width: '100%',
         height: '100%',
+    },
+    participantLabel: {
+        position: 'absolute',
+        bottom: 8,
+        left: 8,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 4,
+    },
+    participantName: {
+        color: '#fff',
+        fontSize: 12,
+    },
+    // Interpreter layout styles
+    interpreterLayout: {
+        flex: 1,
+        flexDirection: 'row',
+    },
+    mainVideoArea: {
+        flex: 2,
+    },
+    mainParticipant: {
+        flex: 1,
+        position: 'relative',
+    },
+    interpreterSidebar: {
+        width: 130,
+        backgroundColor: '#1a1a1a',
+        borderLeftWidth: 2,
+        borderLeftColor: '#7C3AED',
+    },
+    interpreterVideo: {
+        flex: 1,
+        position: 'relative',
+    },
+    interpreterLabel: {
+        position: 'absolute',
+        bottom: 4,
+        left: 4,
+        right: 4,
+        backgroundColor: 'rgba(124, 58, 237, 0.8)',
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 4,
+        alignItems: 'center',
+    },
+    interpreterName: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    // Layout toggle button
+    layoutToggleButton: {
+        position: 'absolute',
+        top: 50,
+        right: 16,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        zIndex: 10,
+    },
+    layoutToggleText: {
+        fontSize: 16,
+    },
+    layoutToggleLabel: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '500',
     },
     controlsContainer: {
         position: 'absolute',
@@ -312,12 +485,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     buttonDisabled: {
-        backgroundColor: '#ef4444', // Red for disabled
+        backgroundColor: '#ef4444',
     },
     hangupButton: {
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: '#dc2626', // Red for hangup
+        backgroundColor: '#dc2626',
     }
 });

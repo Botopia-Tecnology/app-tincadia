@@ -323,6 +323,7 @@ export function ChatView({
                         isMine={true}
                         isSynced={false} // Pending icon
                         type={item.type}
+                        duration={item.metadata?.duration}
                     />
                     <ActivityIndicator
                         style={{ position: 'absolute', alignSelf: 'center', top: '40%' }}
@@ -410,6 +411,7 @@ export function ChatView({
                         replyToContent={msg.replyToContent}
                         replyToSender={msg.replyToSender}
                         publicId={msg.metadata?.publicId}
+                        duration={msg.metadata?.duration}
                     />
                 </Swipeable>
             </View>

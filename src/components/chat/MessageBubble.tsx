@@ -38,6 +38,7 @@ export function MessageBubble({
     const [isPlaying, setIsPlaying] = useState(false);
     const [audioSound, setAudioSound] = useState<Audio.Sound | null>(null);
     const [showFullscreen, setShowFullscreen] = useState(false);
+    const [audioDuration, setAudioDuration] = useState<number | null>(null);
 
     // Auto-load media when component mounts
     useEffect(() => {
@@ -53,7 +54,7 @@ export function MessageBubble({
                 if (publicId) {
                     setIsLoading(true);
                     try {
-                        const localUri = await mediaService.downloadMedia(publicId);
+                        const localUri = await mediaService.downloadMedia(publicId, type as 'image' | 'video' | 'audio');
                         if (localUri) {
                             setMediaUri(localUri);
                         } else {
@@ -73,6 +74,27 @@ export function MessageBubble({
         };
         loadMedia();
     }, [content, type, publicId]);
+
+    // Extract audio duration when mediaUri is available
+    useEffect(() => {
+        const loadAudioDuration = async () => {
+            if (type === 'audio' && mediaUri && audioDuration === null) {
+                try {
+                    const { sound, status } = await Audio.Sound.createAsync(
+                        { uri: mediaUri },
+                        { shouldPlay: false }
+                    );
+                    if (status.isLoaded && status.durationMillis) {
+                        setAudioDuration(status.durationMillis / 1000);
+                    }
+                    await sound.unloadAsync();
+                } catch (e) {
+                    console.error('Failed to get audio duration:', e);
+                }
+            }
+        };
+        loadAudioDuration();
+    }, [type, mediaUri, audioDuration]);
 
     const handlePlayAudio = async () => {
         if (!mediaUri) return;
@@ -172,6 +194,8 @@ export function MessageBubble({
         }
 
         if (type === 'audio') {
+            // Use extracted duration, fallback to prop
+            const displayDuration = audioDuration ?? duration;
             return (
                 <TouchableOpacity onPress={handlePlayAudio} style={mediaStyles.audio}>
                     <Ionicons
@@ -193,17 +217,15 @@ export function MessageBubble({
                             />
                         ))}
                     </View>
-                    {duration !== undefined && duration > 0 ? (
-                        <Text style={{
-                            color: isMine ? 'rgba(255,255,255,0.8)' : '#666',
-                            fontSize: 11,
-                            marginLeft: 8,
-                            alignSelf: 'flex-end',
-                            marginBottom: 4
-                        }}>
-                            {formatDuration(duration)}
-                        </Text>
-                    ) : null}
+                    <Text style={{
+                        color: isMine ? 'rgba(255,255,255,0.8)' : '#666',
+                        fontSize: 11,
+                        marginLeft: 8,
+                        alignSelf: 'flex-end',
+                        marginBottom: 4
+                    }}>
+                        {displayDuration ? formatDuration(displayDuration) : '--:--'}
+                    </Text>
                 </TouchableOpacity>
             );
         }

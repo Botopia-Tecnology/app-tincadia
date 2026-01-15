@@ -140,6 +140,12 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
                         console.log('🔧 Adding reply_to_sender column...');
                         db.execSync(`ALTER TABLE messages ADD COLUMN reply_to_sender TEXT`);
                     }
+
+                    // Add metadata column if missing (for audio duration, publicId, etc.)
+                    if (!columnNames.includes('metadata')) {
+                        console.log('🔧 Adding metadata column...');
+                        db.execSync(`ALTER TABLE messages ADD COLUMN metadata TEXT`);
+                    }
                 }
 
                 // Migrate conversations table for groups support
@@ -214,7 +220,8 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
           deleted_at TEXT,
           reply_to_id TEXT,
           reply_to_content TEXT,
-          reply_to_sender TEXT
+          reply_to_sender TEXT,
+          metadata TEXT
         );
         
         CREATE TABLE IF NOT EXISTS contacts (
@@ -270,6 +277,8 @@ export interface LocalMessage {
     replyToId?: string;
     replyToContent?: string;
     replyToSender?: string;
+    // General metadata (audio duration, publicId, etc.)
+    metadata?: Record<string, any>;
 }
 
 /**
@@ -292,6 +301,8 @@ export function saveMessage(msg: {
     replyToId?: string;
     replyToContent?: string;
     replyToSender?: string;
+    // General metadata
+    metadata?: Record<string, any>;
 }) {
     const database = ensureInitialized();
 
@@ -338,8 +349,8 @@ export function saveMessage(msg: {
 
     database.runSync(
         `INSERT OR REPLACE INTO messages 
-     (id, server_id, conversation_id, sender_id, content, type, status, created_at, updated_at, read_at, is_mine, deleted_at, reply_to_id, reply_to_content, reply_to_sender)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, server_id, conversation_id, sender_id, content, type, status, created_at, updated_at, read_at, is_mine, deleted_at, reply_to_id, reply_to_content, reply_to_sender, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             msg.id,
             msg.serverId || null,
@@ -356,6 +367,7 @@ export function saveMessage(msg: {
             msg.replyToId || null,
             msg.replyToContent || null,
             msg.replyToSender || null,
+            msg.metadata ? JSON.stringify(msg.metadata) : null,
         ]
     );
 }
@@ -411,6 +423,7 @@ export function getMessages(conversationId: string): LocalMessage[] {
         reply_to_id: string | null;
         reply_to_content: string | null;
         reply_to_sender: string | null;
+        metadata: string | null;
     }>(
         `SELECT * FROM messages 
      WHERE conversation_id = ? AND deleted_at IS NULL
@@ -434,6 +447,7 @@ export function getMessages(conversationId: string): LocalMessage[] {
         replyToId: row.reply_to_id || undefined,
         replyToContent: row.reply_to_content || undefined,
         replyToSender: row.reply_to_sender || undefined,
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
     }));
 }
 
@@ -467,6 +481,7 @@ export function getPendingMessages(conversationId: string): LocalMessage[] {
         read_at: string | null;
         is_mine: number;
         deleted_at: string | null;
+        metadata: string | null;
     }>(
         `SELECT * FROM messages 
      WHERE conversation_id = ? AND status = 'pending' AND deleted_at IS NULL
@@ -486,6 +501,7 @@ export function getPendingMessages(conversationId: string): LocalMessage[] {
         readAt: row.read_at || undefined,
         isMine: row.is_mine === 1,
         deletedAt: row.deleted_at || undefined,
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
     }));
 }
 
