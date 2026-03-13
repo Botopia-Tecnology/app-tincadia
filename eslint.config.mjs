@@ -1,34 +1,33 @@
-import { defineConfig, globalIgnores } from "eslint/config";
+import tseslint from '@typescript-eslint/eslint-plugin';
+import tsparser from '@typescript-eslint/parser';
 
-const eslintConfig = defineConfig([
-  {
-    files: ["**/*.{js,jsx,ts,tsx}"],
-    languageOptions: {
-      parser: "@typescript-eslint/parser",
-      parserOptions: {
-        ecmaVersion: "latest",
-        sourceType: "module",
-        ecmaFeatures: {
-          jsx: true,
+export default [
+    {
+        ignores: [
+            ".expo/**",
+            "node_modules/**",
+            "dist/**",
+            "build/**",
+            ".expo-shared/**",
+        ],
+    },
+    {
+        files: ["**/*.{js,jsx,ts,tsx}"],
+        languageOptions: {
+            parser: tsparser,
+            parserOptions: {
+                ecmaVersion: "latest",
+                sourceType: "module",
+                ecmaFeatures: {
+                    jsx: true,
+                },
+            },
         },
-      },
+        plugins: {
+            "@typescript-eslint": tseslint,
+        },
+        rules: {
+            // Reglas personalizadas aquí si es necesario
+        },
     },
-    plugins: {
-      "@typescript-eslint": require("@typescript-eslint/eslint-plugin"),
-    },
-    rules: {
-      // Reglas personalizadas aquí si es necesario
-    },
-  },
-  // Override default ignores
-  globalIgnores([
-    ".expo/**",
-    "node_modules/**",
-    "dist/**",
-    "build/**",
-    ".expo-shared/**",
-  ]),
-]);
-
-export default eslintConfig;
-
+];

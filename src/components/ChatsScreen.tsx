@@ -1,55 +1,40 @@
 /**
- * Chats Screen
+ * Chats Screen - Refactored
  * 
- * Modern chat list design with search and floating new chat button.
+ * Uses modular components and useChatList hook for better maintainability.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   FlatList,
-  TextInput,
   ActivityIndicator,
   RefreshControl,
   BackHandler,
   Platform,
-  AppState,
-  Image,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 import { chatsListStyles } from '../styles/ChatsScreen.styles';
 import { useAuth } from '../contexts/AuthContext';
-import { useContactsSync } from '../hooks/useContactsSync';
 import { chatService } from '../services/chat.service';
-import { contactService, Contact } from '../services/contact.service';
-import { appNotificationService } from '../services/appNotification.service';
-import {
-  initChatDatabase,
-  getConversations as getLocalConversations,
-  saveConversation,
-  getLocalContacts,
-  saveContact,
-  shouldSync,
-  updateSyncTime,
-  updateConversationPreview,
-} from '../database/chatDatabase';
+import { saveContact } from '../database/chatDatabase';
+import { useChatList, ChatListItem as ChatListItemType } from '../hooks/useChatList';
+
+// Components
 import { BottomNavigation } from './BottomNavigation';
 import { ChatView } from './chat/ChatView';
 import { NotificationsScreen } from './NotificationsScreen';
-import {
-  NotificationIcon,
-  SearchIcon,
-  PlusIcon,
-  InviteIcon,
-  AccountIcon,
-} from './icons/NavigationIcons';
 import { AddContactModal } from './AddContactModal';
+import { ChatListItem } from './chat/ChatListItem';
+import { ChatsHeader } from './chat/ChatsHeader';
+import { PlusIcon, InviteIcon, AccountIcon } from './icons/NavigationIcons';
 
 interface ChatsScreenProps {
   onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'new_group', params?: { roomName?: string; username?: string; conversationId?: string; userId?: string }) => void;
@@ -57,471 +42,67 @@ interface ChatsScreenProps {
   onInitialConversationOpened?: () => void;
 }
 
-// Format message time for display
-const formatMessageTime = (dateString: string): string => {
-  if (!dateString) return '';
-  try {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Ayer';
-    } else if (diffDays < 7) {
-      return date.toLocaleDateString('es', { weekday: 'short' });
-    } else {
-      return date.toLocaleDateString('es', { day: '2-digit', month: '2-digit' });
-    }
-  } catch {
-    return '';
-  }
-};
-
-// Unified chat list item - can be contact, unknown conversation, or synced contact
-interface ChatListItem {
-  id: string;
-  type: 'contact' | 'unknown' | 'synced' | 'group';
-  displayName: string;
-  phone: string;
-  otherUserId: string;
-  conversationId?: string;
-  unreadCount: number;
-  lastMessage?: string;
-  lastMessageTime?: string;
-  // From contact
-  contactId?: string;
-  alias?: string;
-  customFirstName?: string;
-  customLastName?: string;
-  avatarUrl?: string;
-  description?: string;
-}
-
-// Contact List Item Component
-function ContactListItem({
-  contact,
-  onPress,
-}: {
-  contact: Contact;
-  onPress: () => void;
-}) {
-  // Use alias if available, otherwise use custom names or fallback
-  const displayName = contact.alias ||
-    `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
-    contact.phone;
-
-  const initials = displayName
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || '?';
-
-  return (
-    <TouchableOpacity style={styles.chatItem} onPress={onPress}>
-      {/* Avatar with initials */}
-      <View style={styles.avatarContainer}>
-        <Text style={styles.avatarText}>{initials}</Text>
-      </View>
-
-      {/* Contact Info */}
-      <View style={styles.chatContent}>
-        <View style={styles.chatHeader}>
-          <Text style={styles.chatName}>{displayName}</Text>
-          <Text style={styles.timestamp}>Contacto</Text>
-        </View>
-        <View style={styles.messageRow}>
-          <Text style={styles.lastMessage} numberOfLines={1}>
-            {contact.phone}
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-// Main Chats Screen
 export function ChatsScreen({ onNavigate, initialConversation, onInitialConversationOpened }: ChatsScreenProps) {
   const { user } = useAuth();
+  const { colors } = useTheme();
   const userId = user?.id || '';
 
-  const [chatItems, setChatItems] = useState<ChatListItem[]>([]);
-  const [filteredItems, setFilteredItems] = useState<ChatListItem[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'contacts' | 'groups'>('all');
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Logic Hook
+  const {
+    filteredItems,
+    searchQuery,
+    setSearchQuery,
+    activeFilter,
+    setActiveFilter,
+    isLoading,
+    error,
+    unreadNotificationCount,
+    showSyncBanner,
+    setShowSyncBanner,
+    syncResult,
+    isSyncing,
+    progress,
+    syncError,
+    handleSyncContacts,
+    loadChats,
+    syncFromServer,
+    loadFromLocalCache,
+    deleteChat,
+    syncedContacts,
+    setSyncedContacts,
+    chatItems,
+    SYNCED_CONTACTS_KEY
+  } = useChatList(userId);
 
-  const [selectedChat, setSelectedChat] = useState<{
-    conversationId: string;
-    otherUserName: string;
-    otherUserPhone?: string;
-    otherUserId?: string;
-    isUnknown?: boolean;
-    // Contact info for profile
-    contactId?: string;
-    alias?: string;
-    customFirstName?: string;
-    customLastName?: string;
-    avatarUrl?: string;
-    isGroup?: boolean;
-    description?: string;
-  } | null>(null);
-
-  // Modal state
+  // UI Local State
+  const [selectedChat, setSelectedChat] = useState<any | null>(null);
   const [showAddContactModal, setShowAddContactModal] = useState(false);
-  const [prefillPhone, setPrefillPhone] = useState('');
-  const [prefillFirstName, setPrefillFirstName] = useState('');
-  const [prefillLastName, setPrefillLastName] = useState('');
-  const [showFabMenu, setShowFabMenu] = useState(false);
-
-  // Contacts sync
-  const { isSyncing, progress, matches, error: syncError, startSync } = useContactsSync();
-  const [showSyncBanner, setShowSyncBanner] = useState(true);
-  const [syncResult, setSyncResult] = useState<{ found: number; total: number } | null>(null);
-  const [syncedContacts, setSyncedContacts] = useState<ChatListItem[]>([]);
-
-  // Notifications state
   const [showNotifications, setShowNotifications] = useState(false);
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [showFabMenu, setShowFabMenu] = useState(false);
+  
+  // Prefill state for modal
+  const [prefillData, setPrefillData] = useState({
+    phone: '',
+    firstName: '',
+    lastName: '',
+    userId: undefined as string | undefined
+  });
 
-  const SYNCED_CONTACTS_KEY = `@synced_contacts_${userId}`;
-
-  // Initialize database on mount
-  useEffect(() => {
-    initChatDatabase();
-  }, []);
-
-  // Load unread notification count
-  useEffect(() => {
-    const loadUnreadCount = async () => {
-      if (!userId) return;
-      try {
-        const { count } = await appNotificationService.getUnreadCount(userId);
-        setUnreadNotificationCount(count);
-      } catch (err) {
-        console.error('Error loading unread count:', err);
-      }
-    };
-    loadUnreadCount();
-  }, [userId, showNotifications]); // Reload when returning from notifications
-
-  // Load synced contacts from storage on mount
-  useEffect(() => {
-    const loadSyncedContacts = async () => {
-      if (!userId) return;
-      try {
-        const stored = await AsyncStorage.getItem(SYNCED_CONTACTS_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setSyncedContacts(parsed);
-          setShowSyncBanner(false);
-          console.log('📱 Loaded synced contacts from storage:', parsed.length);
-        }
-      } catch (err) {
-        console.error('Error loading synced contacts:', err);
-      }
-    };
-    loadSyncedContacts();
-  }, [userId, SYNCED_CONTACTS_KEY]);
-
-  // Helper to transform local/server data to ChatListItem[]
-  const transformToItems = useCallback((
-    contacts: Contact[],
-    conversations: { id: string; otherUserId: string; otherUserName?: string; otherUserPhone?: string; lastMessage?: string; lastMessageAt?: string; unreadCount?: number; otherUserAvatar?: string; isGroup?: boolean; title?: string; imageUrl?: string; description?: string }[]
-  ): ChatListItem[] => {
-    const contactsByUserId = new Map(contacts.filter(c => c.contactUserId).map(c => [c.contactUserId, c]));
-    const contactsByPhone = new Map(contacts.filter(c => c.phone).map(c => [c.phone.replace(/\D/g, ''), c]));
-    const conversationsByUserId = new Map(conversations.map(conv => [conv.otherUserId, conv]));
-
-    // Conversations with contact info
-    const items: ChatListItem[] = conversations.map(conv => {
-      // Handle Group
-      if (conv.isGroup) {
-        return {
-          id: conv.id,
-          type: 'group' as const,
-          displayName: conv.title || 'Grupo',
-          phone: '',
-          otherUserId: '', // No one specific user
-          conversationId: conv.id,
-          unreadCount: conv.unreadCount || 0,
-          lastMessage: conv.lastMessage,
-          lastMessageTime: conv.lastMessageAt,
-          avatarUrl: conv.imageUrl || conv.otherUserAvatar, // Use imageUrl preferably for groups
-          description: conv.description,
-        };
-      }
-
-      // Try to find contact by userId first, then by phone as fallback
-      let contact = contactsByUserId.get(conv.otherUserId);
-
-      // Fallback: try to find by phone number
-      if (!contact && conv.otherUserPhone) {
-        const normalizedPhone = conv.otherUserPhone.replace(/\D/g, '');
-        contact = contactsByPhone.get(normalizedPhone);
-
-        // Also try with different phone formats
-        if (!contact) {
-          // Try last 10 digits (without country code)
-          const last10 = normalizedPhone.slice(-10);
-          for (const [phone, c] of contactsByPhone.entries()) {
-            if (phone.endsWith(last10) || last10.endsWith(phone.slice(-10))) {
-              contact = c;
-              break;
-            }
-          }
-        }
-      }
-
-      if (contact) {
-        return {
-          id: conv.id,
-          type: 'contact' as const,
-          displayName: contact.alias ||
-            `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
-            contact.phone,
-          phone: contact.phone,
-          otherUserId: conv.otherUserId,
-          conversationId: conv.id,
-          unreadCount: conv.unreadCount || 0,
-          lastMessage: conv.lastMessage,
-          lastMessageTime: conv.lastMessageAt,
-          contactId: contact.id,
-          alias: contact.alias,
-          customFirstName: contact.customFirstName,
-          customLastName: contact.customLastName,
-          avatarUrl: conv.otherUserAvatar, // Map from backend response
-        };
-      } else {
-        return {
-          id: conv.id,
-          type: 'unknown' as const,
-          displayName: conv.otherUserName || conv.otherUserPhone || 'Usuario desconocido',
-          phone: conv.otherUserPhone || '',
-          otherUserId: conv.otherUserId,
-          conversationId: conv.id,
-          unreadCount: conv.unreadCount || 0,
-          lastMessage: conv.lastMessage,
-          lastMessageTime: conv.lastMessageAt,
-          avatarUrl: conv.otherUserAvatar, // Map from backend response
-        };
-      }
-    });
-
-    // Contacts without conversations
-    contacts.forEach(contact => {
-      if (!conversationsByUserId.has(contact.contactUserId) && contact.contactUserId) {
-        items.push({
-          id: `contact-${contact.id}`,
-          type: 'contact' as const,
-          displayName: contact.alias ||
-            `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
-            contact.phone,
-          phone: contact.phone,
-          otherUserId: contact.contactUserId,
-          conversationId: undefined,
-          unreadCount: 0,
-          lastMessage: undefined,
-          lastMessageTime: undefined,
-          alias: contact.alias,
-          customFirstName: contact.customFirstName,
-          customLastName: contact.customLastName,
-        });
-      }
-    });
-
-    return items;
-  }, []);
-
-  // Load from local cache (instant)
-  const loadFromLocalCache = useCallback(() => {
-    if (!userId) return;
-
-    try {
-      // Get cached conversations
-      const localConvs = getLocalConversations();
-      const localContacts = getLocalContacts(userId);
-
-      if (localConvs.length > 0 || localContacts.length > 0) {
-        // Transform local data
-        const contacts: Contact[] = localContacts.map(c => ({
-          id: c.id,
-          ownerId: c.owner_id,
-          contactUserId: c.contact_user_id,
-          phone: c.phone,
-          alias: c.alias || undefined,
-          customFirstName: c.custom_first_name || undefined,
-          customLastName: c.custom_last_name || undefined,
-          createdAt: c.updated_at || new Date().toISOString(),
-        }));
-
-        const conversations = localConvs.map(c => ({
-          id: c.id,
-          otherUserId: c.other_user_id || '', // Empty string for groups (type safety)
-          otherUserName: c.other_user_name, // Map from local DB - CRITICAL for cache display
-          otherUserPhone: c.other_user_phone,
-          lastMessage: c.last_message,
-          lastMessageAt: c.last_message_at,
-          unreadCount: c.unread_count, // Use stored server count
-          otherUserAvatar: c.other_user_avatar, // Map from local DB
-          // Group fields
-          type: c.type as 'direct' | 'group' || 'direct',
-          title: c.title || undefined,
-          imageUrl: c.image_url || undefined,
-          isGroup: c.type === 'group',
-        }));
-
-        const items = transformToItems(contacts, conversations);
-        setChatItems(items);
-        console.log('⚡ Loaded from cache:', items.length, 'items');
-        return true;
-      }
-    } catch (err) {
-      console.error('Error loading from cache:', err);
-    }
-    return false;
-  }, [userId, transformToItems]);
-
-  // Sync from server and update cache
-  const syncFromServer = useCallback(async (showLoading = false, force = false) => {
-    if (!userId) return;
-
-    // Skip if synced recently (< 30 seconds) unless forced
-    if (!force && !shouldSync(`chats-${userId}`, 30000)) {
-      console.log('⏭️ Skipping sync (too recent)');
-      if (showLoading) setIsLoading(false);
-      return;
-    }
-
-    if (showLoading) setIsLoading(true);
-    setError(null);
-
-    try {
-      console.log('📡 Syncing from server...');
-
-      // 1. Get last contact sync time
-      const CONTACTS_SYNC_KEY = `tincadia_contacts_last_sync_${userId}`;
-      const lastContactSync = await AsyncStorage.getItem(CONTACTS_SYNC_KEY);
-
-      const [contactsResponse, conversationsResponse] = await Promise.all([
-        contactService.getContacts(userId, lastContactSync || undefined),
-        chatService.getConversations(userId),
-      ]);
-
-      const contacts = contactsResponse.contacts || [];
-      const conversations = conversationsResponse.conversations || [];
-
-      // Save to local cache for future instant loads
-      contacts.forEach(c => {
-        // Only save if we have valid ownerId (use userId as fallback)
-        const ownerId = c.ownerId || userId;
-        if (ownerId && c.id && c.contactUserId) {
-          saveContact({
-            id: c.id,
-            ownerId,
-            contactUserId: c.contactUserId,
-            phone: c.phone || '',
-            alias: c.alias,
-            customFirstName: c.customFirstName,
-            customLastName: c.customLastName,
-          });
-        }
-      });
-
-      // Update contact sync time if we got contacts (or just always update if success)
-      if (contacts.length > 0) {
-        await AsyncStorage.setItem(CONTACTS_SYNC_KEY, new Date().toISOString());
-      }
-
-      // Note: We need to reload FULL contact list from SQLite because response only has updates
-      const fullContacts = getLocalContacts(userId).map(c => ({
-        id: c.id,
-        ownerId: c.owner_id,
-        contactUserId: c.contact_user_id,
-        phone: c.phone,
-        alias: c.alias || undefined,
-        customFirstName: c.custom_first_name || undefined,
-        customLastName: c.custom_last_name || undefined,
-        createdAt: c.updated_at || new Date().toISOString(),
-      }));
-
-      conversations.forEach(conv => saveConversation({
-        id: conv.id,
-        otherUserId: conv.otherUserId,
-        otherUserPhone: conv.otherUserPhone,
-        otherUserName: conv.otherUserName, // Save name if available
-        lastMessage: conv.lastMessage,
-        lastMessageAt: conv.lastMessageAt,
-        unreadCount: conv.unreadCount,
-        otherUserAvatar: conv.otherUserAvatar, // Save avatar to DB
-        // Group fields - CRITICAL for cache persistence
-        type: conv.type,
-        title: conv.title,
-        imageUrl: conv.imageUrl,
-      }));
-
-      updateSyncTime(`chats-${userId}`);
-
-      // Update UI with fresh data
-      // Use fullContacts from SQLite merged with conversations
-      const items = transformToItems(fullContacts, conversations);
-      setChatItems(items);
-      console.log('✅ Synced:', items.length, 'items');
-    } catch (err) {
-      console.error('Error syncing chats:', err);
-      if (showLoading) setError('Error al cargar chats');
-    } finally {
-      if (showLoading) setIsLoading(false);
-    }
-  }, [userId, transformToItems]);
-
-  // Main load function: local-first, then ALWAYS sync from server on mount
-  const loadChats = useCallback(async () => {
-    if (!userId) return;
-
-    // 1. Load from cache instantly (no loading spinner) for immediate UI
-    const hasCached = loadFromLocalCache();
-
-    if (hasCached) {
-      // 2. Sync from server in background (FORCE to ensure fresh data after login)
-      setIsLoading(false);
-      syncFromServer(false, true); // force=true to bypass throttle
-    } else {
-      // 3. No cache - show loading and fetch from server
-      setIsLoading(true);
-      await syncFromServer(true, true); // showLoading=true, force=true
-    }
-  }, [userId, loadFromLocalCache, syncFromServer]);
-
-  useEffect(() => {
-    loadChats();
-  }, [loadChats]);
-
-  // Handle initial conversation (deep link)
+  // Handle Initial Conversation (Deep Links)
   useEffect(() => {
     if (initialConversation && userId) {
-      console.log('🚀 Opening initial conversation:', initialConversation);
       const openInitialChat = async () => {
         try {
-          // Case 1: Direct open (Group)
           if (initialConversation.conversationId && initialConversation.isGroup) {
             setSelectedChat({
               conversationId: initialConversation.conversationId,
               otherUserName: initialConversation.title || 'Grupo',
-              otherUserPhone: '',
-              otherUserId: '',
-              isUnknown: false,
               isGroup: true
             });
             if (onInitialConversationOpened) onInitialConversationOpened();
             return;
           }
 
-          // Case 2: User/Contact
           const recipientId = initialConversation.recipientId;
           let conversationId = initialConversation.conversationId;
 
@@ -532,35 +113,26 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
 
           if (!conversationId || !recipientId) return;
 
-          // For now, we try to startConversation to ensure it exists and get fresh conversationId
-          // This is safe (idempotent)
-          // const response = await chatService.startConversation(userId, initialConversation.recipientId);
-
-          // We need the other user's name/phone to display nicely
-          // We can fetch from contactsService or Profiles
-          // Quick implementation: Fetch profile of other user
           const { data: profile } = await supabase
             .from('profiles')
             .select('first_name, last_name, phone')
             .eq('id', recipientId)
-            .single() as { data: any, error: any };
+            .single();
 
           const displayName = profile
             ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
-            : profile?.phone || 'Usuario';
+            : (profile as any)?.phone || 'Usuario';
 
           setSelectedChat({
-            conversationId: conversationId,
+            conversationId,
             otherUserName: displayName,
-            otherUserPhone: profile?.phone || '',
+            otherUserPhone: (profile as any)?.phone || '',
             otherUserId: recipientId,
-            isUnknown: false, // Assume false for now or logic to check contact
+            isUnknown: false,
             isGroup: false
           });
 
-          if (onInitialConversationOpened) {
-            onInitialConversationOpened();
-          }
+          if (onInitialConversationOpened) onInitialConversationOpened();
         } catch (e) {
           console.error('Error opening initial conversation:', e);
         }
@@ -569,371 +141,111 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     }
   }, [initialConversation, userId]);
 
-  // Sync when app comes to foreground (smart refresh)
+  // Reactive Update for selectedChat if it converts to contact
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        console.log('📱 App came to foreground, syncing...');
-        syncFromServer(false);
+    if (selectedChat?.isUnknown && selectedChat.conversationId) {
+      const updatedItem = chatItems.find(item => item.conversationId === selectedChat.conversationId);
+      if (updatedItem && updatedItem.type === 'contact') {
+        setSelectedChat((prev: any) => prev ? ({
+          ...prev,
+          otherUserName: updatedItem.displayName,
+          otherUserPhone: updatedItem.phone,
+          isUnknown: false,
+          contactId: updatedItem.contactId,
+          alias: updatedItem.alias,
+          customFirstName: updatedItem.customFirstName,
+          customLastName: updatedItem.customLastName,
+          avatarUrl: updatedItem.avatarUrl || prev.avatarUrl
+        }) : null);
       }
-    });
-
-    return () => subscription.remove();
-  }, [syncFromServer]);
-
-  // Subscribe to real-time message updates
-  useEffect(() => {
-    if (!userId) return;
-
-    const channel = supabase
-      .channel('messages-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // INSERT, UPDATE, DELETE
-          schema: 'public',
-          table: 'messages',
-        },
-        (payload) => {
-          const msg = payload.new as any;
-
-          // For INSERT: Refresh list for new messages
-          if (payload.eventType === 'INSERT') {
-            console.log('📩 New message received, refreshing chat list');
-
-            const newMsg = payload.new as any;
-            const conversationId = newMsg.conversation_id;
-            const isMine = newMsg.sender_id === userId;
-            const isCurrentChat = selectedChat?.conversationId === conversationId;
-
-            // ✅ OPTIMIZATION: Update local database immediately
-            if (conversationId) {
-              let previewContent = newMsg.content;
-
-              if (!isMine) {
-                // Incoming: Encrypted payload -> Placeholder until sync
-                if (newMsg.type === 'text') {
-                  previewContent = 'Nuevo mensaje...';
-                } else if (newMsg.type === 'image') {
-                  previewContent = '📷 Foto';
-                } else if (newMsg.type === 'audio') {
-                  previewContent = '🎤 Audio';
-                }
-              } else {
-                // Outgoing (Mine): We likely have the REAL content in local DB from optimistic update
-                // But we need to fetch it to be sure, or trust that sendMessage updated 'messages' table
-                // We can't query SQLite synchronously easily inside this callback without imports or checks
-                // But 'loadFromLocalCache' below will reload the LIST from 'conversations'.
-                // We need to update 'conversations' table.
-
-                // If we simply use newMsg.content (encrypted), we break the UI.
-                // Ideally we shouldn't touch the preview for OWN messages here if we can't decrypt
-                // UNLESS we know what we sent.
-
-                // However, syncFromServer(true) will fix it. 
-                // To avoid "Nuevo mensaje..." flash, we SKIP updating preview content for isMine 
-                // and ONLY update the timestamp/order, OR we assume the list is already optimistic from sendMessage?
-                // Actually sendMessage OPTIMISTICALLY updates 'messages' but NOT 'conversations'.
-                // So we DO need to update 'conversations'.
-
-                // Let's try to pass the encrypted content? No.
-                // Let's set a generic "Tú: Mensaje" placeholder? No.
-
-                // Best bet: Don't overwrite content if isMine, just timestamp.
-                // But then the list order might update but empty preview? 
-                // Actually, let's trigger sync and rely on that for isMine content
-                // OR use 'Tu envió un mensaje'
-
-                // Better: Attempt to get content from local 'messages' table if possible?
-                // Easier: Check if we have the message in cache?
-                // Let's just use "..." for isMine if we can't get text, which is better than encrypted.
-                // But users hate "...".
-
-                // Allow sync to handle isMine content update, but force the timestamp update so it jumps to top.
-                // AND mark as unread? No, isMine doesn't increment unread.
-              }
-
-              // Update conversation metadata (moves to top)
-              // Only update content if !isMine (placeholder)
-              if (!isMine) {
-                updateConversationPreview(
-                  conversationId,
-                  previewContent,
-                  newMsg.created_at,
-                  !isCurrentChat // Increment unread
-                );
-              } else {
-                // For isMine, we just update timestamp to bump it?
-                // But we need to update 'last_message' too or it looks stale.
-                // We will skip local preview update for isMine and rely on sync, 
-                // BUT we must ensure sync happens fast.
-                // Actually, let's invoke syncFromServer immediately.
-              }
-
-              // Reload list from cache to show update instantly
-              loadFromLocalCache();
-            }
-
-            // Always force sync to get decrypted content for both sides
-            syncFromServer(false, true);
-          }
-
-          // For UPDATE: Refresh if status changed (e.g. read) to update badges
-          else if (payload.eventType === 'UPDATE') {
-            console.log('� Message updated, syncing...');
-            syncFromServer(false, true);
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('� Chat list realtime subscription:', status);
-      });
-
-    return () => {
-      console.log('🔌 Unsubscribing from chat list updates');
-      supabase.removeChannel(channel);
-    };
-  }, [userId]);
-
-  // EXPERIMENTAL: Subscribe to User Channel for DIRECT Broadcasts (Bypassing Postgres Lag)
-  useEffect(() => {
-    if (!userId) return;
-
-    const userChannel = supabase.channel(`user:${userId}`)
-      .on('broadcast', { event: 'new_message' }, (payload) => {
-        console.log('🚀 [Direct] New message broadcast received:', payload);
-        const newMsg = payload.payload;
-        if (newMsg) {
-          // Update preview instantly!
-          updateConversationPreview(
-            newMsg.conversationId,
-            newMsg.content, // Using decrypted/clean content from broadcast
-            newMsg.createdAt,
-            true // Increment unread
-          );
-          loadFromLocalCache();
-
-          // Still sync in background to be safe
-          syncFromServer(false, true);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(userChannel);
-    };
-  }, [userId]);
-
-
-  // Combine chat items with synced contacts (excluding duplicates) and SORT BY TIME
-  const allItems = useMemo(() => {
-    const existingUserIds = new Set(chatItems.map(c => c.otherUserId).filter(Boolean));
-    const uniqueSynced = syncedContacts.filter(s => !existingUserIds.has(s.otherUserId));
-
-    const merged = [...chatItems, ...uniqueSynced];
-
-    // Explicitly sort by last message time (newest first)
-    // This fixes the issue where latest chats might appear out of order initially
-    return merged.sort((a, b) => {
-      const timeA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
-      const timeB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
-
-      if (timeA !== timeB) return timeB - timeA;
-      // If no time, preserve original order (alphabetical or similar)
-      return (a.displayName || '').localeCompare(b.displayName || '');
-    });
-  }, [chatItems, syncedContacts]);
-
-  // Update filtered items when allItems, searchQuery, or activeFilter changes
-  useEffect(() => {
-    let result = allItems;
-
-    // Apply Tab Filter
-    if (activeFilter === 'groups') {
-      result = result.filter(item => item.type === 'group');
-    } else if (activeFilter === 'contacts') {
-      result = result.filter(item => item.type !== 'group');
     }
+  }, [chatItems, selectedChat?.conversationId, selectedChat?.isUnknown]);
 
-    // Apply Search Query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (item) =>
-          item.displayName?.toLowerCase().includes(query) ||
-          item.phone?.includes(query)
-      );
-    }
-
-    setFilteredItems(result);
-  }, [allItems, searchQuery, activeFilter]);
-
-  // Handle search (just updates state now, useEffect handles the logic)
-  const handleSearch = (text: string) => {
-    setSearchQuery(text);
-  };
-
-  // Handle chat item tap - start or get conversation
-  const handleItemPress = async (item: ChatListItem) => {
+  // Handlers
+  const handleItemPress = async (chat: ChatListItemType) => {
     try {
-      let conversationId: string;
-
-      if (item.conversationId) {
-        // Already has conversation
-        conversationId = item.conversationId;
-      } else {
-        // Need to start/get conversation (synced contact or contact without chat)
-        console.log('🚀 Starting conversation with:', item.otherUserId);
-        const response = await chatService.startConversation(userId, item.otherUserId);
+      let conversationId = chat.conversationId;
+      if (!conversationId) {
+        const response = await chatService.startConversation(userId, chat.otherUserId);
         conversationId = response.conversationId;
-        console.log('✅ Got conversationId:', conversationId);
       }
 
       setSelectedChat({
         conversationId,
-        otherUserName: item.displayName,
-        otherUserPhone: item.phone,
-        otherUserId: item.otherUserId,
-        isUnknown: item.type === 'unknown',
-        isGroup: item.type === 'group',
-        description: item.description,
-        contactId: item.contactId,
-        alias: item.alias,
-        customFirstName: item.customFirstName,
-        customLastName: item.customLastName,
-        avatarUrl: item.avatarUrl,
+        otherUserName: chat.displayName,
+        otherUserPhone: chat.phone,
+        otherUserId: chat.otherUserId,
+        isUnknown: chat.type === 'unknown',
+        isGroup: chat.type === 'group',
+        description: chat.description,
+        contactId: chat.contactId,
+        alias: chat.alias,
+        customFirstName: chat.customFirstName,
+        customLastName: chat.customLastName,
+        avatarUrl: chat.avatarUrl,
       });
     } catch (err) {
       console.error('Error starting conversation:', err);
-      setError('Error al iniciar conversación');
     }
   };
 
-  // Handle contact deletion
-  const handleDeleteContact = (item: ChatListItem) => {
-    if (item.type !== 'contact' || !item.contactId) return;
+  const handleLongPress = (item: ChatListItemType) => {
+    const options: any[] = [
+      { text: 'Cancelar', style: 'cancel' },
+    ];
 
-    Alert.alert(
-      'Eliminar contacto',
-      `¿Estás seguro de que quieres eliminar a ${item.displayName}? Se borrarán todas las conversaciones y mensajes asociados.`,
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              if (item.contactId) {
-                await contactService.deleteContact(item.contactId);
-              }
-              // Refresh list
-              loadChats();
-            } catch (error) {
-              console.error('Error deleting contact:', error);
-              Alert.alert('Error', 'No se pudo eliminar el contacto');
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    if (item.conversationId) {
+      options.push({
+        text: 'Eliminar Chat',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert('Eliminar Chat', `¿Borrar chat con ${item.displayName}?`, [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Eliminar', style: 'destructive', onPress: () => deleteChat(item.conversationId!) }
+          ]);
+        }
+      });
+    }
+
+    if (options.length > 1) {
+      Alert.alert('Opciones', `¿Qué deseas hacer con ${item.displayName}?`, options);
+    }
   };
 
-  // Handle back from chat - load cache immediately, sync later
-  const handleBack = useCallback(() => {
+  const handleBackFromChat = useCallback(() => {
     setSelectedChat(null);
-    // Force immediate refresh bypassing throttle
-    console.log('🔄 Closing chat, forcing immediate sync...');
-    loadFromLocalCache(); // Show updated cache instantly
-    syncFromServer(false, true); // Force sync (bypass 30s throttle)
+    loadFromLocalCache();
+    syncFromServer(false, true);
   }, [loadFromLocalCache, syncFromServer]);
 
-  // Android hardware back: if inside a chat, go back to chat list instead of exiting the app.
+  // Android Back Handler
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    if (!selectedChat) return;
-
+    if (Platform.OS !== 'android' || !selectedChat) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      handleBack();
+      handleBackFromChat();
       return true;
     });
-
     return () => sub.remove();
-  }, [selectedChat, handleBack]);
+  }, [selectedChat, handleBackFromChat]);
 
-  // Handle adding unknown contact
-  const handleAddUnknownContact = () => {
-    if (selectedChat?.otherUserPhone) {
-      setPrefillPhone(selectedChat.otherUserPhone);
-      setShowAddContactModal(true);
-    }
-  };
-
-  // Handle contacts sync
-  const handleSyncContacts = async () => {
-    setSyncResult(null);
-    setSyncedContacts([]);
-    const results = await startSync();
-    // Filter: must be on Tincadia, have userId, and NOT be the current user
-    const foundContacts = results.filter(m => m.isOnTincadia && m.userId && m.userId !== userId);
-    setSyncResult({ found: foundContacts.length, total: results.length });
-    setShowSyncBanner(false);
-
-    // Convert matches to ChatListItems
-    const syncedItems: ChatListItem[] = foundContacts.map((match, index) => ({
-      id: `synced-${match.userId}-${index}`,
-      type: 'synced' as const,
-      displayName: match.contact, // Phone number for now
-      phone: match.contact,
-      otherUserId: match.userId!,
-      unreadCount: 0,
-    }));
-
-    console.log('📱 Synced contacts (excluding self):', syncedItems.length);
-    setSyncedContacts(syncedItems);
-
-    // Save to AsyncStorage for persistence
-    try {
-      await AsyncStorage.setItem(SYNCED_CONTACTS_KEY, JSON.stringify(syncedItems));
-      console.log('📱 Saved synced contacts to storage');
-    } catch (err) {
-      console.error('Error saving synced contacts:', err);
-    }
-
-    loadChats();
-  };
-
-  // Show individual chat if selected
+  // UI Render Logic
   if (selectedChat) {
     const keyboardOffset = Platform.OS === 'ios' ? 100 : 0;
-
     return (
-      <KeyboardSafeView style={styles.container} offset={keyboardOffset} dismissOnPress={false}>
-        <StatusBar style="dark" />
+      <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]} offset={keyboardOffset} dismissOnPress={false}>
+        <StatusBar style={colors.statusBar} />
         <ChatView
-          conversationId={selectedChat.conversationId}
-          otherUserName={selectedChat.otherUserName}
-          otherUserPhone={selectedChat.otherUserPhone}
-          otherUserId={selectedChat.otherUserId}
-          otherUserAvatar={selectedChat.avatarUrl}
-          isUnknown={selectedChat.isUnknown}
-          isGroup={selectedChat.isGroup}
+          {...selectedChat}
           userId={userId}
           currentUser={user}
-          onBack={handleBack}
-          onAddContact={handleAddUnknownContact}
-          contactId={selectedChat.contactId}
-          alias={selectedChat.alias}
-          customFirstName={selectedChat.customFirstName}
-          customLastName={selectedChat.customLastName}
-          groupDescription={selectedChat.description}
+          onBack={handleBackFromChat}
+          onAddContact={() => {
+            if (selectedChat.otherUserPhone) {
+              setPrefillData({ phone: selectedChat.otherUserPhone, firstName: '', lastName: '', userId: undefined });
+              setShowAddContactModal(true);
+            }
+          }}
           onContactUpdate={(contact) => {
-            // Save contact to local cache immediately
             if (contact && userId) {
               saveContact({
                 id: contact.id,
@@ -945,19 +257,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
                 customLastName: contact.customLastName,
               });
             }
-
-            // Update selected chat immediately with new contact info
-            const displayName = contact.alias ||
-              `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim() ||
-              contact.phone;
-
-            setSelectedChat(prev => prev ? ({
-              ...prev,
-              otherUserName: displayName,
-              isUnknown: false
-            }) : null);
-
-            // Force server sync (bypass throttle by updating sync time first)
+            setSelectedChat((prev: any) => prev ? ({ ...prev, otherUserName: contact.alias || `${contact.customFirstName} ${contact.customLastName}`.trim(), isUnknown: false }) : null);
             syncFromServer(false);
           }}
           onNavigateCall={(roomName, username, conversationId, passedUserId) => onNavigate('call', { roomName, username, conversationId, userId: passedUserId })}
@@ -966,65 +266,23 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     );
   }
 
-  // Show notifications screen if selected
   if (showNotifications) {
-    return (
-      <NotificationsScreen
-        userId={userId}
-        onBack={() => setShowNotifications(false)}
-      />
-    );
+    return <NotificationsScreen userId={userId} onBack={() => setShowNotifications(false)} />;
   }
 
-  // Show user list
   return (
-    <KeyboardSafeView style={styles.container}>
-      <StatusBar style="dark" />
+    <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style={colors.statusBar} />
+      
+      <ChatsHeader
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        unreadCount={unreadNotificationCount}
+        onNotificationsPress={() => setShowNotifications(true)}
+        styles={styles}
+      />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>Chats</Text>
-          <TouchableOpacity
-            style={styles.notificationButton}
-            onPress={() => setShowNotifications(true)}
-          >
-            <NotificationIcon size={24} color="#333333" />
-            {unreadNotificationCount > 0 && (
-              <View style={{
-                position: 'absolute',
-                top: -4,
-                right: -4,
-                backgroundColor: '#EF4444',
-                borderRadius: 10,
-                minWidth: 18,
-                height: 18,
-                justifyContent: 'center',
-                alignItems: 'center',
-                paddingHorizontal: 4,
-              }}>
-                <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>
-                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <SearchIcon size={20} color="#666666" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar chats"
-            value={searchQuery}
-            onChangeText={handleSearch}
-            placeholderTextColor="#666666"
-          />
-        </View>
-      </View>
-
-      {/* Sync Contacts Banner */}
+      {/* Banners & Progress */}
       {showSyncBanner && !isSyncing && !syncResult && (
         <TouchableOpacity style={styles.syncBanner} onPress={handleSyncContacts}>
           <View style={styles.syncBannerContent}>
@@ -1038,78 +296,42 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         </TouchableOpacity>
       )}
 
-      {/* Syncing Progress */}
       {isSyncing && (
         <View style={styles.syncProgress}>
           <ActivityIndicator size="small" color="#7FA889" />
-          <Text style={styles.syncProgressText}>
-            Sincronizando... {progress?.percentage || 0}%
-          </Text>
+          <Text style={styles.syncProgressText}>Sincronizando... {progress?.percentage || 0}%</Text>
         </View>
       )}
 
-      {/* Sync Result */}
-      {syncResult && (
-        <View style={styles.syncResult}>
-          <Text style={styles.syncResultText}>
-            ✓ {syncResult.found} contactos encontrados en Tincadia
-          </Text>
-        </View>
-      )}
-
-      {/* Sync Error */}
-      {syncError && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{syncError}</Text>
-        </View>
-      )}
-
-      {/* Filters Bar */}
-      <View style={styles.filtersContainer}>
-        <TouchableOpacity
-          style={[styles.filterChip, activeFilter === 'all' && styles.filterChipActive]}
-          onPress={() => setActiveFilter('all')}
-        >
-          <Text style={[styles.filterText, activeFilter === 'all' && styles.filterTextActive]}>
-            Todos
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.filterChip, activeFilter === 'contacts' && styles.filterChipActive]}
-          onPress={() => setActiveFilter('contacts')}
-        >
-          <Text style={[styles.filterText, activeFilter === 'contacts' && styles.filterTextActive]}>
-            Contactos
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.filterChip, activeFilter === 'groups' && styles.filterChipActive]}
-          onPress={() => setActiveFilter('groups')}
-        >
-          <Text style={[styles.filterText, activeFilter === 'groups' && styles.filterTextActive]}>
-            Grupos
-          </Text>
-        </TouchableOpacity>
+      {/* Filters */}
+      <View style={[styles.filtersContainer, { backgroundColor: colors.background }]}>
+        {['all', 'contacts', 'groups'].map((f) => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.filterChip, { backgroundColor: colors.surface }, activeFilter === f && styles.filterChipActive]}
+            onPress={() => setActiveFilter(f as any)}
+          >
+            <Text style={[styles.filterText, { color: colors.textSecondary }, activeFilter === f && styles.filterTextActive]}>
+              {f === 'all' ? 'Todos' : f === 'contacts' ? 'Contactos' : 'Grupos'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      {/* Error Message */}
-      {error && (
+      {/* Error & Loading */}
+      {(error || syncError) && (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>{error || syncError}</Text>
         </View>
       )}
 
-      {/* Loading State */}
-      {isLoading && chatItems.length === 0 && (
+      {isLoading && filteredItems.length === 0 && (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#7FA889" />
           <Text style={styles.loadingText}>Cargando chats...</Text>
         </View>
       )}
 
-      {/* Empty State */}
       {!isLoading && filteredItems.length === 0 && !error && (
         <View style={styles.centerContainer}>
           <Text style={styles.emptyStateText}>No tienes chats aún</Text>
@@ -1117,185 +339,79 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         </View>
       )}
 
-      {/* Chats List */}
+      {/* Chat List */}
       <FlatList
         data={filteredItems}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => {
-          const initials = item.displayName
-            .split(' ')
-            .map((n) => n[0])
-            .join('')
-            .slice(0, 2)
-            .toUpperCase() || '?';
-
-          return (
-            <View style={styles.chatItemRow}>
-              <TouchableOpacity
-                style={styles.chatItem}
-                onPress={() => handleItemPress(item)}
-                onLongPress={() => handleDeleteContact(item)}
-                delayLongPress={500}
-              >
-                {/* Avatar with initials */}
-                <View style={[
-                  styles.avatarContainer,
-                  item.type === 'unknown' && { backgroundColor: '#9CA3AF' },
-                  item.type === 'synced' && { backgroundColor: '#3B82F6' },
-                  // Remove background color if image exists so it doesn't bleed
-                  item.avatarUrl ? { backgroundColor: 'transparent' } : {}
-                ]}>
-                  {item.avatarUrl ? (
-                    <Image
-                      source={{ uri: item.avatarUrl }}
-                      style={{ width: 48, height: 48, borderRadius: 24 }}
-                    />
-                  ) : (
-                    <Text style={styles.avatarText}>{initials}</Text>
-                  )}
-                </View>
-
-                {/* Chat Info */}
-                <View style={styles.chatContent}>
-                  <View style={styles.chatHeader}>
-                    <Text style={styles.chatName}>{item.displayName}</Text>
-                    <Text style={[styles.timestamp, item.type === 'synced' && { color: '#3B82F6' }]}>
-                      {item.type === 'synced'
-                        ? '✓ En Tincadia'
-                        : item.lastMessageTime
-                          ? formatMessageTime(item.lastMessageTime)
-                          : item.type === 'unknown' ? 'Desconocido' : ''}
-                    </Text>
-                  </View>
-                  <View style={styles.messageRow}>
-                    <Text style={styles.lastMessage} numberOfLines={1}>
-                      {item.lastMessage
-                        ? (item.lastMessage.includes('📞') || item.lastMessage.includes('Llamada'))
-                          ? <Text style={{ color: item.lastMessage.includes('finalizada') ? '#EF4444' : '#3B82F6', fontWeight: '500' }}>
-                            {item.lastMessage.includes('finalizada') ? '☎️ Llamada finalizada' : '📞 Llamada entrante'}
-                          </Text>
-                          : ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
-                            (item.lastMessage.includes('/chat-media/') ||
-                              item.lastMessage.match(/\.(jpg|jpeg|png|gif|webp)/i)))
-                            ? '📷 Imagen'
-                            : ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
-                              item.lastMessage.match(/\.(m4a|mp3|wav|ogg|aac)/i))
-                              ? '🎵 Audio'
-                              : item.lastMessage
-                        : item.phone}
-                    </Text>
-                    {/* Unread count badge - green */}
-                    {item.unreadCount > 0 && (
-                      <View style={styles.unreadBadge}>
-                        <Text style={styles.unreadBadgeText}>
-                          {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
-
-              {/* Add contact button for synced contacts */}
-              {item.type === 'synced' && (
-                <TouchableOpacity
-                  style={styles.addContactButton}
-                  onPress={() => {
-                    setPrefillPhone(item.phone);
-                    // Try to split displayName into first and last name
-                    const nameParts = (item.displayName || '').split(' ');
-                    setPrefillFirstName(nameParts[0] || '');
-                    setPrefillLastName(nameParts.slice(1).join(' ') || '');
-                    setShowAddContactModal(true);
-                  }}
-                >
-                  <PlusIcon size={20} color="#3B82F6" />
-                </TouchableOpacity>
-              )}
-            </View>
-          );
-        }}
+        renderItem={({ item }) => (
+          <ChatListItem
+            item={item}
+            onPress={handleItemPress}
+            onLongPress={handleLongPress}
+            onAddContact={(i) => {
+              const nameParts = (i.displayName || '').split(' ');
+              setPrefillData({
+                phone: i.phone,
+                firstName: nameParts[0] || '',
+                lastName: nameParts.slice(1).join(' ') || '',
+                userId: i.otherUserId
+              });
+              setShowAddContactModal(true);
+            }}
+            styles={styles}
+          />
+        )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={isLoading}
-            onRefresh={loadChats}
-            colors={['#7FA889']}
-            tintColor="#7FA889"
-          />
-        }
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={loadChats} colors={['#7FA889']} tintColor="#7FA889" />}
       />
 
-      {/* FAB Menu Overlay */}
-      {showFabMenu && (
-        <TouchableOpacity
-          style={styles.fabOverlay}
-          activeOpacity={1}
-          onPress={() => setShowFabMenu(false)}
-        />
-      )}
+      {/* FAB Overlay */}
+      {showFabMenu && <TouchableOpacity style={styles.fabOverlay} activeOpacity={1} onPress={() => setShowFabMenu(false)} />}
 
-      {/* FAB Menu Items */}
+      {/* FAB Menu */}
       {showFabMenu && (
         <View style={styles.fabMenuContainer}>
-          <View style={styles.fabMenuItem}>
-            <View style={styles.fabMenuLabel}>
-              <Text style={styles.fabMenuLabelText}>Nuevo grupo</Text>
+          {[
+            { label: 'Nuevo grupo', icon: <InviteIcon size={24} color="#374151" />, action: () => onNavigate('new_group') },
+            { label: 'Nuevo contacto', icon: <AccountIcon size={24} color="#374151" />, action: () => setShowAddContactModal(true) },
+          ].map((item, idx) => (
+            <View key={idx} style={styles.fabMenuItem}>
+              <View style={styles.fabMenuLabel}><Text style={styles.fabMenuLabelText}>{item.label}</Text></View>
+              <TouchableOpacity style={styles.fabMenuButton} onPress={() => { setShowFabMenu(false); item.action(); }}>
+                {item.icon}
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.fabMenuButton}
-              onPress={() => {
-                setShowFabMenu(false);
-                onNavigate('new_group');
-              }}
-            >
-              <InviteIcon size={24} color="#374151" />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.fabMenuItem}>
-            <View style={styles.fabMenuLabel}>
-              <Text style={styles.fabMenuLabelText}>Nuevo contacto</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.fabMenuButton}
-              onPress={() => {
-                setShowFabMenu(false);
-                setShowAddContactModal(true);
-              }}
-            >
-              <AccountIcon size={24} color="#374151" />
-            </TouchableOpacity>
-          </View>
+          ))}
         </View>
       )}
 
       {/* Main FAB */}
-      <TouchableOpacity
-        style={styles.newChatButton}
-        onPress={() => setShowFabMenu(!showFabMenu)}
-        activeOpacity={0.8}
-      >
+      <TouchableOpacity style={styles.newChatButton} onPress={() => setShowFabMenu(!showFabMenu)} activeOpacity={0.8}>
         <View style={{ transform: [{ rotate: showFabMenu ? '45deg' : '0deg' }] }}>
           <PlusIcon size={24} color="#FFFFFF" />
         </View>
       </TouchableOpacity>
 
-      {/* Add Contact Modal */}
       <AddContactModal
         visible={showAddContactModal}
-        onClose={() => {
-          setShowAddContactModal(false);
-          setPrefillPhone('');
-          setPrefillFirstName('');
-          setPrefillLastName('');
+        onClose={() => { setShowAddContactModal(false); setPrefillData({ phone: '', firstName: '', lastName: '', userId: undefined }); }}
+        onContactAdded={(contact) => {
+          if (contact && contact.contactUserId) {
+            const newSynced = syncedContacts.filter(s => s.otherUserId !== contact.contactUserId);
+            if (newSynced.length !== syncedContacts.length) {
+              setSyncedContacts(newSynced);
+              AsyncStorage.setItem(SYNCED_CONTACTS_KEY, JSON.stringify(newSynced)).catch(console.error);
+            }
+          }
+          loadChats();
         }}
-        onContactAdded={loadChats}
         userId={userId}
-        initialPhone={prefillPhone}
-        initialFirstName={prefillFirstName}
-        initialLastName={prefillLastName}
+        initialPhone={prefillData.phone}
+        initialFirstName={prefillData.firstName}
+        initialLastName={prefillData.lastName}
+        initialContactUserId={prefillData.userId}
+        onSyncRequested={() => { setShowAddContactModal(false); setShowSyncBanner(true); handleSyncContacts(); }}
       />
 
       <BottomNavigation currentScreen="chats" onNavigate={onNavigate} />
@@ -1303,5 +419,4 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   );
 }
 
-// Use styles from external file
 const styles = chatsListStyles;

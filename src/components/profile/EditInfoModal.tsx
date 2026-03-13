@@ -9,7 +9,10 @@ interface EditInfoModalProps {
     onCancel: () => void;
 }
 
+import { useTheme } from '../../contexts/ThemeContext';
+
 export function EditInfoModal({ visible, title, initialValue, onSave, onCancel }: EditInfoModalProps) {
+    const { colors, isDark } = useTheme();
     const [value, setValue] = useState(initialValue);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -43,16 +46,17 @@ export function EditInfoModal({ visible, title, initialValue, onSave, onCancel }
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                         <KeyboardAvoidingView
                             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                            style={styles.modalView}
+                            style={[styles.modalView, { backgroundColor: isDark ? colors.card : 'white', shadowColor: colors.shadowColor }]}
                         >
-                            <Text style={styles.modalTitle}>{title}</Text>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>{title}</Text>
 
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: isDark ? colors.inputBg : '#FFFFFF', color: colors.text, borderColor: colors.border }]}
                                 value={value}
                                 onChangeText={setValue}
                                 autoFocus={true}
                                 selectTextOnFocus={true}
+                                placeholderTextColor={colors.textMuted}
                             />
 
                             <View style={styles.buttonContainer}>
@@ -65,7 +69,7 @@ export function EditInfoModal({ visible, title, initialValue, onSave, onCancel }
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.button, styles.buttonSave]}
+                                    style={[styles.button, styles.buttonSave, { backgroundColor: colors.primary }]}
                                     onPress={handleSave}
                                     disabled={isLoading}
                                 >
@@ -111,11 +115,14 @@ const styles = StyleSheet.create({
         marginBottom: 15,
     },
     input: {
-        borderBottomWidth: 2,
-        borderBottomColor: '#007AFF', // Tincadia Brand Color? Using standard blue for now or #83A98A
+        backgroundColor: '#FFFFFF',
+        borderRadius: 30,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         fontSize: 16,
-        paddingVertical: 8,
         marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
     },
     buttonContainer: {
         flexDirection: 'row',
@@ -136,7 +143,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#007AFF',
     },
     textCancel: {
-        color: '#007AFF',
+        color: '#007AFF', // You might want to use colors.primary here too if you pass it to styles, but inline is easier
         fontWeight: 'bold',
     },
     textSave: {

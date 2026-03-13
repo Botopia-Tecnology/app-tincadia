@@ -23,6 +23,7 @@ import { saveContact, getMediaForConversation, saveMediaUrl, getMediaUrl } from 
 import { contactProfileStyles as styles } from '../../styles/ContactProfile.styles';
 import { BackArrowIcon } from '../icons/NavigationIcons';
 import { mediaService } from '../../services/media.service';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export interface ContactProfileProps {
     userId: string;
@@ -39,6 +40,7 @@ export interface ContactProfileProps {
     onBack: () => void;
     onContactUpdated?: (contact: Contact) => void;
     onContactAdded?: (contact: Contact) => void;
+    onDeleteContact?: () => void;
 }
 
 interface UserProfile {
@@ -68,10 +70,15 @@ export function ContactProfileScreen({
     onBack,
     onContactUpdated,
     onContactAdded,
+    onDeleteContact,
 }: ContactProfileProps) {
+    const { colors, isDark } = useTheme();
     const [isEditing, setIsEditing] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+
+    // DEBUG: Log props to debug missing buttons
+    // console.log('ContactProfileScreen Render:', { isContact, hasDeleteProp: !!onDeleteContact, userId, otherUserId });
 
     // Form state
     const [alias, setAlias] = useState(initialAlias || '');
@@ -289,25 +296,41 @@ export function ContactProfileScreen({
 
     const effectivePhone = getPhone();
 
+    // Dynamic styles for dark mode
+    const themeStyles = {
+        container: { backgroundColor: colors.background },
+        header: { backgroundColor: colors.card, borderBottomColor: colors.border },
+        text: { color: colors.text },
+        textSecondary: { color: colors.textSecondary },
+        section: { backgroundColor: colors.card },
+        input: {
+            backgroundColor: isDark ? colors.inputBg : '#F3F4F6',
+            color: colors.text,
+            borderColor: colors.border
+        },
+        backButton: { backgroundColor: isDark ? colors.surface : '#F3F4F6' },
+        icon: { color: colors.text }
+    };
+
     if (isLoading) {
         return (
-            <SafeAreaView style={styles.container} edges={['top']}>
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#7FA889" />
+            <SafeAreaView style={[styles.container, themeStyles.container]} edges={['top']}>
+                <View style={[styles.loadingContainer, themeStyles.container]}>
+                    <ActivityIndicator size="large" color={colors.primary} />
                 </View>
             </SafeAreaView>
         );
     }
 
     return (
-        <View style={styles.container}>
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={[styles.container, themeStyles.container]}>
+            <ScrollView style={[styles.content, themeStyles.container]} showsVerticalScrollIndicator={false}>
                 {/* Header Section */}
-                <View style={styles.header}>
+                <View style={[styles.header, themeStyles.header]}>
                     {/* Navigation Row */}
                     <View style={styles.headerNavRow}>
-                        <TouchableOpacity style={styles.backButton} onPress={onBack}>
-                            <BackArrowIcon size={24} color="#111827" />
+                        <TouchableOpacity style={[styles.backButton, themeStyles.backButton]} onPress={onBack}>
+                            <BackArrowIcon size={24} color={colors.text} />
                         </TouchableOpacity>
 
                         {isContact && !isEditing && (
@@ -339,8 +362,8 @@ export function ContactProfileScreen({
                     </View>
 
                     {/* Name and Phone */}
-                    <Text style={styles.headerName}>{getDisplayName()}</Text>
-                    <Text style={styles.headerPhone}>{effectivePhone || 'Sin teléfono'}</Text>
+                    <Text style={[styles.headerName, themeStyles.text]}>{getDisplayName()}</Text>
+                    <Text style={[styles.headerPhone, themeStyles.textSecondary]}>{effectivePhone || 'Sin teléfono'}</Text>
 
                     {/* Show original name if viewing non-contact */}
                     {!isContact && originalProfile && (originalProfile.firstName || originalProfile.lastName) && (
@@ -351,48 +374,48 @@ export function ContactProfileScreen({
                 </View>
 
                 {/* Contact Info Section */}
-                <View style={styles.section}>
+                <View style={[styles.section, themeStyles.section]}>
                     <Text style={styles.sectionTitle}>Información del Contacto</Text>
 
                     {/* Phone (read-only) */}
-                    <View style={styles.field}>
+                    <View style={[styles.field, { borderBottomColor: colors.border }]}>
                         <Text style={styles.fieldLabel}>Teléfono</Text>
                         <View style={styles.phoneContainer}>
-                            <Text style={styles.phoneText}>{effectivePhone || 'No disponible'}</Text>
+                            <Text style={[styles.phoneText, themeStyles.text]}>{effectivePhone || 'No disponible'}</Text>
                         </View>
                     </View>
 
                     {/* Alias */}
-                    <View style={styles.field}>
+                    <View style={[styles.field, { borderBottomColor: colors.border }]}>
                         <Text style={styles.fieldLabel}>Alias / Apodo</Text>
                         {isEditing || !isContact ? (
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, themeStyles.input]}
                                 value={alias}
                                 onChangeText={setAlias}
                                 placeholder="Ej: Mamá, Trabajo, etc."
-                                placeholderTextColor="#6B7280"
+                                placeholderTextColor={colors.textMuted}
                             />
                         ) : (
-                            <Text style={alias ? styles.fieldValue : styles.fieldValueEmpty}>
+                            <Text style={[alias ? styles.fieldValue : styles.fieldValueEmpty, themeStyles.text]}>
                                 {alias || 'Sin alias'}
                             </Text>
                         )}
                     </View>
 
                     {/* First Name */}
-                    <View style={styles.field}>
+                    <View style={[styles.field, { borderBottomColor: colors.border }]}>
                         <Text style={styles.fieldLabel}>Nombre</Text>
                         {isEditing || !isContact ? (
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, themeStyles.input]}
                                 value={firstName || (originalProfile?.firstName || '')}
                                 onChangeText={setFirstName}
                                 placeholder="Nombre"
-                                placeholderTextColor="#6B7280"
+                                placeholderTextColor={colors.textMuted}
                             />
                         ) : (
-                            <Text style={firstName ? styles.fieldValue : styles.fieldValueEmpty}>
+                            <Text style={[firstName ? styles.fieldValue : styles.fieldValueEmpty, themeStyles.text]}>
                                 {firstName || 'Sin nombre'}
                             </Text>
                         )}
@@ -403,14 +426,14 @@ export function ContactProfileScreen({
                         <Text style={styles.fieldLabel}>Apellido</Text>
                         {isEditing || !isContact ? (
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, themeStyles.input]}
                                 value={lastName || (originalProfile?.lastName || '')}
                                 onChangeText={setLastName}
                                 placeholder="Apellido"
-                                placeholderTextColor="#6B7280"
+                                placeholderTextColor={colors.textMuted}
                             />
                         ) : (
-                            <Text style={lastName ? styles.fieldValue : styles.fieldValueEmpty}>
+                            <Text style={[lastName ? styles.fieldValue : styles.fieldValueEmpty, themeStyles.text]}>
                                 {lastName || 'Sin apellido'}
                             </Text>
                         )}
@@ -420,8 +443,8 @@ export function ContactProfileScreen({
                 {/* Action Buttons */}
                 {isEditing && (
                     <View style={styles.buttonContainer}>
-                        <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
-                            <Text style={styles.cancelButtonText}>Cancelar</Text>
+                        <TouchableOpacity style={[styles.cancelButton, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={handleCancel}>
+                            <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Cancelar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={styles.saveButton}
@@ -435,6 +458,16 @@ export function ContactProfileScreen({
                             )}
                         </TouchableOpacity>
                     </View>
+                )}
+
+                {/* Delete Contact Button (Only if existing contact) */}
+                {isContact && (
+                    <TouchableOpacity
+                        style={[styles.logoutButton, { marginTop: 24, marginBottom: 8 }]}
+                        onPress={() => onDeleteContact && onDeleteContact()}
+                    >
+                        <Text style={styles.logoutButtonText}>Eliminar Contacto</Text>
+                    </TouchableOpacity>
                 )}
 
                 {/* Add Contact Button for non-contacts */}
@@ -454,7 +487,7 @@ export function ContactProfileScreen({
 
                 {/* Shared Media Section */}
                 {(mediaItems.length > 0 || isLoadingMedia) && (
-                    <View style={styles.section}>
+                    <View style={[styles.section, themeStyles.section]}>
                         <View style={styles.mediaSectionHeader}>
                             <Text style={styles.sectionTitle}>
                                 Archivos, enlaces y docs

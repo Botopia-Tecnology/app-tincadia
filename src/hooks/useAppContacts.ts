@@ -42,7 +42,17 @@ export function useAppContacts(userId: string) {
         setIsSyncing(true);
         try {
             // 1. Get last sync time
-            const lastSync = await AsyncStorage.getItem(`${LAST_SYNC_KEY}${userId}`);
+            // 1. Get last sync time
+            let lastSync = await AsyncStorage.getItem(`${LAST_SYNC_KEY}${userId}`);
+
+            // Force full sync if local cache is empty
+            // This handles cases where data was wiped but AsyncStorage key persisted,
+            // or if the user claims to have contacts but they aren't showing.
+            const localCheck = getLocalContacts(userId);
+            if (localCheck.length === 0) {
+                console.log('⚠️ Local cache empty, forcing full contact sync');
+                lastSync = null;
+            }
 
             // 2. Fetch delta (updates since lastSync)
             console.log(`[Contacts] Syncing since: ${lastSync || 'ALL'}`);

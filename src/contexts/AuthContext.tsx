@@ -15,6 +15,7 @@ import React, {
 } from 'react';
 import { authService } from '../services/auth.service';
 import { setOnUnauthorizedCallback } from '../lib/api-client';
+import * as Sentry from '@sentry/react-native';
 import type {
     User,
     LoginDto,
@@ -49,7 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         setOnUnauthorizedCallback(() => {
             setUser(null);
-            setError('Session expired. Please login again.');
+            setError('Tu sesión ha expirado. Por favor inicia sesión nuevamente.');
         });
     }, []);
 
@@ -57,14 +58,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         const checkAuth = async () => {
             try {
-                const hasToken = await authService.hasStoredToken();
-                if (!hasToken) {
-                    setIsLoading(false);
-                    return;
-                }
+                // Timeout promise
+                const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Auth check timeout')), 5000));
 
-                // Try to get current user from API to validate token
-                const result = await authService.getCurrentUser();
+                // Actual check
+                const authCheck = async () => {
+                    const hasToken = await authService.hasStoredToken();
+                    if (!hasToken) {
+                        return null;
+                    }
+                    return await authService.getCurrentUser();
+                };
+
+                // Race
+                const result: any = await Promise.race([authCheck(), timeout]);
+
                 if (result) {
                     setUser({
                         ...result.user,
@@ -72,14 +80,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     });
                 } else {
                     // Token invalid or API unreachable - clear everything
-                    console.log('Token validation failed, clearing auth data');
-                    await authService.logout();
+                    console.log('Token check returned null or failed, clearing auth data');
+                    // await authService.logout(); // Avoid calling if potentially stuck, just clear local state logic
                     setUser(null);
                 }
             } catch (err) {
                 console.error('Auth check failed:', err);
                 // Clear invalid auth state - don't use cached data
-                await authService.logout();
                 setUser(null);
             } finally {
                 setIsLoading(false);
@@ -112,7 +119,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log('🔑 Merged user isProfileComplete:', mergedUser.isProfileComplete);
             setUser(mergedUser);
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Login failed';
+            Sentry.captureException(err);
+            const message = err instanceof Error ? err.message : 'Error al iniciar sesión';
             setError(message);
             throw err;
         } finally {
@@ -130,7 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 isProfileComplete: response.isProfileComplete ?? response.user.isProfileComplete,
             });
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Registration failed';
+            Sentry.captureException(err);
+            const message = err instanceof Error ? err.message : 'Falla en el registro';
             setError(message);
             throw err;
         } finally {
@@ -148,7 +157,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 isProfileComplete: response.isProfileComplete ?? response.user.isProfileComplete,
             });
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'OAuth login failed';
+            Sentry.captureException(err);
+            const message = err instanceof Error ? err.message : 'Falla en inicio de sesión con OAuth';
             setError(message);
             throw err;
         } finally {
@@ -170,7 +180,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } : null);
         } catch (err) {
             // Don't trigger logout on profile update errors
-            const message = err instanceof Error ? err.message : 'Profile update failed';
+            Sentry.captureException(err);
+            const message = err instanceof Error ? err.message : 'Falla al actualizar perfil';
             setError(message);
             throw err;
         }

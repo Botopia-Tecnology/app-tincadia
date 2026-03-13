@@ -4,6 +4,7 @@ import { Video, ResizeMode, Audio } from 'expo-av';
 import { messageBubbleStyles as styles } from '../../styles/ChatComponents.styles';
 import { Ionicons } from '@expo/vector-icons';
 import { mediaService } from '../../services/media.service';
+import Autolink from 'react-native-autolink';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -19,6 +20,7 @@ interface MessageBubbleProps {
     replyToSender?: string;
     publicId?: string;
     duration?: number; // New prop for audio duration in seconds
+    senderName?: string;
 }
 
 export function MessageBubble({
@@ -31,7 +33,8 @@ export function MessageBubble({
     replyToContent,
     replyToSender,
     publicId,
-    duration
+    duration,
+    senderName
 }: MessageBubbleProps) {
     const [mediaUri, setMediaUri] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -291,11 +294,20 @@ export function MessageBubble({
     if (type === 'text' || type === 'call' || type === 'call_ended') {
         return (
             <View style={[styles.container, isMine ? styles.containerMine : styles.containerOther]}>
-                <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-                    {renderReplyQuote()}
-                    <Text style={[styles.content, isMine ? styles.contentMine : styles.contentOther]}>
-                        {content}
-                    </Text>
+            <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                {senderName && (
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#4CAF50', marginBottom: 2 }}>{senderName}</Text>
+                )}
+                {renderReplyQuote()}
+                    <Autolink
+                        text={content}
+                        email
+                        url
+                        stripPrefix={false}
+                        selectable={true}
+                        linkStyle={{ textDecorationLine: 'underline', color: isMine ? 'white' : '#4F46E5', fontWeight: 'bold' }}
+                        style={[styles.content, isMine ? styles.contentMine : styles.contentOther]}
+                    />
                     <View style={styles.footer}>
                         <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
                             {formatTime(time)}

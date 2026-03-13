@@ -149,19 +149,26 @@ export const chatService = {
     /**
      * Edit a message
      */
-    async editMessage(messageId: string, content: string): Promise<{ message: Message }> {
+    async editMessage(messageId: string, content: string, userId: string): Promise<{ message: Message }> {
         return apiClient(API_ENDPOINTS.MESSAGE(messageId), {
             method: 'PUT',
-            body: JSON.stringify({ content }),
+            body: JSON.stringify({ content, userId }),
+        });
+    },
+
+    async deleteMessage(messageId: string, userId: string): Promise<void> {
+        return apiClient(`${API_ENDPOINTS.MESSAGE(messageId)}?userId=${userId}`, {
+            method: 'DELETE',
         });
     },
 
     /**
-     * Delete a message
+     * Convert text to speech
      */
-    async deleteMessage(messageId: string): Promise<void> {
-        return apiClient(API_ENDPOINTS.MESSAGE(messageId), {
-            method: 'DELETE',
+    async textToSpeech(text: string): Promise<{ audioUrl: string }> {
+        return apiClient('/model/tts', {
+            method: 'POST',
+            body: JSON.stringify({ text }),
         });
     },
 
@@ -365,6 +372,28 @@ export const chatService = {
     async getGroupParticipants(conversationId: string): Promise<any[]> {
         return apiClient(`/chat/groups/${conversationId}/participants`, {
             method: 'GET',
+        });
+    },
+
+    /**
+     * Start the AI Transcription agent for a room
+     */
+    async startTranscription(roomName: string): Promise<{ success: boolean; message?: string }> {
+        // Assuming the Model-ms is exposed via /model path in API Gateway
+        // If Model-ms is separate, full URL might be needed, but trying gateway relative path first
+        return apiClient('/model/transcribe', {
+            method: 'POST',
+            body: JSON.stringify({ room_name: roomName }),
+        });
+    },
+
+    /**
+     * Stop the AI Transcription agent for a room
+     */
+    async stopTranscription(roomName: string): Promise<{ success: boolean; message?: string }> {
+        return apiClient('/model/transcribe/stop', {
+            method: 'POST',
+            body: JSON.stringify({ room_name: roomName }),
         });
     },
 };

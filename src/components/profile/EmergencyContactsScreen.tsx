@@ -20,12 +20,14 @@ import { BackArrowIcon, ChevronRightIcon } from '../icons/NavigationIcons';
 import { Plus, Trash2, Phone, User } from 'lucide-react-native';
 import { emergencyContactsStorage, EmergencyContact } from '../../services/emergencyContacts.storage';
 import { CountryCodePicker, defaultCountry } from '../common/CountryCodePicker';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface Props {
     onBack: () => void;
 }
 
 export function EmergencyContactsScreen({ onBack }: Props) {
+    const { colors, isDark } = useTheme();
     const [contacts, setContacts] = useState<EmergencyContact[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
@@ -88,52 +90,52 @@ export function EmergencyContactsScreen({ onBack }: Props) {
     };
 
     return (
-        <KeyboardSafeView style={styles.container}>
-            <StatusBar style="dark" />
+        <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={colors.statusBar} />
 
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
                 <TouchableOpacity style={styles.backButton} onPress={onBack}>
-                    <BackArrowIcon size={32} color="#000000" />
+                    <BackArrowIcon size={32} color={colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Contactos de Emergencia</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Contactos de Emergencia</Text>
                 <TouchableOpacity
                     style={styles.addButton}
                     onPress={() => setShowAddForm(true)}
                 >
-                    <Plus size={24} color="#007AFF" />
+                    <Plus size={24} color={colors.primary} />
                 </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.content}>
-                <Text style={styles.description}>
+            <ScrollView style={[styles.content, { backgroundColor: colors.background }]}>
+                <Text style={[styles.description, { color: colors.textSecondary }]}>
                     Estos contactos recibirán un mensaje de WhatsApp con tu ubicación cuando actives una emergencia.
                 </Text>
 
                 {isLoading ? (
-                    <ActivityIndicator size="large" color="#007AFF" style={{ marginTop: 40 }} />
+                    <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
                 ) : contacts.length === 0 ? (
                     <View style={styles.emptyState}>
-                        <Phone size={48} color="#CCC" />
-                        <Text style={styles.emptyText}>No tienes contactos de emergencia</Text>
-                        <Text style={styles.emptySubtext}>Agrega a familiares o amigos que puedan ayudarte</Text>
+                        <Phone size={48} color={colors.textMuted} />
+                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No tienes contactos de emergencia</Text>
+                        <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Agrega a familiares o amigos que puedan ayudarte</Text>
                     </View>
                 ) : (
-                    <View style={styles.contactsList}>
+                    <View style={[styles.contactsList, { backgroundColor: colors.card }]}>
                         {contacts.map((contact) => (
-                            <View key={contact.id} style={styles.contactItem}>
-                                <View style={styles.contactIcon}>
-                                    <User size={20} color="#666" />
+                            <View key={contact.id} style={[styles.contactItem, { borderBottomColor: colors.border }]}>
+                                <View style={[styles.contactIcon, { backgroundColor: isDark ? colors.background : '#F0F0F0' }]}>
+                                    <User size={20} color={colors.textSecondary} />
                                 </View>
                                 <View style={styles.contactInfo}>
-                                    <Text style={styles.contactName}>{contact.name}</Text>
-                                    <Text style={styles.contactPhone}>{contact.phone}</Text>
+                                    <Text style={[styles.contactName, { color: colors.text }]}>{contact.name}</Text>
+                                    <Text style={[styles.contactPhone, { color: colors.textSecondary }]}>{contact.phone}</Text>
                                 </View>
                                 <TouchableOpacity
                                     style={styles.deleteButton}
                                     onPress={() => handleRemoveContact(contact)}
                                 >
-                                    <Trash2 size={20} color="#FF3B30" />
+                                    <Trash2 size={20} color={colors.error} />
                                 </TouchableOpacity>
                             </View>
                         ))}
@@ -142,12 +144,12 @@ export function EmergencyContactsScreen({ onBack }: Props) {
 
                 {/* Add Contact Form */}
                 {showAddForm && (
-                    <View style={styles.addForm}>
-                        <Text style={styles.formTitle}>Nuevo Contacto</Text>
+                    <View style={[styles.addForm, { backgroundColor: colors.card }]}>
+                        <Text style={[styles.formTitle, { color: colors.text }]}>Nuevo Contacto</Text>
                         <TextInput
-                            style={styles.input}
+                            style={[styles.input, { backgroundColor: isDark ? colors.inputBg : '#F5F5F5', color: colors.text }]}
                             placeholder="Nombre (ej: Mamá, Papá)"
-                            placeholderTextColor="#999"
+                            placeholderTextColor={colors.textMuted}
                             value={newName}
                             onChangeText={setNewName}
                         />
@@ -155,11 +157,12 @@ export function EmergencyContactsScreen({ onBack }: Props) {
                             <CountryCodePicker
                                 selectedCountry={selectedCountry}
                                 onSelect={setSelectedCountry}
+                                theme={isDark ? 'dark' : 'light'}
                             />
                             <TextInput
-                                style={[styles.input, styles.phoneInput]}
+                                style={[styles.input, styles.phoneInput, { backgroundColor: isDark ? colors.inputBg : '#F5F5F5', color: colors.text }]}
                                 placeholder="3001234567"
-                                placeholderTextColor="#999"
+                                placeholderTextColor={colors.textMuted}
                                 value={newPhone}
                                 onChangeText={setNewPhone}
                                 keyboardType="phone-pad"
@@ -167,17 +170,17 @@ export function EmergencyContactsScreen({ onBack }: Props) {
                         </View>
                         <View style={styles.formButtons}>
                             <TouchableOpacity
-                                style={[styles.formButton, styles.cancelButton]}
+                                style={[styles.formButton, styles.cancelButton, { backgroundColor: isDark ? colors.inputBg : '#F0F0F0' }]}
                                 onPress={() => {
                                     setShowAddForm(false);
                                     setNewName('');
                                     setNewPhone('');
                                 }}
                             >
-                                <Text style={styles.cancelButtonText}>Cancelar</Text>
+                                <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[styles.formButton, styles.saveButton]}
+                                style={[styles.formButton, styles.saveButton, { backgroundColor: colors.primary }]}
                                 onPress={handleAddContact}
                             >
                                 <Text style={styles.saveButtonText}>Guardar</Text>

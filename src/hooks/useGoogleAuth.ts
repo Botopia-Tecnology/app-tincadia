@@ -15,8 +15,10 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 
 // Web Client ID from Google Cloud Console (also configured in Supabase)
-const WEB_CLIENT_ID = '432950882488-80s791qdafaslmilmos19mndc9427n60.apps.googleusercontent.com';
-const IOS_CLIENT_ID = '432950882488-3i05sq8v8tfdrpq1l2tdplt364qco4e7.apps.googleusercontent.com';
+// Web Client ID from Google Cloud Console (also configured in Supabase)
+const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB || '432950882488-80s791qdafaslmilmos19mndc9427n60.apps.googleusercontent.com';
+const IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || '432950882488-3i05sq8v8tfdrpq1l2tdplt364qco4e7.apps.googleusercontent.com';
+const ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID || '432950882488-fo834dmnq90rr53j5rake064k3tae4u3.apps.googleusercontent.com';
 
 // Configure Google Sign-In once
 let isConfigured = false;

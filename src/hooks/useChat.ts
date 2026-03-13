@@ -529,7 +529,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         if (!existingMsg) return;
 
         try {
-            await chatService.editMessage(existingMsg.serverId || messageId, content);
+            await chatService.editMessage(existingMsg.serverId || messageId, content, userId);
 
             // Update local DB
             saveMessage({
@@ -558,7 +558,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
 
             // Delete on server
             if (existingMsg.serverId) {
-                await chatService.deleteMessage(existingMsg.serverId);
+                await chatService.deleteMessage(existingMsg.serverId, userId);
             }
         } catch (err) {
             console.error('Error deleting message:', err);

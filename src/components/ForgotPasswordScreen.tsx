@@ -15,12 +15,14 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { forgotPasswordStyles as styles } from '../styles/ForgotPasswordScreen.styles';
 import { authService } from '../services/auth.service';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface ForgotPasswordScreenProps {
     onBack: () => void;
 }
 
 export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
+    const { colors, isDark } = useTheme();
     const [email, setEmail] = useState('');
     const [isSuccess, setIsSuccess] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -82,14 +84,14 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
 
     if (isSuccess) {
         return (
-            <SafeAreaView style={styles.container}>
-                <StatusBar style="dark" />
-                <View style={styles.successContainer}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+                <StatusBar style={isDark ? 'light' : 'dark'} />
+                <View style={[styles.successContainer, { backgroundColor: colors.background }]}>
                     <View style={styles.successIconContainer}>
                         <Text style={styles.successIcon}>✉️</Text>
                     </View>
-                    <Text style={styles.successTitle}>¡Correo enviado!</Text>
-                    <Text style={styles.successMessage}>
+                    <Text style={[styles.successTitle, { color: colors.text }]}>¡Correo enviado!</Text>
+                    <Text style={[styles.successMessage, { color: colors.textSecondary }]}>
                         Hemos enviado un enlace de recuperación a tu correo electrónico. Por favor revisa tu bandeja de entrada.
                     </Text>
                     <TouchableOpacity style={styles.backToLoginButton} onPress={onBack}>
@@ -101,29 +103,29 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             >
-                <StatusBar style="dark" />
+                <StatusBar style={isDark ? 'light' : 'dark'} />
                 <TouchableOpacity style={styles.absoluteBackButton} onPress={onBack} disabled={isLoading}>
-                    <Text style={styles.backArrow}>←</Text>
+                    <Text style={[styles.backArrow, { color: colors.text }]}>←</Text>
                 </TouchableOpacity>
                 <ScrollView
                     contentContainerStyle={styles.scrollContent}
                     keyboardShouldPersistTaps="handled"
                 >
-                    <Text style={styles.title}>Recuperar Contraseña</Text>
-                    <Text style={styles.subtitle}>
+                    <Text style={[styles.title, { color: colors.text }]}>Recuperar Contraseña</Text>
+                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
                         Ingresa su correo para restablecer su contraseña
                     </Text>
 
                     <View style={styles.formContainer}>
                         <TextInput
-                            style={[styles.input, error ? { borderColor: '#ff4444', borderWidth: 1 } : {}]}
+                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: error ? '#ff4444' : colors.border }]}
                             placeholder="Correo electrónico"
-                            placeholderTextColor="#999"
+                            placeholderTextColor={colors.textMuted}
                             value={email}
                             onChangeText={(text) => {
                                 setEmail(text);

@@ -36,7 +36,8 @@ export function ChatListScreen({ onSelectConversation, onNavigate }: ChatListScr
         initChatDatabase();
     }, []);
 
-    const handleSelectConversation = (conversationId: string) => {
+    const handleSelectConversation = (item: any) => {
+        const conversationId = typeof item === 'string' ? item : item.id;
         const conversation = conversations.find(c => c.id === conversationId);
         onSelectConversation(conversationId, conversation?.otherUserName || 'Chat');
     };
@@ -92,13 +93,20 @@ export function ChatListScreen({ onSelectConversation, onNavigate }: ChatListScr
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
                     <ChatListItem
-                        id={item.id}
-                        name={item.otherUserName}
-                        avatar={item.otherUserAvatar}
-                        lastMessage={item.lastMessage}
-                        lastMessageAt={item.lastMessageAt}
-                        unreadCount={item.unreadCount}
+                        item={{
+                            id: item.id,
+                            displayName: item.otherUserName,
+                            avatarUrl: item.otherUserAvatar,
+                            lastMessage: item.lastMessage,
+                            lastMessageTime: item.lastMessageAt,
+                            unreadCount: item.unreadCount,
+                            type: 'unknown',
+                            otherUserId: '',
+                            phone: ''
+                        }}
                         onPress={handleSelectConversation}
+                        onLongPress={() => {}}
+                        styles={styles}
                     />
                 )}
                 refreshControl={

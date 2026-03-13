@@ -6,6 +6,7 @@ import { authService } from '../../services/auth.service';
 import { BackArrowIcon } from '../icons/NavigationIcons';
 import { KeyboardSafeView } from '../common/KeyboardSafeView';
 import { profileScreenStyles as styles } from '../../styles/ProfileScreen.styles';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface PrivacyScreenProps {
     onBack: () => void;
@@ -13,6 +14,7 @@ interface PrivacyScreenProps {
 
 export function PrivacyScreen({ onBack }: PrivacyScreenProps) {
     const { user, refreshProfile } = useAuth();
+    const { colors, isDark } = useTheme();
     const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -43,31 +45,31 @@ export function PrivacyScreen({ onBack }: PrivacyScreenProps) {
     };
 
     return (
-        <KeyboardSafeView style={styles.container}>
-            <StatusBar style="dark" />
+        <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={colors.statusBar} />
 
             {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={onBack}>
-                    <BackArrowIcon size={24} color="#000000" />
+            <View style={[styles.header, { backgroundColor: colors.background }]}>
+                <TouchableOpacity style={[styles.backButton, { backgroundColor: isDark ? colors.card : '#F5F5F5' }]} onPress={onBack}>
+                    <BackArrowIcon size={24} color={colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Privacidad</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Privacidad</Text>
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
+            <ScrollView style={[styles.content, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 100 }}>
 
-                <View style={styles.fieldGroup}>
-                    <View style={styles.fieldItem}>
+                <View style={[styles.fieldGroup, { backgroundColor: colors.background, borderColor: colors.border, borderTopWidth: 1, borderBottomWidth: 1 }]}>
+                    <View style={[styles.fieldItem, { backgroundColor: colors.background }]}>
                         <View style={[styles.fieldInfo, { marginRight: 16 }]}>
-                            <Text style={[styles.fieldLabel, { marginLeft: 0, fontSize: 16, color: '#000' }]}>Confirmaciones de lectura</Text>
-                            <Text style={[styles.fieldSubtext, { marginLeft: 0, marginTop: 4 }]}>
+                            <Text style={[styles.fieldLabel, { marginLeft: 0, fontSize: 16, color: colors.text }]}>Confirmaciones de lectura</Text>
+                            <Text style={[styles.fieldSubtext, { marginLeft: 0, marginTop: 4, color: colors.textSecondary }]}>
                                 Si desactivas esta opción, no podrás ver las confirmaciones de lectura de otras personas. Las confirmaciones de lectura se enviarán siempre en los chats grupales.
                             </Text>
                         </View>
                         <Switch
-                            trackColor={{ false: "#767577", true: "#81b0ff" }}
-                            thumbColor={readReceiptsEnabled ? "#007AFF" : "#f4f3f4"}
+                            trackColor={{ false: "#767577", true: colors.primary }}
+                            thumbColor={readReceiptsEnabled ? "#FFFFFF" : "#f4f3f4"}
                             ios_backgroundColor="#3e3e3e"
                             onValueChange={toggleSwitch}
                             value={readReceiptsEnabled}

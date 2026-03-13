@@ -18,17 +18,25 @@ export const chatInputStyles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    inputContainerWrapper: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F8F8F8',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        paddingRight: 8,
+        overflow: 'hidden', // Ensures overlay respects rounded corners
+    },
     input: {
         flex: 1,
         minHeight: 40,
         maxHeight: 120,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 20,
         paddingHorizontal: 16,
         paddingVertical: 10,
         fontSize: 16,
-        backgroundColor: '#F8F8F8',
+        color: '#000',
     },
     sendButton: {
         marginLeft: 8,
@@ -50,20 +58,15 @@ export const chatInputStyles = StyleSheet.create({
         fontWeight: '600',
     },
     actionButton: {
-        marginLeft: 8,
-        width: 40,
-        height: 40,
+        width: 32,
+        height: 32,
         justifyContent: 'center',
         alignItems: 'center',
     },
     correctionOverlay: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        top: 0,
-        bottom: 0,
+        ...StyleSheet.absoluteFillObject, // Fill the wrapper
         backgroundColor: 'rgba(255, 235, 59, 0.2)',
-        borderRadius: 20,
+        borderRadius: 20, // Match inputContainerWrapper border radius
     },
 });
 

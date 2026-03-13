@@ -35,22 +35,45 @@ const COUNTRIES: Country[] = [
 interface CountryCodePickerProps {
     selectedCountry: Country;
     onSelect: (country: Country) => void;
+    theme?: 'light' | 'dark';
 }
 
 export const defaultCountry = COUNTRIES[0]; // Colombia default
 
-export function CountryCodePicker({ selectedCountry, onSelect }: CountryCodePickerProps) {
+export function CountryCodePicker({ selectedCountry, onSelect, theme = 'light' }: CountryCodePickerProps) {
     const [modalVisible, setModalVisible] = useState(false);
+    const isDark = theme === 'dark';
+
+    const containerStyle = {
+        backgroundColor: isDark ? '#1F2937' : '#F5F5F5',
+        borderColor: isDark ? '#374151' : '#E0E0E0',
+    };
+
+    const textStyle = {
+        color: isDark ? '#F9FAFB' : '#333',
+    };
+
+    const modalContentStyle = {
+        backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+    };
+
+    const headerStyle = {
+        borderBottomColor: isDark ? '#374151' : '#EEEEEE',
+    };
+
+    const itemStyle = {
+        borderBottomColor: isDark ? '#374151' : '#F5F5F5',
+    };
 
     return (
         <>
             <TouchableOpacity
-                style={styles.container}
+                style={[styles.container, containerStyle]}
                 onPress={() => setModalVisible(true)}
             >
                 <Text style={styles.flag}>{selectedCountry.flag}</Text>
-                <Text style={styles.dialCode}>{selectedCountry.dialCode}</Text>
-                <Ionicons name="chevron-down" size={16} color="#666" />
+                <Text style={[styles.dialCode, textStyle]}>{selectedCountry.dialCode}</Text>
+                <Ionicons name="chevron-down" size={16} color={isDark ? '#9CA3AF' : '#666'} />
             </TouchableOpacity>
 
             <Modal
@@ -64,11 +87,11 @@ export function CountryCodePicker({ selectedCountry, onSelect }: CountryCodePick
                     activeOpacity={1}
                     onPress={() => setModalVisible(false)}
                 >
-                    <View style={styles.modalContent}>
-                        <View style={styles.header}>
-                            <Text style={styles.title}>Seleccionar País</Text>
+                    <View style={[styles.modalContent, modalContentStyle]}>
+                        <View style={[styles.header, headerStyle]}>
+                            <Text style={[styles.title, textStyle]}>Seleccionar País</Text>
                             <TouchableOpacity onPress={() => setModalVisible(false)}>
-                                <Ionicons name="close" size={24} color="#000" />
+                                <Ionicons name="close" size={24} color={isDark ? '#F9FAFB' : '#000'} />
                             </TouchableOpacity>
                         </View>
 
@@ -77,15 +100,15 @@ export function CountryCodePicker({ selectedCountry, onSelect }: CountryCodePick
                             keyExtractor={(item) => item.code}
                             renderItem={({ item }) => (
                                 <TouchableOpacity
-                                    style={styles.countryItem}
+                                    style={[styles.countryItem, itemStyle]}
                                     onPress={() => {
                                         onSelect(item);
                                         setModalVisible(false);
                                     }}
                                 >
                                     <Text style={styles.itemFlag}>{item.flag}</Text>
-                                    <Text style={styles.itemName}>{item.name}</Text>
-                                    <Text style={styles.itemDialCode}>{item.dialCode}</Text>
+                                    <Text style={[styles.itemName, textStyle]}>{item.name}</Text>
+                                    <Text style={[styles.itemDialCode, { color: isDark ? '#9CA3AF' : '#666' }]}>{item.dialCode}</Text>
                                 </TouchableOpacity>
                             )}
                         />
@@ -102,11 +125,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 12,
         paddingVertical: 12,
-        backgroundColor: '#F5F5F5',
         borderRadius: 8,
         marginRight: 8,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
     },
     flag: {
         fontSize: 20,
@@ -114,7 +135,6 @@ const styles = StyleSheet.create({
     },
     dialCode: {
         fontSize: 16,
-        color: '#333',
         fontWeight: '500',
         marginRight: 4,
     },
@@ -124,7 +144,6 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     modalContent: {
-        backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         maxHeight: '70%',
@@ -135,7 +154,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#EEEEEE',
     },
     title: {
         fontSize: 18,
@@ -146,7 +164,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#F5F5F5',
     },
     itemFlag: {
         fontSize: 24,
@@ -155,11 +172,9 @@ const styles = StyleSheet.create({
     itemName: {
         flex: 1,
         fontSize: 16,
-        color: '#333',
     },
     itemDialCode: {
         fontSize: 16,
-        color: '#666',
         fontWeight: '500',
     },
 });

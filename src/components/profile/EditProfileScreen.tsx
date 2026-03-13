@@ -15,6 +15,7 @@ import {
 import { EditInfoModal } from './EditInfoModal'; // Same directory
 import { KeyboardSafeView } from '../common/KeyboardSafeView'; // Adjusted path
 import { profileScreenStyles as styles } from '../../styles/ProfileScreen.styles'; // Adjusted path
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface EditProfileScreenProps {
     onBack: () => void;
@@ -31,6 +32,8 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
     // I will KEEP the logout button in the Edit Screen as well if it was part of "what I created", 
     // BUT usually logout is on the main settings list.
     // I'll stick to exact code transfer first.
+
+    const { colors, isDark } = useTheme();
 
     const [isUploading, setIsUploading] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
@@ -139,8 +142,8 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
     };
 
     return (
-        <KeyboardSafeView style={styles.container}>
-            <StatusBar style="dark" />
+        <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={colors.statusBar} />
 
             <EditInfoModal
                 visible={editModalVisible}
@@ -151,15 +154,15 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
             />
 
             {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={onBack}>
-                    <BackArrowIcon size={24} color="#000000" />
+            <View style={[styles.header, { backgroundColor: colors.background }]}>
+                <TouchableOpacity style={[styles.backButton, { backgroundColor: isDark ? colors.card : '#F5F5F5' }]} onPress={onBack}>
+                    <BackArrowIcon size={24} color={colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Información</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Información</Text>
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
+            <ScrollView style={[styles.content, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 100 }}>
 
                 {/* Profile Avatar Section */}
                 <View style={[styles.profileSection, { justifyContent: 'center', marginBottom: 40 }]}>
@@ -185,54 +188,54 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
                 </View>
 
                 {/* Info Fields */}
-                <View style={styles.fieldGroup}>
+                <View style={[styles.fieldGroup, { backgroundColor: colors.background, borderColor: colors.border, borderTopWidth: 1, borderBottomWidth: 1 }]}>
                     {/* Name */}
-                    <TouchableOpacity style={styles.fieldItem} onPress={() => handleEditField('firstName')}>
+                    <TouchableOpacity style={[styles.fieldItem, { backgroundColor: colors.background }]} onPress={() => handleEditField('firstName')}>
                         <View style={styles.fieldInfo}>
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <ProfileIcon size={20} color="#666666" />
-                                <Text style={styles.fieldLabel}>Nombre</Text>
+                                <ProfileIcon size={20} color={colors.textSecondary} />
+                                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Nombre</Text>
                             </View>
-                            <Text style={styles.fieldValue}>{user?.firstName || 'Sin nombre'}</Text>
+                            <Text style={[styles.fieldValue, { color: colors.text }]}>{user?.firstName || 'Sin nombre'}</Text>
                         </View>
-                        <PencilIcon size={20} color="#007AFF" />
+                        <PencilIcon size={20} color={colors.primary} />
                     </TouchableOpacity>
 
                     {/* Last Name */}
-                    <TouchableOpacity style={styles.fieldItem} onPress={() => handleEditField('lastName')}>
+                    <TouchableOpacity style={[styles.fieldItem, { backgroundColor: colors.background }]} onPress={() => handleEditField('lastName')}>
                         <View style={styles.fieldInfo}>
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <ProfileIcon size={20} color="#666666" />
-                                <Text style={styles.fieldLabel}>Apellido</Text>
+                                <ProfileIcon size={20} color={colors.textSecondary} />
+                                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Apellido</Text>
                             </View>
-                            <Text style={styles.fieldValue}>{user?.lastName || 'Sin apellido'}</Text>
+                            <Text style={[styles.fieldValue, { color: colors.text }]}>{user?.lastName || 'Sin apellido'}</Text>
                         </View>
-                        <PencilIcon size={20} color="#007AFF" />
+                        <PencilIcon size={20} color={colors.primary} />
                     </TouchableOpacity>
 
-                    <View style={styles.separator} />
+                    <View style={[styles.separator, { backgroundColor: colors.border }]} />
 
                     {/* Email (Read only) */}
-                    <View style={styles.fieldItem}>
+                    <View style={[styles.fieldItem, { backgroundColor: colors.background }]}>
                         <View style={styles.fieldInfo}>
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Text style={[styles.fieldLabel, { marginLeft: 0 }]}>Correo Electrónico</Text>
+                                <Text style={[styles.fieldLabel, { marginLeft: 0, color: colors.textSecondary }]}>Correo Electrónico</Text>
                             </View>
-                            <Text style={[styles.fieldValue, { color: '#666' }]}>{user?.email}</Text>
-                            <Text style={styles.fieldSubtext}>Este campo no se puede modificar.</Text>
+                            <Text style={[styles.fieldValue, { color: colors.textMuted }]}>{user?.email}</Text>
+                            <Text style={[styles.fieldSubtext, { color: colors.textSecondary }]}>Este campo no se puede modificar.</Text>
                         </View>
                     </View>
 
-                    <View style={styles.separator} />
+                    <View style={[styles.separator, { backgroundColor: colors.border }]} />
 
                     {/* Phone (Read only) */}
-                    <View style={styles.fieldItem}>
+                    <View style={[styles.fieldItem, { backgroundColor: colors.background }]}>
                         <View style={styles.fieldInfo}>
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <PhoneIcon size={20} color="#666666" />
-                                <Text style={styles.fieldLabel}>Teléfono</Text>
+                                <PhoneIcon size={20} color={colors.textSecondary} />
+                                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Teléfono</Text>
                             </View>
-                            <Text style={[styles.fieldValue, { color: '#666' }]}>{user?.phone || 'No registrado'}</Text>
+                            <Text style={[styles.fieldValue, { color: colors.textMuted }]}>{user?.phone || 'No registrado'}</Text>
                         </View>
                     </View>
                 </View>

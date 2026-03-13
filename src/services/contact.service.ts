@@ -70,8 +70,12 @@ export const contactService = {
     /**
      * Delete a contact
      */
-    async deleteContact(contactId: string): Promise<void> {
-        return apiClient(API_ENDPOINTS.CONTACT(contactId), {
+    async deleteContact(contactId: string, ownerId: string): Promise<void> {
+        let url = API_ENDPOINTS.CONTACT(contactId);
+        if (ownerId) {
+            url += `?ownerId=${encodeURIComponent(ownerId)}`;
+        }
+        return apiClient(url, {
             method: 'DELETE',
         });
     },

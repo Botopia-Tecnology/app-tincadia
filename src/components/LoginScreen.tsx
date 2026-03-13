@@ -15,6 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import { useAppleAuth } from '../hooks/useAppleAuth';
 import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
@@ -30,6 +31,7 @@ interface LoginScreenProps {
 
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const { t } = useTranslation();
+  const { colors, isDark } = useTheme();
   const { login, loginWithOAuth, error, clearError, isLoading } = useAuth();
   const { signInWithGoogle, isReady: googleReady } = useGoogleAuth();
   const { signInWithApple, isAvailable: isAppleAvailable } = useAppleAuth();
@@ -42,6 +44,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
   // Biometric state
   const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
+  const [hasStoredCredentials, setHasStoredCredentials] = useState(false);
   const [biometricType, setBiometricType] = useState('Biometría');
 
   // Check biometrics on mount
@@ -55,9 +58,12 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     if (biometricType) setBiometricType(biometricType);
 
     if (available) {
-      // Check if we have stored credentials to auto-login
+      // Check if we have stored credentials
       const credentials = await biometricService.getCredentials();
-      if (credentials) {
+      const hasCreds = !!credentials;
+      setHasStoredCredentials(hasCreds);
+
+      if (hasCreds) {
         attemptBiometricLogin(credentials);
       }
     }
@@ -146,8 +152,8 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   }
 
   return (
-    <KeyboardSafeView style={styles.container}>
-      <StatusBar style="dark" />
+    <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -158,16 +164,16 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         <View style={styles.logoContainer}>
           <Image
             source={require('../../assets/icon.png')}
-            style={styles.logo}
+            style={[styles.logo, { tintColor: isDark ? '#FFFFFF' : undefined }]}
             resizeMode="contain"
           />
-          <Text style={styles.appName}>TINCADIA</Text>
+          <Text style={[styles.appName, { color: colors.text }]}>TINCADIA</Text>
         </View>
 
         {/* Error message */}
         {error && (
           <TouchableOpacity onPress={clearError} style={{
-            backgroundColor: '#FFE5E5',
+            backgroundColor: isDark ? 'rgba(255, 68, 68, 0.1)' : '#FFE5E5',
             borderRadius: 8,
             padding: 12,
             marginHorizontal: 20,
@@ -175,16 +181,16 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             borderWidth: 1,
             borderColor: '#FF4444',
           }}>
-            <Text style={{ color: '#CC0000', fontSize: 14 }}>{error}</Text>
+            <Text style={{ color: '#FF4444', fontSize: 14 }}>{error}</Text>
           </TouchableOpacity>
         )}
 
         {/* Formulario de login */}
         <View style={styles.formContainer}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
             placeholder={t('login.email')}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -195,9 +201,9 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
           <View style={{ width: '90%', alignSelf: 'center', position: 'relative' }}>
             <TextInput
-              style={[styles.input, { width: '100%', marginBottom: 16, paddingRight: 50 }]}
+              style={[styles.input, { width: '100%', marginBottom: 16, paddingRight: 50, backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               placeholder={t('login.password')}
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textMuted}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
@@ -216,13 +222,13 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               <Ionicons
                 name={showPassword ? 'eye' : 'eye-off'}
                 size={22}
-                color="#666"
+                color={colors.iconSecondary}
               />
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
-            <Text style={styles.forgotPassword}>{t('login.forgotPassword')}</Text>
+            <Text style={[styles.forgotPassword, { color: colors.textSecondary }]}>{t('login.forgotPassword')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -238,7 +244,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           </TouchableOpacity>
 
           {/* Biometric Button (Manual Trigger) */}
-          {isBiometricAvailable && (
+          {isBiometricAvailable && hasStoredCredentials && (
             <TouchableOpacity
               onPress={() => attemptBiometricLogin()}
               style={{
@@ -247,21 +253,21 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 marginBottom: 10,
                 padding: 12,
                 alignItems: 'center',
-                backgroundColor: Platform.OS === 'ios' ? '#F0F8FF' : '#E8F5E9',
+                backgroundColor: isDark ? colors.card : (Platform.OS === 'ios' ? '#F0F8FF' : '#E8F5E9'),
                 borderRadius: 16,
                 minWidth: 100,
               }}
             >
               {Platform.OS === 'ios' ? (
-                <FaceIdIcon size={48} color="#007AFF" />
+                <FaceIdIcon size={48} color={isDark ? '#4A90E2' : "#007AFF"} />
               ) : (
-                <FingerprintIcon size={48} color="#25D366" />
+                <FingerprintIcon size={48} color={isDark ? '#4CAF50' : "#25D366"} />
               )}
               <Text style={{
                 textAlign: 'center',
                 fontSize: 13,
                 fontWeight: '500',
-                color: Platform.OS === 'ios' ? '#007AFF' : '#25D366',
+                color: isDark ? colors.text : (Platform.OS === 'ios' ? '#007AFF' : '#25D366'),
                 marginTop: 8,
               }}>
                 {Platform.OS === 'ios' ? 'Face ID' : 'Huella dactilar'}
@@ -270,7 +276,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           )}
 
           <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>
+            <Text style={[styles.registerText, { color: colors.textSecondary }]}>
               {t('login.noAccount')} •{' '}
               <Text style={styles.registerLinkText} onPress={handleRegister}>
                 {t('login.register')}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Image, FlatList, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Image, FlatList, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
@@ -7,7 +7,9 @@ import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
 import { SearchIcon } from './icons/NavigationIcons';
 import { contentService, Course } from '../services/content.service';
+import { paymentsService } from '../services/payments.service';
 import { useCourses } from '../hooks/useCourses';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface CourseCategory {
     title: string;
@@ -15,7 +17,7 @@ interface CourseCategory {
 }
 
 interface CoursesScreenProps {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'course_player' | 'course_presentation' | 'call', params?: any) => void;
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
@@ -29,10 +31,12 @@ export function CoursesScreen({
     onShowNotifications,
     onCourseSelect,
 }: CoursesScreenProps) {
+    const { colors, isDark } = useTheme();
     const [categories, setCategories] = useState<CourseCategory[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const { courses, isLoading, isSyncing, refresh } = useCourses();
     const [refreshing, setRefreshing] = useState(false);
+    const [loadingId, setLoadingId] = useState<string | null>(null);
 
     // Filter courses based on search query
     const filteredCourses = useMemo(() => {
@@ -72,12 +76,17 @@ export function CoursesScreen({
         setRefreshing(false);
     };
 
-
+    const handleCoursePress = async (course: Course) => {
+        if (loadingId) return;
+        // Always navigate to presentation first (User Request)
+        onNavigate('course_presentation', { courseId: course.id });
+    };
 
     const renderCourseCard = ({ item: course }: { item: Course }) => (
         <TouchableOpacity
-            style={styles.cardContainer}
-            onPress={() => onCourseSelect?.(course.id)}
+            style={[styles.cardContainer, { backgroundColor: colors.card }]}
+            onPress={() => handleCoursePress(course)}
+            disabled={!!loadingId}
         >
             <View style={styles.cardImageContainer}>
                 {course.thumbnailUrl ? (
@@ -88,77 +97,84 @@ export function CoursesScreen({
                     </View>
                 )}
                 {/* Play Overlay */}
-                <View style={styles.playOverlay}>
-                    <View style={styles.playButton}>
-                        <Text style={{ fontSize: 16, marginLeft: 2 }}>▶</Text>
-                    </View>
+                <View style={[styles.playOverlay, loadingId === course.id && { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                    {loadingId === course.id ? (
+                        <ActivityIndicator color="#fff" size="large" />
+                    ) : (
+                        <View style={styles.playButton}>
+                            <Text style={{ fontSize: 16, marginLeft: 2 }}>▶</Text>
+                        </View>
+                    )}
                 </View>
             </View>
 
             <View style={styles.cardContent}>
                 <View>
-                    <Text style={styles.cardTitle} numberOfLines={2}>
+                    <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
                         {course.title}
                     </Text>
-                    <Text style={styles.cardInstructor}>
+                    <Text style={[styles.cardInstructor, { color: colors.textSecondary }]}>
                         {course.instructor || 'Tincadia'}
                     </Text>
                 </View>
 
-                <View style={styles.cardFooter}>
+                <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
                     <Text style={styles.moduleIcon}>📖</Text>
-                    <Text style={styles.moduleText}>
+                    <Text style={[styles.moduleText, { color: colors.textSecondary }]}>
                         {course.modules?.length || 0} Módulos
                     </Text>
+                    {course.isPaid && (
+                        <Text style={{ marginLeft: 'auto', fontSize: 12, color: '#f59e0b', fontWeight: 'bold' }}>Premium</Text>
+                    )}
                 </View>
             </View>
         </TouchableOpacity>
     );
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar style="dark" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={colors.statusBar} />
 
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.background }]}>
                 <View style={styles.headerTop}>
-                    <Text style={styles.headerTitle}>Cursos</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>Cursos</Text>
                     {userId && onShowNotifications ? (
                         <NotificationBell
                             userId={userId}
                             onPress={onShowNotifications}
-                            color="#333333"
+                            color={colors.icon}
                         />
                     ) : (
-                        <View style={styles.notificationButton} />
+                        <View style={[styles.notificationButton, { backgroundColor: colors.card }]} />
                     )}
                 </View>
 
                 {/* Search Bar */}
-                <View style={styles.searchContainer}>
-                    <SearchIcon size={20} color="#666666" />
+                <View style={[styles.searchContainer, { backgroundColor: colors.inputBg }]}>
+                    <SearchIcon size={20} color={colors.iconSecondary} />
                     <TextInput
-                        style={styles.searchInput}
+                        style={[styles.searchInput, { color: colors.text }]}
                         placeholder="Buscar cursos"
                         value={searchQuery}
                         onChangeText={handleSearch}
-                        placeholderTextColor="#666666"
+                        placeholderTextColor={colors.textMuted}
                     />
                 </View>
             </View>
 
             {/* Content */}
             {isLoading ? (
-                <View style={[styles.content, { justifyContent: 'center', alignItems: 'center' }]}>
+                <View style={[styles.content, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
                     <ActivityIndicator size="large" color="#4CAF50" />
-                    <Text style={{ marginTop: 10, color: '#666' }}>Cargando cursos...</Text>
+                    <Text style={{ marginTop: 10, color: colors.textSecondary }}>Cargando cursos...</Text>
                 </View>
             ) : (
                 <ScrollView
-                    style={styles.content}
+                    style={[styles.content, { backgroundColor: colors.background }]}
                     contentContainerStyle={styles.scrollContent}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4CAF50']} />
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4CAF50']} progressBackgroundColor={colors.card} tintColor={colors.accent} />
                     }
                 >
                     {categories.length === 0 ? (
@@ -169,9 +185,9 @@ export function CoursesScreen({
                         categories.map((category, index) => (
                             <View key={index} style={styles.sectionContainer}>
                                 <View style={styles.sectionHeader}>
-                                    <Text style={styles.sectionTitle}>{category.title}</Text>
-                                    <View style={styles.courseCountBadge}>
-                                        <Text style={styles.courseCountText}>{category.courses.length}</Text>
+                                    <Text style={[styles.sectionTitle, { color: colors.text }]}>{category.title}</Text>
+                                    <View style={[styles.courseCountBadge, { backgroundColor: colors.surface }]}>
+                                        <Text style={[styles.courseCountText, { color: colors.textSecondary }]}>{category.courses.length}</Text>
                                     </View>
                                 </View>
                                 <FlatList

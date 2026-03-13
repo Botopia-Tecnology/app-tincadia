@@ -62,7 +62,7 @@ export async function apiClient<T>(
             if (onUnauthorized) {
                 onUnauthorized();
             }
-            throw new ApiError('Session expired. Please login again.', 401);
+            throw new ApiError('Tu sesión ha expirado. Por favor inicia sesión nuevamente.', 401);
         }
 
         // Handle other error responses
@@ -73,7 +73,7 @@ export async function apiClient<T>(
             } catch {
                 // Response body is not JSON
             }
-            const message = (errorData.message as string) || `Request failed with status ${response.status}`;
+            const message = (errorData.message as string) || (errorData.detail as string) || `La solicitud falló con estado ${response.status}`;
             throw new ApiError(message, response.status, errorData);
         }
 
@@ -90,7 +90,7 @@ export async function apiClient<T>(
         }
         // Network error or other fetch failure
         throw new ApiError(
-            error instanceof Error ? error.message : 'Network error',
+            error instanceof Error ? error.message : 'Error de red',
             0
         );
     }
