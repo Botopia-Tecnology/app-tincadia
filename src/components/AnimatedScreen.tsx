@@ -46,6 +46,6 @@ export function AnimatedScreen({ children, style }: AnimatedScreenProps) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        // Remove backgroundColor: '#FFFFFF' to prevent white masking during PiP mode
     },
 });

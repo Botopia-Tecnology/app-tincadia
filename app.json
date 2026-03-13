@@ -3,10 +3,14 @@
     "name": "Tincadia",
     "slug": "tincadia",
     "scheme": "tincadia",
-    "version": "3.0.5",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "platforms": [
+      "android",
+      "ios"
+    ],
     "newArchEnabled": true,
     "splash": {
       "backgroundColor": "#ffffff"
@@ -15,7 +19,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
       "usesAppleSignIn": true,
-      "buildNumber": "17",
+      "buildNumber": "6",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
@@ -23,7 +27,6 @@
         "NSFaceIDUsageDescription": "Tincadia usa Face ID para iniciar sesión de forma rápida y segura.",
         "UIBackgroundModes": [
           "audio",
-          "voip",
           "fetch",
           "remote-notification"
         ],
@@ -36,7 +39,7 @@
     "android": {
       "package": "com.tincadia.app",
       "usesCleartextTraffic": true,
-      "versionCode": 10,
+      "versionCode": 6,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -127,7 +130,14 @@
           "project": "react-native",
           "organization": "univalle-gi"
         }
-      ]
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "Tincadia utiliza esta información para evaluar el rendimiento, analizar el uso y proveer de soporte técnico especializado, con el fin de mejorar tu experiencia en la aplicación."
+        }
+      ],
+      "./plugins/withPictureInPicture"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

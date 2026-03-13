@@ -58,6 +58,7 @@ export function AudioRecorder({ onSend, onCancel, activeColor = '#4F46E5' }: Aud
             await Audio.setAudioModeAsync({
                 allowsRecordingIOS: true,
                 playsInSilentModeIOS: true,
+                staysActiveInBackground: true,
             });
 
             const { recording } = await Audio.Recording.createAsync({

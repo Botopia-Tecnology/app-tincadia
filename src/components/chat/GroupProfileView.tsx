@@ -23,6 +23,7 @@ import { supabase } from '../../lib/supabase';
 import { getLocalContacts } from '../../database/chatDatabase';
 import { EditStringModal } from '../modals/EditStringModal';
 import { ContactSelectionModal } from '../modals/ContactSelectionModal';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface GroupProfileViewProps {
     conversationId: string;
@@ -54,6 +55,7 @@ export function GroupProfileView({
     onLeave,
     onUpdate,
 }: GroupProfileViewProps) {
+    const { colors, isDark } = useTheme();
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isUpdating, setIsUpdating] = useState(false);
@@ -331,19 +333,19 @@ export function GroupProfileView({
     };
 
     return (
-        <View style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
             <ScrollView style={{ flex: 1 }}>
                 {/* Header */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }}>
                     <TouchableOpacity onPress={onBack} style={{ marginRight: 16 }}>
-                        <Ionicons name="arrow-back" size={24} color="#374151" />
+                        <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
-                    <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1F2937' }}>Info del Grupo</Text>
-                    {isUpdating && <ActivityIndicator size="small" color="#10B981" style={{ marginLeft: 12 }} />}
+                    <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.text }}>Info del Grupo</Text>
+                    {isUpdating && <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 12 }} />}
                 </View>
 
                 {/* Group Avatar & Name */}
-                <View style={{ alignItems: 'center', padding: 32, backgroundColor: '#FFFFFF' }}>
+                <View style={{ alignItems: 'center', padding: 32, backgroundColor: colors.card }}>
                     <TouchableOpacity
                         onPress={handleUpdateGroupImage}
                         disabled={currentUserRole !== 'admin'}
@@ -364,35 +366,35 @@ export function GroupProfileView({
                     </TouchableOpacity>
 
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1F2937' }}>{groupName}</Text>
+                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.text }}>{groupName}</Text>
                         {currentUserRole === 'admin' && (
                             <TouchableOpacity onPress={handleUpdateTitle} style={{ marginLeft: 8 }}>
-                                <Ionicons name="pencil" size={18} color="#10B981" />
+                                <Ionicons name="pencil" size={18} color={colors.primary} />
                             </TouchableOpacity>
                         )}
                     </View>
-                    <Text style={{ color: '#6B7280', marginTop: 4 }}>Grupo · {participants.length} participantes</Text>
+                    <Text style={{ color: colors.textSecondary, marginTop: 4 }}>Grupo · {participants.length} participantes</Text>
                 </View>
 
                 {/* Description Section */}
-                <View style={{ backgroundColor: '#FFFFFF', padding: 16, marginTop: 1 }}>
+                <View style={{ backgroundColor: colors.card, padding: 16, marginTop: 1 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#6B7280' }}>Descripción</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>Descripción</Text>
                         {currentUserRole === 'admin' && (
                             <TouchableOpacity onPress={handleUpdateDescription}>
-                                <Text style={{ color: '#10B981', fontSize: 14, fontWeight: '600' }}>Editar</Text>
+                                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: '600' }}>Editar</Text>
                             </TouchableOpacity>
                         )}
                     </View>
-                    <Text style={{ fontSize: 16, color: localDescription ? '#374151' : '#9CA3AF', fontStyle: localDescription ? 'normal' : 'italic' }}>
+                    <Text style={{ fontSize: 16, color: localDescription ? colors.text : colors.textMuted, fontStyle: localDescription ? 'normal' : 'italic' }}>
                         {localDescription || 'Sin descripción'}
                     </Text>
                 </View>
 
                 {/* Participants Section */}
-                <View style={{ backgroundColor: '#FFFFFF', marginTop: 16 }}>
+                <View style={{ backgroundColor: colors.card, marginTop: 16 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#6B7280' }}>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
                             {participants.length} participantes
                         </Text>
                         {currentUserRole === 'admin' && (
@@ -400,8 +402,8 @@ export function GroupProfileView({
                                 onPress={handleAddParticipant}
                                 style={{ flexDirection: 'row', alignItems: 'center' }}
                             >
-                                <Ionicons name="person-add-outline" size={16} color="#10B981" />
-                                <Text style={{ color: '#10B981', fontSize: 14, fontWeight: '600', marginLeft: 4 }}>Añadir</Text>
+                                <Ionicons name="person-add-outline" size={16} color={colors.primary} />
+                                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: '600', marginLeft: 4 }}>Añadir</Text>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -436,7 +438,7 @@ export function GroupProfileView({
                                     paddingHorizontal: 16,
                                     paddingVertical: 12,
                                     borderBottomWidth: 1,
-                                    borderBottomColor: '#E5E7EB',
+                                    borderBottomColor: colors.border,
                                 }}
                             >
                                 {/* Avatar */}
@@ -464,7 +466,7 @@ export function GroupProfileView({
                                 {/* Name & Phone */}
                                 <View style={{ flex: 1 }}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                        <Text style={{ fontSize: 16, fontWeight: '500', color: '#1F2937' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '500', color: colors.text }}>
                                             {getDisplayName(participant)}
                                             {participant.id === userId && ' (Tú)'}
                                         </Text>
@@ -486,7 +488,7 @@ export function GroupProfileView({
                 </View>
 
                 {/* Group Settings / Actions */}
-                <View style={{ backgroundColor: '#FFFFFF', marginTop: 16 }}>
+                <View style={{ backgroundColor: colors.card, marginTop: 16 }}>
                     <TouchableOpacity
                         onPress={handleLeaveGroup}
                         style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}

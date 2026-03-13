@@ -5,6 +5,7 @@ import { Image } from 'react-native';
 interface IconProps {
   size?: number;
   color?: string;
+  isDark?: boolean;
 }
 
 export function ChatIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
@@ -22,7 +23,7 @@ export function CoursesIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
   return (
     <Image
       source={{ uri: 'https://res.cloudinary.com/do1mvhvms/image/upload/v1767650875/educacion_hu8sqk.png' }}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, tintColor: color }}
       resizeMode="cover"
     />
   );
@@ -42,7 +43,7 @@ export function SOSIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
   return (
     <Image
       source={{ uri: 'https://res.cloudinary.com/do1mvhvms/image/upload/v1767650799/ghyqs2fshx30bsbj1m3i_akaakx.png' }}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, tintColor: color }}
       resizeMode="cover"
     />
   );
@@ -52,7 +53,7 @@ export function ProfileIcon({ size = 24, color = '#FFFFFF' }: IconProps) {
   return (
     <Image
       source={{ uri: 'https://res.cloudinary.com/dzi2p0pqa/image/upload/v1767366296/eypdcpyqef9wubgxukcs.png' }}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, tintColor: color }}
       resizeMode="cover"
     />
   );
@@ -79,10 +80,10 @@ export function BackArrowIcon({ size = 24, color = '#000000' }: IconProps) {
   );
 }
 
-export function VideoCallIcon({ size = 24, color = '#000000' }: IconProps) {
+export function VideoCallIcon({ size = 24, color = '#000000', isDark = false }: IconProps) {
   return (
     <Image
-      source={require('../../../assets/videocall.png')}
+      source={{ uri: isDark ? 'https://res.cloudinary.com/dnglv0zqg/image/upload/v1771689608/1_vn7lil.png' : 'https://res.cloudinary.com/dnglv0zqg/image/upload/v1771689608/2_yr1y1c.png' }}
       style={{ width: size, height: size }}
       resizeMode="contain"
     />

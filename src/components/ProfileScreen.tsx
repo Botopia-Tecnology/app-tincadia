@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share, Switch } from 'react-native';
+import { Settings, Moon, Sun } from 'lucide-react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { profileScreenStyles as styles } from '../styles/ProfileScreen.styles';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme, ThemeMode } from '../contexts/ThemeContext';
+import { useSubscription } from '../hooks/useSubscription';
 import { useAlert } from './common/CustomAlert';
 import {
     ChatIcon,
@@ -24,7 +27,7 @@ import { PrivacyScreen } from './profile/PrivacyScreen';
 import { EmergencyContactsScreen } from './profile/EmergencyContactsScreen';
 
 interface ProfileScreenProps {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile') => void;
+    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call', params?: any) => void;
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
@@ -37,9 +40,22 @@ export function ProfileScreen({
     onShowNotifications,
 }: ProfileScreenProps) {
     const { user, logout, isLoading } = useAuth();
+    const { subscriptionStatus, isPremium, isBasico } = useSubscription(userId);
     const alert = useAlert();
+    const { colors, isDark, themeMode, setThemeMode, systemTheme } = useTheme();
     // Local state to manage sub-screen navigation
     const [subScreen, setSubScreen] = useState<'none' | 'editProfile' | 'privacy' | 'emergencyContacts'>('none');
+
+    // Derive plan display label from subscription status
+    const getPlanLabel = () => {
+        if (!subscriptionStatus?.hasSubscription) return 'Plan Gratis';
+        const planType = subscriptionStatus.planType || '';
+        if (planType === 'personal_premium') return 'Plan Premium';
+        if (planType === 'empresa_corporate') return 'Membresía Empresarial';
+        if (planType === 'personal_free') return 'Plan Básico';
+        return 'Plan Básico';
+    };
+    const planLabel = getPlanLabel();
 
 
 
@@ -99,23 +115,23 @@ export function ProfileScreen({
     }
 
     return (
-        <KeyboardSafeView style={styles.container}>
-            <StatusBar style="dark" />
+        <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]} dismissOnPress={false}>
+            <StatusBar style={colors.statusBar} />
 
             {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={onBack}>
-                    <BackArrowIcon size={32} color="#000000" />
+            <View style={[styles.header, { backgroundColor: colors.background }]}>
+                <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.surface }]} onPress={onBack}>
+                    <BackArrowIcon size={32} color={colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Perfil</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Perfil</Text>
                 {userId && onShowNotifications ? (
                     <NotificationBell
                         userId={userId}
                         onPress={onShowNotifications}
-                        color="#000000"
+                        color={colors.text}
                     />
                 ) : (
-                    <View style={styles.notificationButton} />
+                    <View style={[styles.notificationButton, { backgroundColor: colors.card }]} />
                 )}
             </View>
 
@@ -128,52 +144,120 @@ export function ProfileScreen({
                             style={[styles.avatar, { width: 80, height: 80, borderRadius: 40 }]}
                         />
                     </View>
-                    <View style={styles.userInfo}>
-                        <Text style={[styles.userName, { fontSize: 18 }]}>
+                    <View style={[styles.userInfo, { marginLeft: 20 }]}>
+                        <Text style={[styles.userName, { fontSize: 18, color: colors.text }]}>
                             {user ? `${user.firstName} ${user.lastName}` : 'Usuario'}
                         </Text>
                         {user?.email && (
-                            <Text style={{ color: '#666', fontSize: 14, marginTop: 4 }}>{user.email}</Text>
+                            <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4 }}>{user.email}</Text>
                         )}
+                        {/* Plan Badge - Clickable */}
+                        <TouchableOpacity
+                            onPress={() => Linking.openURL('https://www.tincadia.com/pricing')}
+                            activeOpacity={0.7}
+                        >
+                            <View style={{
+                                marginTop: 8,
+                                paddingHorizontal: 12,
+                                paddingVertical: 4,
+                                backgroundColor: isPremium ? '#FFD700' : '#E5E7EB',
+                                borderRadius: 12,
+                                alignSelf: 'flex-start',
+                                flexDirection: 'row',
+                                alignItems: 'center'
+                            }}>
+                                <Text style={{
+                                    color: isPremium ? '#000' : '#4B5563',
+                                    fontSize: 12,
+                                    fontWeight: '600',
+                                    marginRight: 4
+                                }}>
+                                    {planLabel}
+                                </Text>
+                                <ChevronRightIcon size={12} color={isPremium ? '#000' : '#666'} />
+                            </View>
+                        </TouchableOpacity>
                     </View>
                 </View>
 
                 {/* Menu Group 1 */}
-                <View style={styles.menuGroup}>
+                <View style={[styles.menuGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <TouchableOpacity
-                        style={[styles.menuItem, styles.menuItemBorder]}
-                        onPress={() => setSubScreen('editProfile')} // Open Edit Profile
+                        style={[styles.menuItem, styles.menuItemBorder, { borderBottomColor: colors.divider }]}
+                        onPress={() => setSubScreen('editProfile')}
                     >
                         <View style={styles.menuIcon}>
-                            <AccountIcon size={20} color="#666666" />
+                            <AccountIcon size={20} color={colors.icon} />
                         </View>
-                        <Text style={styles.menuLabel}>Cuenta</Text>
-                        <ChevronRightIcon size={20} color="#999999" />
+                        <Text style={[styles.menuLabel, { color: colors.text }]}>Cuenta</Text>
+                        <ChevronRightIcon size={20} color={colors.iconSecondary} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={[styles.menuItem, styles.menuItemBorder]}
-                        onPress={() => setSubScreen('privacy')} // Open Privacy Screen
+                        style={[styles.menuItem, styles.menuItemBorder, { borderBottomColor: colors.divider }]}
+                        onPress={() => setSubScreen('privacy')}
                     >
                         <View style={styles.menuIcon}>
-                            <PrivacyIcon size={20} color="#666666" />
+                            <PrivacyIcon size={20} color={colors.icon} />
                         </View>
-                        <Text style={styles.menuLabel}>Privacidad</Text>
-                        <ChevronRightIcon size={20} color="#999999" />
+                        <Text style={[styles.menuLabel, { color: colors.text }]}>Privacidad</Text>
+                        <ChevronRightIcon size={20} color={colors.iconSecondary} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={styles.menuItem}
+                        style={[styles.menuItem, styles.menuItemBorder, { borderBottomColor: colors.divider }]}
                         onPress={() => onNavigate('chats')}
                     >
                         <View style={styles.menuIcon}>
-                            <ChatIcon size={20} color="#666666" />
+                            <ChatIcon size={20} color={colors.icon} />
                         </View>
-                        <Text style={styles.menuLabel}>Chats</Text>
-                        <ChevronRightIcon size={20} color="#999999" />
+                        <Text style={[styles.menuLabel, { color: colors.text }]}>Chats</Text>
+                        <ChevronRightIcon size={20} color={colors.iconSecondary} />
                     </TouchableOpacity>
+
+                </View>
+
+                {/* Visual Settings */}
+                <View style={[styles.menuGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    {/* System Theme Toggle */}
+                    <View style={[styles.menuItem, styles.menuItemBorder, { borderBottomColor: colors.divider }]}>
+                        <View style={styles.menuIcon}>
+                            <Settings size={20} color={colors.icon} />
+                        </View>
+                        <Text style={[styles.menuLabel, { color: colors.text }]}>Usar tema del dispositivo</Text>
+                        <Switch
+                            value={themeMode === 'system'}
+                            onValueChange={(value) => setThemeMode(value ? 'system' : (isDark ? 'dark' : 'light'))}
+                            trackColor={{ false: '#E5E7EB', true: '#4CAF50' }}
+                            thumbColor={'#FFFFFF'}
+                        />
+                    </View>
+                    {themeMode === 'system' && (
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginLeft: 56, marginBottom: 8, marginTop: -8 }}>
+                            Detectado: {systemTheme || 'unknown'}
+                        </Text>
+                    )}
+
+                    {/* Dark Mode Toggle */}
+                    <View style={[styles.menuItem, { borderBottomColor: colors.divider, opacity: themeMode === 'system' ? 0.5 : 1 }]}>
+                        <View style={styles.menuIcon}>
+                            {isDark ? (
+                                <Moon size={20} color={colors.icon} />
+                            ) : (
+                                <Sun size={20} color={colors.icon} />
+                            )}
+                        </View>
+                        <Text style={[styles.menuLabel, { color: colors.text }]}>Modo Oscuro</Text>
+                        <Switch
+                            value={isDark}
+                            disabled={themeMode === 'system'}
+                            onValueChange={(value) => setThemeMode(value ? 'dark' : 'light')}
+                            trackColor={{ false: '#E5E7EB', true: '#4CAF50' }}
+                            thumbColor={isDark ? '#FFFFFF' : '#F4F3F4'}
+                        />
+                    </View>
                 </View>
 
                 {/* Emergency Contacts */}
-                <View style={styles.menuGroup}>
+                <View style={[styles.menuGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <TouchableOpacity
                         style={styles.menuItem}
                         onPress={() => setSubScreen('emergencyContacts')}
@@ -181,29 +265,37 @@ export function ProfileScreen({
                         <View style={[styles.menuIcon, { backgroundColor: '#FFE5E5' }]}>
                             <EmergencyContactIcon size={18} color="#FF3B30" />
                         </View>
-                        <Text style={styles.menuLabel}>Contactos de Emergencia</Text>
-                        <ChevronRightIcon size={20} color="#999999" />
+                        <Text style={[styles.menuLabel, { color: colors.text }]}>Contactos de Emergencia</Text>
+                        <ChevronRightIcon size={20} color={colors.iconSecondary} />
                     </TouchableOpacity>
                 </View>
 
                 {/* Menu Group 2 */}
-                <View style={styles.menuGroup}>
+                <View style={[styles.menuGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <TouchableOpacity
-                        style={[styles.menuItem, styles.menuItemBorder]}
-                        onPress={() => Linking.openURL('https://tincadia-frontend.vercel.app/contacto')}
+                        style={[styles.menuItem, styles.menuItemBorder, { borderBottomColor: colors.divider }]}
+                        onPress={async () => {
+                            try {
+                                const url = 'https://www.tincadia.com/contacto';
+                                console.log('Opening Help URL:', url);
+                                await Linking.openURL(url);
+                            } catch (err) {
+                                console.error('Failed to open help URL:', err);
+                            }
+                        }}
                     >
-                        <Text style={[styles.menuLabel, { marginLeft: 0 }]}>Ayuda</Text>
-                        <ChevronRightIcon size={20} color="#999999" />
+                        <Text style={[styles.menuLabel, { marginLeft: 0, color: colors.text }]}>Ayuda</Text>
+                        <ChevronRightIcon size={20} color={colors.iconSecondary} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={[styles.menuItem, styles.menuItemBorder]}
+                        style={[styles.menuItem, styles.menuItemBorder, { borderBottomColor: colors.divider }]}
                         onPress={handleInviteFriends}
                     >
                         <View style={styles.menuIcon}>
-                            <InviteIcon size={20} color="#666666" />
+                            <InviteIcon size={20} color={colors.icon} />
                         </View>
-                        <Text style={styles.menuLabel}>Invitar amigos</Text>
-                        <ChevronRightIcon size={20} color="#999999" />
+                        <Text style={[styles.menuLabel, { color: colors.text }]}>Invitar amigos</Text>
+                        <ChevronRightIcon size={20} color={colors.iconSecondary} />
                     </TouchableOpacity>
 
                     {/* Become Interpreter Button */}

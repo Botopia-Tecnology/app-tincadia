@@ -7,13 +7,14 @@ import {
     TouchableWithoutFeedback,
     Keyboard,
     View,
-    ViewStyle
+    ViewStyle,
+    StyleProp,
 } from 'react-native';
 import { SafeAreaView, Edge } from 'react-native-safe-area-context';
 
 interface Props {
     children: React.ReactNode;
-    style?: ViewStyle;
+    style?: StyleProp<ViewStyle>;
     contentContainerStyle?: ViewStyle;
     offset?: number;
     dismissOnPress?: boolean;

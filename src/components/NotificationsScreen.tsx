@@ -25,6 +25,8 @@ interface NotificationsScreenProps {
     onBack: () => void;
 }
 
+import { useTheme } from '../contexts/ThemeContext';
+
 // Icon components for notification types
 const NewsIcon = ({ size = 20, color = '#3B82F6' }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -145,6 +147,8 @@ export function NotificationsScreen({ userId, onBack }: NotificationsScreenProps
         }
     }, [userId]);
 
+    const { colors, isDark } = useTheme();
+
     // Mark all notifications as read when screen opens
     useEffect(() => {
         const markAllRead = async () => {
@@ -190,7 +194,11 @@ export function NotificationsScreen({ userId, onBack }: NotificationsScreenProps
         <TouchableOpacity
             style={[
                 styles.notificationItem,
-                !item.isRead && styles.notificationItemUnread,
+                {
+                    backgroundColor: isDark ? colors.card : '#FFFFFF',
+                    borderColor: colors.border // Override ALL borders
+                },
+                !item.isRead && { backgroundColor: isDark ? `${colors.primary}10` : '#F0FDF4' },
             ]}
             onPress={() => handleNotificationPress(item)}
             activeOpacity={0.7}
@@ -203,17 +211,18 @@ export function NotificationsScreen({ userId, onBack }: NotificationsScreenProps
                     <Text
                         style={[
                             styles.notificationTitle,
-                            !item.isRead && styles.notificationTitleUnread,
+                            { color: colors.text },
+                            !item.isRead && { fontWeight: '700', color: colors.text },
                         ]}
                         numberOfLines={1}
                     >
                         {item.title}
                     </Text>
-                    <Text style={styles.notificationTime}>
+                    <Text style={[styles.notificationTime, { color: colors.textSecondary }]}>
                         {formatTimeAgo(item.createdAt)}
                     </Text>
                 </View>
-                <Text style={styles.notificationMessage} numberOfLines={2}>
+                <Text style={[styles.notificationMessage, { color: colors.textMuted }]} numberOfLines={2}>
                     {item.message}
                 </Text>
             </View>
@@ -223,28 +232,28 @@ export function NotificationsScreen({ userId, onBack }: NotificationsScreenProps
 
     const renderEmptyState = () => (
         <View style={styles.emptyContainer}>
-            <EmptyBellIcon size={48} color="#9CA3AF" />
-            <Text style={styles.emptyText}>No hay notificaciones</Text>
-            <Text style={styles.emptySubtext}>
+            <EmptyBellIcon size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No hay notificaciones</Text>
+            <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>
                 Las novedades y promociones de Tincadia aparecerán aquí
             </Text>
         </View>
     );
 
     return (
-        <SafeAreaView style={styles.container} edges={['top']}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
                 <TouchableOpacity style={styles.backButton} onPress={onBack}>
-                    <BackArrowIcon size={24} color="#111827" />
+                    <BackArrowIcon size={24} color={colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Notificaciones</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Notificaciones</Text>
             </View>
 
             {/* Loading State */}
             {isLoading ? (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#7FA889" />
+                    <ActivityIndicator size="large" color={colors.primary} />
                 </View>
             ) : (
                 <FlatList
@@ -260,8 +269,8 @@ export function NotificationsScreen({ userId, onBack }: NotificationsScreenProps
                         <RefreshControl
                             refreshing={isRefreshing}
                             onRefresh={handleRefresh}
-                            colors={['#7FA889']}
-                            tintColor="#7FA889"
+                            colors={[colors.primary]}
+                            tintColor={colors.primary}
                         />
                     }
                 />

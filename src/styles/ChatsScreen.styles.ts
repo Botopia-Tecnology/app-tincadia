@@ -165,9 +165,19 @@ export const chatViewStyles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   inputRow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
+  },
+  leftActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
   mediaButton: {
     width: 40,
@@ -181,13 +191,13 @@ export const chatViewStyles = StyleSheet.create({
     fontSize: 20,
   },
   inputWrapper: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F3F4F6',
     borderRadius: 24,
     paddingHorizontal: 12,
     minHeight: 40,
+    overflow: 'hidden',
   },
   textInput: {
     flex: 1,
@@ -207,10 +217,6 @@ export const chatViewStyles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255, 235, 59, 0.2)',
     borderRadius: 24,
-    top: 12,
-    bottom: 12,
-    left: 64,
-    right: 64,
   },
   sendButton: {
     width: 40,
@@ -265,6 +271,34 @@ export const chatsListStyles = StyleSheet.create({
   },
   notificationButton: {
     padding: 8,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  iconButton: {
+    padding: 8,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#EF4444',
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
 
   // Search

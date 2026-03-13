@@ -594,6 +594,47 @@ export function getConversations() {
 }
 
 /**
+ * Get a single conversation by ID
+ */
+export function getConversation(id: string) {
+    const database = ensureInitialized();
+    const results = database.getAllSync<{
+        id: string;
+        other_user_id: string | null;
+        other_user_name: string;
+        other_user_avatar: string;
+        other_user_phone: string;
+        last_message: string;
+        last_message_at: string;
+        unread_count: number;
+        updated_at: string;
+        type: string | null;
+        title: string | null;
+        image_url: string | null;
+        description: string | null;
+    }>(
+        `SELECT * FROM conversations WHERE id = ?`,
+        [id]
+    );
+    return results.length > 0 ? results[0] : null;
+}
+
+/**
+ * Delete a conversation by ID
+ */
+export function deleteConversation(id: string): boolean {
+    const database = ensureInitialized();
+    try {
+        database.runSync(`DELETE FROM conversations WHERE id = ?`, [id]);
+        database.runSync(`DELETE FROM messages WHERE conversation_id = ?`, [id]);
+        return true;
+    } catch (e) {
+        console.error('Error deleting conversation:', e);
+        return false;
+    }
+}
+
+/**
  * Update unread count for a conversation
  */
 export function updateUnreadCount(conversationId: string, count: number) {

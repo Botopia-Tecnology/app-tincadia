@@ -21,6 +21,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import { useAppleAuth } from '../hooks/useAppleAuth';
 import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
@@ -39,6 +40,7 @@ interface RegisterScreenProps {
 
 export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProps) {
   const { t } = useTranslation();
+  const { colors, isDark } = useTheme();
   const { register, error, clearError, isLoading } = useAuth();
   const { signInWithGoogle, isReady: googleReady } = useGoogleAuth();
   const { signInWithApple, isAvailable: isAppleAvailable } = useAppleAuth();
@@ -227,7 +229,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
           />
         </Svg>
         <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]}>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: '#000000' }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text }}>
             {current} of {total}
           </Text>
         </View>
@@ -239,10 +241,10 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
 
   return (
     <KeyboardSafeView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       offset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <StatusBar style="dark" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <ScrollView
         ref={scrollViewRef}
         contentContainerStyle={styles.scrollContent}
@@ -253,12 +255,12 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
         <View style={styles.titleContainer}>
           <View style={styles.logoArea}>
             <TouchableOpacity style={styles.absoluteBackButton} onPress={handleBack} disabled={isLoading}>
-              <Text style={styles.backArrow}>←</Text>
+              <Text style={[styles.backArrow, { color: colors.text }]}>←</Text>
             </TouchableOpacity>
             {step === 1 ? (
               <Image
                 source={require('../../assets/icon.png')}
-                style={styles.logo}
+                style={[styles.logo, { tintColor: isDark ? '#FFFFFF' : undefined }]}
                 resizeMode="contain"
               />
             ) : (
@@ -268,8 +270,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
               <ProgressCircle current={step} total={totalSteps} />
             </View>
           </View>
-          <Text style={styles.title}>Bienvenido a Tincadia</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { color: colors.text }]}>Bienvenido a Tincadia</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Crea tu cuenta y comienza a aprender hoy mismo.
           </Text>
         </View>
@@ -279,7 +281,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
           <TouchableOpacity
             onPress={() => { setValidationError(null); clearError(); }}
             style={{
-              backgroundColor: '#FFE5E5',
+              backgroundColor: isDark ? 'rgba(255, 68, 68, 0.1)' : '#FFE5E5',
               borderRadius: 8,
               padding: 12,
               marginHorizontal: 20,
@@ -288,7 +290,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
               borderColor: '#FF4444',
             }}
           >
-            <Text style={{ color: '#CC0000', fontSize: 14 }}>{displayError}</Text>
+            <Text style={{ color: '#FF4444', fontSize: 14 }}>{displayError}</Text>
           </TouchableOpacity>
         )}
 
@@ -298,9 +300,9 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
             <>
               {/* Step 1: Email & Passwords */}
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                 placeholder={t('register.email')}
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.textMuted}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -310,9 +312,9 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
               />
               <View style={{ width: '90%', alignSelf: 'center', position: 'relative' }}>
                 <TextInput
-                  style={[styles.input, { width: '100%', paddingRight: 50 }]}
+                  style={[styles.input, { width: '100%', paddingRight: 50, backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                   placeholder={t('register.password')}
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.textMuted}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -332,15 +334,15 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   <Ionicons
                     name={showPassword ? 'eye' : 'eye-off'}
                     size={22}
-                    color="#666"
+                    color={colors.iconSecondary}
                   />
                 </TouchableOpacity>
               </View>
               <View style={{ width: '90%', alignSelf: 'center', position: 'relative' }}>
                 <TextInput
-                  style={[styles.input, { width: '100%', paddingRight: 50 }]}
+                  style={[styles.input, { width: '100%', paddingRight: 50, backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                   placeholder={t('register.confirmPassword')}
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.textMuted}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showConfirmPassword}
@@ -360,7 +362,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   <Ionicons
                     name={showConfirmPassword ? 'eye' : 'eye-off'}
                     size={22}
-                    color="#666"
+                    color={colors.iconSecondary}
                   />
                 </TouchableOpacity>
               </View>
@@ -369,18 +371,18 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
             <>
               {/* Step 2: Personal Info */}
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                 placeholder={t('register.firstName')}
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.textMuted}
                 value={firstName}
                 onChangeText={setFirstName}
                 autoCapitalize="words"
                 editable={!isLoading}
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                 placeholder={t('register.lastName')}
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.textMuted}
                 value={lastName}
                 onChangeText={setLastName}
                 autoCapitalize="words"
@@ -388,19 +390,19 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
               />
               <View style={styles.documentRow}>
                 <TouchableOpacity
-                  style={styles.documentTypeContainer}
+                  style={[styles.documentTypeContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                   onPress={() => setModalVisible(true)}
                   disabled={isLoading}
                 >
-                  <Text style={[styles.documentTypeText, !documentType && styles.documentTypePlaceholder]}>
+                  <Text style={[styles.documentTypeText, { color: documentType ? colors.text : colors.textMuted }]}>
                     {documentType || 'Tipo'}
                   </Text>
                 </TouchableOpacity>
 
                 <TextInput
-                  style={styles.documentNumberInput}
+                  style={[styles.documentNumberInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                   placeholder="Número de documento"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.textMuted}
                   value={documentNumber}
                   onChangeText={setDocumentNumber}
                   keyboardType="numeric"
@@ -411,11 +413,12 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                 <CountryCodePicker
                   selectedCountry={selectedCountry}
                   onSelect={setSelectedCountry}
+                  theme={isDark ? 'dark' : 'light'}
                 />
                 <TextInput
-                  style={[styles.input, { flex: 1, marginBottom: 0, marginRight: 8 }]}
+                  style={[styles.input, { flex: 1, marginBottom: 0, marginRight: 8, backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                   placeholder={t('register.phone')}
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.textMuted}
                   value={phone}
                   onChangeText={(text) => {
                     setPhone(text);
@@ -439,7 +442,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
         <View style={styles.socialSection}>
           <View style={styles.separator}>
             <View style={styles.separatorLine} />
-            <Text style={styles.separatorText}>o regístrate con</Text>
+            <Text style={[styles.separatorText, { color: colors.textSecondary }]}>o regístrate con</Text>
             <View style={styles.separatorLine} />
           </View>
 
@@ -477,10 +480,10 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
             )}
           </TouchableOpacity>
 
-          <Text style={styles.termsText}>
+          <Text style={[styles.termsText, { color: colors.textSecondary }]}>
             Al continuar estás aceptando nuestros{' '}
-            <Text style={styles.linkText} onPress={() => Linking.openURL('https://www.tincadia.com/terminos')}>términos y condiciones</Text> y{' '}
-            <Text style={styles.linkText} onPress={() => Linking.openURL('https://www.tincadia.com/privacidad')}>tratamiento de mis datos personales</Text>.
+            <Text style={[styles.linkText, { color: colors.primary }]} onPress={() => Linking.openURL('https://www.tincadia.com/terminos')}>términos y condiciones</Text> y{' '}
+            <Text style={[styles.linkText, { color: colors.primary }]} onPress={() => Linking.openURL('https://www.tincadia.com/privacidad')}>tratamiento de mis datos personales</Text>.
           </Text>
         </View>
       </ScrollView>

@@ -20,6 +20,7 @@ export interface User {
     isProfileComplete?: boolean;
     readReceiptsEnabled?: boolean;
     role?: string;
+    plan?: string;
 }
 
 export interface LoginDto {

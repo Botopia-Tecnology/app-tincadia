@@ -405,4 +405,24 @@ export const contactProfileStyles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
+
+    // Logout / Delete Button
+    logoutButton: {
+        backgroundColor: '#FEE2E2', // Light red
+        marginHorizontal: 16,
+        borderRadius: 14,
+        paddingVertical: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: COLORS.danger,
+        flexDirection: 'row',
+        gap: 8,
+    },
+
+    logoutButtonText: {
+        color: COLORS.danger,
+        fontSize: 16,
+        fontWeight: '700',
+    },
 });

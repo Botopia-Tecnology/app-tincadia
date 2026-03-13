@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet, Image, Dimensions, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet, Image, Dimensions, TouchableWithoutFeedback, Alert, FlatList } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,9 @@ import { PlayIcon, PauseIcon, SkipForwardIcon, SkipBackwardIcon, FullscreenIcon 
 interface CoursePlayerScreenProps {
     courseId: string;
     onBack: () => void;
+    isPublished?: boolean;
+    priceInCents?: number;
+    instructor?: string;
 }
 
 export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps) {
@@ -24,6 +27,8 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
     const [showControls, setShowControls] = useState(true);
     const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const videoRef = useRef<Video>(null);
+    const [messageText, setMessageText] = React.useState('');
+    const flatListRef = useRef<FlatList>(null);
 
     useEffect(() => {
         fetchCourse();
@@ -91,7 +96,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
     const handleLessonSelect = (module: any, lesson: any) => {
         if (!course) return;
         if (isLessonLocked(course, module, lesson)) {
-            alert('Contenido de pago. Desbloquea para continuar.');
+            Alert.alert('Contenido de pago', 'Desbloquea para continuar.');
             return;
         }
         setActiveLesson(lesson);

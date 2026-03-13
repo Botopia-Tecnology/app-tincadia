@@ -11,6 +11,7 @@ import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { chatService } from '../services/chat.service';
 import {
     Siren,
@@ -53,6 +54,8 @@ export function SOSScreen({
     onShowNotifications,
 }: SOSScreenProps) {
     const { user } = useAuth();
+    const { colors, isDark } = useTheme();
+
     const emergencyTypes: EmergencyType[] = [
         { id: '1', icon: Flame, color: '#EF4444', label: 'BOMBEROS' },
         { id: '2', icon: Ambulance, color: '#3B82F6', label: 'AMBULANCIA' },
@@ -89,8 +92,6 @@ export function SOSScreen({
                     staysActiveInBackground: true,
                     playsInSilentModeIOS: true,
                     shouldDuckAndroid: false,
-                    // Try routing through earpiece (call audio channel) instead of speaker
-                    // This may bypass echo cancellation on some devices
                     playThroughEarpieceAndroid: true,
                     interruptionModeIOS: 1,
                     interruptionModeAndroid: 1,
@@ -196,13 +197,7 @@ export function SOSScreen({
             ? `https://maps.google.com/?q=${location.coords.latitude},${location.coords.longitude}`
             : '';
 
-        const emergencyMessage = `🆘 EMERGENCIA - SOY PERSONA SORDA
-
-Tipo: ${typeToText(type.label).toUpperCase()}
-Ubicación: ${locationText}
-${googleMapsLink ? `Mapa: ${googleMapsLink}` : ''}
-
-Necesito ayuda urgente. No puedo hablar por teléfono.`;
+        const emergencyMessage = `🆘 EMERGENCIA - SOY PERSONA SORDA\n\nTipo: ${typeToText(type.label).toUpperCase()}\nUbicación: ${locationText}\n${googleMapsLink ? `Mapa: ${googleMapsLink}` : ''}\n\nNecesito ayuda urgente. No puedo hablar por teléfono.`;
 
         // 1. Send SMS first
         const isAvailable = await SMS.isAvailableAsync();
@@ -267,13 +262,7 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
 
         const emergencyType = activeEmergency ? typeToText(activeEmergency.label).toUpperCase() : 'GENERAL';
 
-        const message = `🆘 *EMERGENCIA - SOY PERSONA SORDA*
-
-*Tipo:* ${emergencyType}
-*Ubicación:* ${locationText}
-${googleMapsLink ? `*Mapa:* ${googleMapsLink}` : ''}
-
-Necesito ayuda urgente. No puedo hablar por teléfono.`;
+        const message = `🆘 *EMERGENCIA - SOY PERSONA SORDA*\n\n*Tipo:* ${emergencyType}\n*Ubicación:* ${locationText}\n${googleMapsLink ? `*Mapa:* ${googleMapsLink}` : ''}\n\nNecesito ayuda urgente. No puedo hablar por teléfono.`;
 
         // Send to all emergency contacts
         for (const contact of emergencyContacts) {
@@ -284,7 +273,6 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
                 const canOpen = await Linking.canOpenURL(whatsappUrl);
                 if (canOpen) {
                     await Linking.openURL(whatsappUrl);
-                    // Give user time to send before opening next
                     return; // Open one at a time, user can tap button again for next contact
                 }
             } catch (error) {
@@ -328,31 +316,31 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar style="dark" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
 
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                 <View style={styles.headerTop}>
-                    <Text style={styles.headerTitle}>Centro de Ayuda</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>Centro de Ayuda</Text>
                     {userId && onShowNotifications ? (
                         <NotificationBell
                             userId={userId}
                             onPress={onShowNotifications}
-                            color="#333333"
+                            color={colors.icon}
                         />
                     ) : (
                         <View style={styles.notificationButton} />
                     )}
                 </View>
 
-                {/* Decorative Search Bar (for visual consistency) */}
-                <View style={styles.searchContainer}>
-                    <SearchIcon size={20} color="#666666" />
+                {/* Decorative Search Bar */}
+                <View style={[styles.searchContainer, { backgroundColor: colors.inputBg }]}>
+                    <SearchIcon size={20} color={colors.textMuted} />
                     <TextInput
-                        style={styles.searchInput}
+                        style={[styles.searchInput, { color: colors.text }]}
                         placeholder="Buscar ayuda"
-                        placeholderTextColor="#666666"
+                        placeholderTextColor={colors.textMuted}
                         editable={false}
                     />
                 </View>
@@ -361,25 +349,31 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
             <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
 
                 {/* Status Card / Instructions */}
-                <View style={styles.statusCard}>
+                <View style={[styles.statusCard, {
+                    backgroundColor: isDark ? '#1A2744' : '#EFF6FF',
+                    borderColor: isDark ? '#2A3F6B' : '#DBEAFE',
+                }]}>
                     <View style={styles.statusHeader}>
                         <Info size={20} color="#3B82F6" />
-                        <Text style={styles.statusTitle}>¿Cómo funciona?</Text>
+                        <Text style={[styles.statusTitle, { color: isDark ? '#93C5FD' : '#1E40AF' }]}>¿Cómo funciona?</Text>
                     </View>
-                    <Text style={styles.statusText}>
+                    <Text style={[styles.statusText, { color: isDark ? '#93C5FD' : '#3B82F6' }]}>
                         1. Presiona una opción para llamar al 123.
                     </Text>
-                    <Text style={styles.statusText}>
+                    <Text style={[styles.statusText, { color: isDark ? '#93C5FD' : '#3B82F6' }]}>
                         2. Activa el altavoz de tu teléfono.
                     </Text>
-                    <Text style={styles.statusText}>
+                    <Text style={[styles.statusText, { color: isDark ? '#93C5FD' : '#3B82F6' }]}>
                         3. El audio con tu ubicación se reproducirá automáticamente para el operador.
                     </Text>
                 </View>
 
                 {/* Active Emergency State */}
                 {activeEmergency && (
-                    <View style={[styles.activeStateCard, { borderColor: activeEmergency.color }]}>
+                    <View style={[styles.activeStateCard, {
+                        backgroundColor: colors.card,
+                        borderColor: activeEmergency.color,
+                    }]}>
                         <View style={styles.activeHeader}>
                             <activeEmergency.icon size={24} color={activeEmergency.color} />
                             <Text style={[styles.activeTitle, { color: activeEmergency.color }]}>
@@ -391,7 +385,7 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
                             {isLoading ? (
                                 <View style={styles.loadingContainer}>
                                     <ActivityIndicator size="small" color={activeEmergency.color} />
-                                    <Text style={styles.loadingText}>Generando voz de auxilio...</Text>
+                                    <Text style={[styles.loadingText, { color: colors.textMuted }]}>Generando voz de auxilio...</Text>
                                 </View>
                             ) : (
                                 <>
@@ -421,44 +415,50 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
                                 </>
                             )}
                         </View>
-                        <Text style={styles.activeHint}>
+                        <Text style={[styles.activeHint, { color: colors.textMuted }]}>
                             El operador escuchará esto: "Soy una persona sorda, necesito ayuda..."
                         </Text>
                     </View>
                 )}
 
-                <Text style={styles.sectionTitle}>Selecciona el tipo de emergencia</Text>
+                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Selecciona el tipo de emergencia</Text>
 
                 {/* Grid */}
                 <View style={styles.gridContainer}>
                     {emergencyTypes.map((item) => (
                         <TouchableOpacity
                             key={item.id}
-                            style={styles.gridItem}
+                            style={[styles.gridItem, {
+                                backgroundColor: colors.card,
+                                borderColor: colors.border,
+                            }]}
                             onPress={() => handleEmergencyPress(item)}
                             activeOpacity={0.7}
                         >
                             <View style={[styles.iconCircle, { backgroundColor: `${item.color}15` }]}>
                                 <item.icon size={32} color={item.color} />
                             </View>
-                            <Text style={styles.gridLabel}>{item.label}</Text>
+                            <Text style={[styles.gridLabel, { color: colors.text }]}>{item.label}</Text>
                         </TouchableOpacity>
                     ))}
                 </View>
 
                 {/* Interpreter urgent call */}
-                <View style={styles.interpreterCard}>
+                <View style={[styles.interpreterCard, {
+                    backgroundColor: isDark ? '#1A1F3A' : '#EEF2FF',
+                    borderColor: isDark ? '#2D3566' : '#C7D2FE',
+                }]}>
                     <View style={styles.interpreterHeader}>
-                        <Video size={24} color="#1E3A8A" />
+                        <Video size={24} color={isDark ? '#818CF8' : '#1E3A8A'} />
                         <View style={{ flex: 1 }}>
-                            <Text style={styles.interpreterTitle}>Videollamada urgente con intérprete</Text>
-                            <Text style={styles.interpreterSubtitle}>
+                            <Text style={[styles.interpreterTitle, { color: isDark ? '#818CF8' : '#1E3A8A' }]}>Videollamada urgente con intérprete</Text>
+                            <Text style={[styles.interpreterSubtitle, { color: isDark ? '#818CF8' : '#1E3A8A' }]}>
                                 Conecta ya con un intérprete para comunicarte con emergencias.
                             </Text>
                         </View>
                     </View>
                     <TouchableOpacity
-                        style={styles.interpreterButton}
+                        style={[styles.interpreterButton, { backgroundColor: isDark ? '#4F46E5' : '#1E40AF' }]}
                         onPress={handleInterpreterEmergencyCall}
                         disabled={isRequestingInterpreter}
                     >
@@ -472,8 +472,8 @@ Necesito ayuda urgente. No puedo hablar por teléfono.`;
 
                 {/* Location Footer */}
                 <View style={styles.locationFooter}>
-                    <MapPin size={18} color="#6B7280" />
-                    <Text style={styles.locationText} numberOfLines={1}>
+                    <MapPin size={18} color={colors.textMuted} />
+                    <Text style={[styles.locationText, { color: colors.textMuted }]} numberOfLines={1}>
                         {address || "Ubicación actual detectada"}
                     </Text>
                 </View>

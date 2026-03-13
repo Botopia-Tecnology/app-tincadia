@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { contentService, Course } from '../services/content.service';
 
@@ -9,6 +9,7 @@ export function useCourses() {
     const [courses, setCourses] = useState<Course[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
+    const isSyncingRef = useRef(false);
 
     const loadLocalCourses = useCallback(async () => {
         try {
@@ -22,7 +23,8 @@ export function useCourses() {
     }, []);
 
     const syncCourses = useCallback(async () => {
-        if (isSyncing) return;
+        if (isSyncingRef.current) return;
+        isSyncingRef.current = true;
         setIsSyncing(true);
 
         try {
@@ -65,9 +67,10 @@ export function useCourses() {
             console.error('Error syncing courses:', error);
         } finally {
             setIsSyncing(false);
+            isSyncingRef.current = false;
             setIsLoading(false);
         }
-    }, [isSyncing]);
+    }, []);
 
     useEffect(() => {
         loadLocalCourses().then(() => {
@@ -77,12 +80,15 @@ export function useCourses() {
 
     const refresh = useCallback(async () => {
         setIsLoading(true);
-        // Force full re-sync if needed? Or just normal sync?
-        // Let's do normal sync for delta.
-        // If user wants hard refresh, we might need to clear lastSync.
-        // For now, normal sync.
-        await syncCourses();
-        setIsLoading(false);
+        try {
+            // Force full re-sync by clearing last sync time
+            await AsyncStorage.removeItem(COURSES_SYNC_KEY);
+            await syncCourses();
+        } catch (error) {
+            console.error('Refresh failed:', error);
+        } finally {
+            setIsLoading(false);
+        }
     }, [syncCourses]);
 
     return {

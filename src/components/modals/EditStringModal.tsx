@@ -11,6 +11,7 @@ import {
     TouchableWithoutFeedback,
     Keyboard
 } from 'react-native';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface EditStringModalProps {
     visible: boolean;
@@ -29,6 +30,7 @@ export const EditStringModal: React.FC<EditStringModalProps> = ({
     onSave,
     onCancel,
 }) => {
+    const { colors, isDark } = useTheme();
     const [value, setValue] = useState(initialValue);
 
     useEffect(() => {
@@ -56,22 +58,30 @@ export const EditStringModal: React.FC<EditStringModalProps> = ({
                             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                             style={styles.keyboardView}
                         >
-                            <View style={styles.modalContainer}>
-                                <Text style={styles.title}>{title}</Text>
+                            <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
+                                <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, {
+                                        backgroundColor: isDark ? colors.inputBg : '#F9FAFB',
+                                        color: colors.text,
+                                        borderColor: colors.border
+                                    }]}
                                     value={value}
                                     onChangeText={setValue}
                                     placeholder={placeholder}
+                                    placeholderTextColor={colors.textMuted}
                                     autoFocus
                                     multiline={title.toLowerCase().includes('descripción')}
                                     numberOfLines={title.toLowerCase().includes('descripción') ? 3 : 1}
                                 />
                                 <View style={styles.buttonContainer}>
-                                    <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
-                                        <Text style={styles.cancelButtonText}>Cancelar</Text>
+                                    <TouchableOpacity
+                                        style={[styles.cancelButton, { backgroundColor: isDark ? colors.surface : '#F3F4F6' }]}
+                                        onPress={onCancel}
+                                    >
+                                        <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Cancelar</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                                    <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.primary }]} onPress={handleSave}>
                                         <Text style={styles.saveButtonText}>Guardar</Text>
                                     </TouchableOpacity>
                                 </View>

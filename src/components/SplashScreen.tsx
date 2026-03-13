@@ -7,7 +7,11 @@ interface SplashScreenProps {
   onFinish: () => void;
 }
 
+import { useTheme } from '../contexts/ThemeContext';
+
 export function SplashScreen({ onFinish }: SplashScreenProps) {
+  const { colors, isDark } = useTheme();
+
   // Simular tiempo de carga (puedes ajustar este tiempo)
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -18,12 +22,12 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
   }, [onFinish]);
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style={isDark ? "light" : "dark"} />
       <View style={styles.logoContainer}>
 
       </View>
-      <ActivityIndicator size="large" color="#4CAF50" style={styles.loader} />
+      <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
     </View>
   );
 }

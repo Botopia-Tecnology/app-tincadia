@@ -135,7 +135,7 @@ export const authService = {
             if (token) {
                 headers['Authorization'] = `Bearer ${token}`;
             }
-            if (etag && !forceRefresh) {
+            if (etag && cachedUser && !forceRefresh) {
                 headers['If-None-Match'] = etag;
             }
 

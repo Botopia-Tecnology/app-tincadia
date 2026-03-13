@@ -26,14 +26,17 @@ interface ChatScreenProps {
     conversationId: string;
     otherUserName: string;
     onBack: () => void;
+    isGroup?: boolean;
+    otherUserId?: string; // Needed to check sender ID
 }
 
-export function ChatScreen({ conversationId, otherUserName, onBack }: ChatScreenProps) {
+export function ChatScreen({ conversationId, otherUserName, onBack, isGroup, otherUserId }: ChatScreenProps) {
     const { user } = useAuth();
     const userId = user?.id || '';
     const insets = useSafeAreaInsets();
 
     const { messages, sendMessage, isLoading, error } = useChat(conversationId, userId);
+    const [messageText, setMessageText] = React.useState('');
     const flatListRef = useRef<FlatList>(null);
 
     // Scroll to bottom when messages change
@@ -46,7 +49,9 @@ export function ChatScreen({ conversationId, otherUserName, onBack }: ChatScreen
     }, [messages.length]);
 
     const handleSend = async (content: string) => {
+        if (!content.trim()) return;
         await sendMessage(content);
+        setMessageText('');
     };
 
     return (
@@ -101,7 +106,9 @@ export function ChatScreen({ conversationId, otherUserName, onBack }: ChatScreen
                             content={item.content}
                             time={item.createdAt}
                             isMine={item.isMine}
-                            isSynced={item.isSynced}
+                            isSynced={item.status !== 'pending'}
+                            // Show sender name ONLY for incoming messages in GROUPS (WhatsApp style)
+                            senderName={!item.isMine && isGroup ? (item.senderId === otherUserId ? otherUserName : 'Miembro') : undefined}
                         />
                     )}
                     contentContainerStyle={styles.messageList}
@@ -110,7 +117,11 @@ export function ChatScreen({ conversationId, otherUserName, onBack }: ChatScreen
                 />
 
                 {/* Input */}
-                <ChatInput onSend={handleSend} />
+                <ChatInput 
+                    onSend={() => handleSend(messageText)} 
+                    messageText={messageText}
+                    setMessageText={setMessageText}
+                />
                 {Platform.OS === 'ios' && <View style={{ height: insets.bottom, backgroundColor: '#FFFFFF' }} />}
             </KeyboardAvoidingView>
         </SafeAreaView>

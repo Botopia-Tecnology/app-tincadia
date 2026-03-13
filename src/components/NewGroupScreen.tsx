@@ -20,6 +20,7 @@ import { useAppContacts } from '../hooks/useAppContacts';
 import * as ImagePicker from 'expo-image-picker';
 import { mediaService } from '../services/media.service';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface NewGroupScreenProps {
     onNavigate: (screen: 'chats', params?: any) => void;
@@ -28,6 +29,7 @@ interface NewGroupScreenProps {
 }
 
 export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenProps) {
+    const { colors, isDark } = useTheme();
     const alert = useAlert();
     const [step, setStep] = useState<1 | 2>(1);
     const [title, setTitle] = useState('');
@@ -158,34 +160,38 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
 
         return (
             <TouchableOpacity
-                style={[styles.contactItem, isSelected && styles.contactItemSelected]}
+                style={[
+                    styles.contactItem,
+                    { backgroundColor: colors.card, borderBottomColor: colors.border },
+                    isSelected && { backgroundColor: isDark ? `${colors.accent}20` : 'rgba(16, 185, 129, 0.1)' }
+                ]}
                 onPress={() => toggleContact(participantId)}
             >
-                <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{initials}</Text>
+                <View style={[styles.avatar, { backgroundColor: isDark ? colors.card : '#D1D5DB' }]}>
+                    <Text style={[styles.avatarText, { color: colors.text }]}>{initials}</Text>
                     {isSelected && (
                         <View style={styles.checkBadge}>
                             <Text style={{ color: 'white', fontSize: 10 }}>✓</Text>
                         </View>
                     )}
                 </View>
-                <Text style={styles.contactName}>{displayName}</Text>
+                <Text style={[styles.contactName, { color: colors.text }]}>{displayName}</Text>
             </TouchableOpacity>
         );
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar style="dark" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={colors.statusBar} />
 
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={step === 1 ? onBack : () => setStep(1)} style={styles.backButton}>
-                    <BackArrowIcon color="#374151" />
+                    <BackArrowIcon color={colors.text} />
                 </TouchableOpacity>
                 <View>
-                    <Text style={styles.headerTitle}>{step === 1 ? 'Nuevo Grupo' : 'Info del Grupo'}</Text>
-                    <Text style={styles.headerSubtitle}>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>{step === 1 ? 'Nuevo Grupo' : 'Info del Grupo'}</Text>
+                    <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
                         {step === 1 ? 'Añadir participantes' : `${selectedContactIds.size} seleccionados`}
                     </Text>
                 </View>
@@ -205,10 +211,10 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
                                 ListEmptyComponent={() => (
                                     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 50 }}>
                                         <Text style={{ fontSize: 48, marginBottom: 16 }}>👥</Text>
-                                        <Text style={{ color: '#6B7280', fontSize: 16, textAlign: 'center' }}>
+                                        <Text style={{ color: colors.textSecondary, fontSize: 16, textAlign: 'center' }}>
                                             No tienes contactos guardados.
                                         </Text>
-                                        <Text style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
+                                        <Text style={{ color: colors.textMuted, fontSize: 14, textAlign: 'center', marginTop: 8 }}>
                                             Añade contactos desde la pantalla de chats para crear un grupo.
                                         </Text>
                                     </View>
@@ -254,24 +260,24 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
                         </View>
 
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Nombre del Grupo</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Nombre del Grupo</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: isDark ? colors.inputBg : '#FFFFFF', color: colors.text, borderColor: colors.border }]}
                                 value={title}
                                 onChangeText={setTitle}
                                 placeholder="Escribe el nombre del grupo"
-                                placeholderTextColor="#9CA3AF"
+                                placeholderTextColor={colors.textMuted}
                                 autoFocus
                             />
                         </View>
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Descripción (Opcional)</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Descripción (Opcional)</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: isDark ? colors.inputBg : '#FFFFFF', color: colors.text, borderColor: colors.border }]}
                                 value={description}
                                 onChangeText={setDescription}
                                 placeholder="Descripción del grupo"
-                                placeholderTextColor="#9CA3AF"
+                                placeholderTextColor={colors.textMuted}
                             />
                         </View>
 

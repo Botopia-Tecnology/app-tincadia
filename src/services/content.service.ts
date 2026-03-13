@@ -13,6 +13,7 @@ export interface Course {
         name: string;
     };
     isPublished: boolean;
+    priceInCents?: number;
     instructor?: string; // Not in backend entity explicitly but in UI mock?
     level?: string; // Not in backend entity explicitly
     accessScope?: 'course' | 'module' | 'lesson';

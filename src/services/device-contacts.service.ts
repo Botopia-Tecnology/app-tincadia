@@ -54,33 +54,81 @@ export async function getDeviceContacts(): Promise<DeviceContact[]> {
 function normalizePhone(phone: string): string {
   // Remove all non-digit characters
   let digits = phone.replace(/\D/g, '');
-  
+
   // Handle Colombian numbers: remove country code 57 if present
   if (digits.startsWith('57') && digits.length > 10) {
     digits = digits.slice(2);
   }
-  
+
   // Handle numbers starting with 0 (some formats)
   if (digits.startsWith('0') && digits.length > 10) {
     digits = digits.slice(1);
   }
-  
+
   // Return last 10 digits (standard mobile number length in Colombia)
   if (digits.length > 10) {
     digits = digits.slice(-10);
   }
-  
+
   return digits;
 }
 
 export async function getAllPhoneNumbers(): Promise<string[]> {
-  const contacts = await getDeviceContacts();
+  const hasPermission = await requestContactsPermission();
+  if (!hasPermission) return [];
+
+  // Get RAW contacts directly to avoid pre-normalization data loss
+  const { data } = await Contacts.getContactsAsync({
+    fields: [Contacts.Fields.PhoneNumbers],
+  });
+
   const phoneSet = new Set<string>();
-  for (const c of contacts) {
-    for (const phone of c.phoneNumbers) {
-      if (phone) phoneSet.add(phone);
+
+  for (const c of data) {
+    if (!c.phoneNumbers) continue;
+
+    for (const p of c.phoneNumbers) {
+      const raw = p.number;
+      if (!raw) continue;
+
+      // Clean: keep digits and + only
+      const clean = raw.replace(/[^0-9+]/g, '');
+      if (clean.length < 7) continue; // Skip too short
+
+      // Variation 1: The cleaned raw number (e.g. +573001234567 or 3001234567)
+      phoneSet.add(clean);
+
+      // Digits only version
+      const digits = clean.replace(/\D/g, '');
+      if (digits !== clean) phoneSet.add(digits); // Add 57300... if input was +57300...
+
+      // Colombian Logic
+      // Case A: Has country code 57 (12 digits)
+      if (digits.startsWith('57') && digits.length === 12) {
+        // Add without 57 (300...)
+        phoneSet.add(digits.slice(2));
+        // Ensure + version exists
+        phoneSet.add('+' + digits);
+      }
+
+      // Case B: Local 10 digits
+      if (digits.length === 10) {
+        // Add 57 prefix
+        phoneSet.add('57' + digits);
+        // Add +57 prefix
+        phoneSet.add('+57' + digits);
+      }
+
+      // Case C: Has +57 prefix already
+      if (clean.startsWith('+57') && clean.length === 13) {
+        const noPlus = clean.slice(1); // 57300...
+        const local = clean.slice(3);  // 300...
+        phoneSet.add(noPlus);
+        phoneSet.add(local);
+      }
     }
   }
+
   return Array.from(phoneSet);
 }
 
@@ -125,22 +173,41 @@ export class ContactsSyncManager {
     if (!hasPermission) throw new Error('Contacts permission not granted');
 
     const phoneNumbers = await getAllPhoneNumbers();
+    console.log('📱 Device contacts found (phones):', phoneNumbers.length);
     if (!phoneNumbers.length) return [];
 
-    await this.start('full');
+    const startInfo = await this.start('full');
+    console.log('🚀 Sync started:', startInfo);
+
     const allMatches: ContactMatch[] = [];
     const totalChunks = Math.ceil(phoneNumbers.length / this.chunkSize);
 
     for (let i = 0; i < totalChunks; i++) {
       const start = i * this.chunkSize;
       const end = Math.min(start + this.chunkSize, phoneNumbers.length);
-      const response = await this.sendChunk(phoneNumbers.slice(start, end), i, end);
-      allMatches.push(...response.matches);
-      onProgress?.({ current: end, total: phoneNumbers.length, matches: response.matches });
-      if (i < totalChunks - 1) await new Promise((r) => setTimeout(r, response.nextRecommendedDelayMs));
+      const chunk = phoneNumbers.slice(start, end);
+
+      console.log(`📡 Sending chunk ${i + 1}/${totalChunks} size: ${chunk.length}`);
+
+      try {
+        const response = await this.sendChunk(chunk, i, end);
+        const validMatches = response.matches.filter(m => m.isOnTincadia).length;
+        console.log(`✅ Chunk ${i + 1} response: ${response.matches.length} processed, ${validMatches} ON TINCADIA`);
+
+        allMatches.push(...response.matches);
+        onProgress?.({ current: end, total: phoneNumbers.length, matches: response.matches });
+
+        if (i < totalChunks - 1) {
+          console.log(`⏳ Waiting ${response.nextRecommendedDelayMs}ms...`);
+          await new Promise((r) => setTimeout(r, response.nextRecommendedDelayMs));
+        }
+      } catch (err) {
+        console.error(`❌ Error sending chunk ${i}:`, err);
+      }
     }
 
     await this.complete(phoneNumbers.length);
+    console.log('🏁 Sync complete. Total matches:', allMatches.length);
     return allMatches;
   }
 }

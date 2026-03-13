@@ -21,17 +21,30 @@ import { useAuth } from '../contexts/AuthContext';
 
 type LayoutMode = 'grid' | 'interpreter';
 
-interface CallScreenProps {
+export interface CallScreenProps {
     roomName: string;
     username: string;
     conversationId?: string;
     userId?: string;
     onBack: () => void;
+    isManualPipMode?: boolean;
+    onRestoreFromPip?: () => void;
+    onMinimize?: () => void;
 }
 
-export const CallScreen = ({ roomName, username, conversationId, userId, onBack }: CallScreenProps) => {
+export const CallScreen = ({ 
+    roomName, 
+    username, 
+    conversationId, 
+    userId, 
+    onBack,
+    isManualPipMode = false,
+    onRestoreFromPip,
+    onMinimize
+}: CallScreenProps) => {
     const [token, setToken] = useState<string | null>(null);
     const [url, setUrl] = useState<string | null>(null);
+    const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
 
     useEffect(() => {
         let isMounted = true;
@@ -77,8 +90,6 @@ export const CallScreen = ({ roomName, username, conversationId, userId, onBack 
         );
     }
 
-    const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
-
     return (
         <View style={{ flex: 1, backgroundColor: '#000' }}>
             <LiveKitRoom
@@ -99,6 +110,9 @@ export const CallScreen = ({ roomName, username, conversationId, userId, onBack 
                     username={username}
                     layoutMode={layoutMode}
                     onToggleLayout={() => setLayoutMode(m => m === 'grid' ? 'interpreter' : 'grid')}
+                    isManualPipMode={isManualPipMode}
+                    onRestoreFromPip={onRestoreFromPip}
+                    onMinimize={onMinimize}
                 />
                 <RoomEvents onLeave={onBack} />
             </LiveKitRoom>
@@ -113,8 +127,6 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
         if (!room) return;
 
         const onParticipantDisconnected = () => {
-            // If it's a 1-on-1 call and the other person leaves, end the call
-            // We check total participants in the room
             if (room.numParticipants <= 1) {
                 onLeave();
             }
@@ -135,7 +147,6 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
     const participants = useParticipants();
     const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-    // Detect interpreter by checking if identity contains 'interpreter' or metadata
     const isInterpreter = (identity: string) => {
         return identity.toLowerCase().includes('interp') || identity.toLowerCase().includes('intérp');
     };
@@ -143,7 +154,6 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
     const interpreterTracks = tracks.filter(t => isInterpreter(t.participant.identity));
     const otherTracks = tracks.filter(t => !isInterpreter(t.participant.identity));
 
-    // Grid layout (default)
     if (layoutMode === 'grid' || interpreterTracks.length === 0) {
         return (
             <View style={styles.videoGrid}>
@@ -170,17 +180,15 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
         );
     }
 
-    // Interpreter layout: interpreter on the right side (vertical), others on the left
     return (
         <View style={styles.interpreterLayout}>
-            {/* Main area - other participants */}
             <View style={styles.mainVideoArea}>
-                {otherTracks.length > 0 ? (
-                    otherTracks.map((track) => (
+                {interpreterTracks.length > 0 ? (
+                    interpreterTracks.map((track) => (
                         <View key={track.participant.identity} style={styles.mainParticipant}>
                             {track.publication.isMuted ? (
                                 <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
-                                    <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
+                                    <Text style={{ color: '#666', fontSize: 18 }}>🤟 Intérprete - Cámara off</Text>
                                 </View>
                             ) : (
                                 <VideoTrack
@@ -188,27 +196,24 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                                     style={styles.video}
                                 />
                             )}
-                            <View style={styles.participantLabel}>
-                                <Text style={styles.participantName} numberOfLines={1}>
-                                    {track.participant.identity}
-                                </Text>
+                            <View style={styles.interpreterMainLabel}>
+                                <Text style={styles.interpreterMainName}>🤟 Intérprete</Text>
                             </View>
                         </View>
                     ))
                 ) : (
                     <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
-                        <Text style={{ color: '#666' }}>Esperando participantes...</Text>
+                        <Text style={{ color: '#666' }}>Esperando intérprete...</Text>
                     </View>
                 )}
             </View>
 
-            {/* Interpreter sidebar (vertical) */}
-            <View style={styles.interpreterSidebar}>
-                {interpreterTracks.map((track) => (
-                    <View key={track.participant.identity} style={styles.interpreterVideo}>
+            <View style={styles.participantsSidebar}>
+                {otherTracks.map((track) => (
+                    <View key={track.participant.identity} style={styles.sidebarVideo}>
                         {track.publication.isMuted ? (
                             <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
-                                <Text style={{ color: '#666', fontSize: 12 }}>Cámara off</Text>
+                                <Text style={{ color: '#666', fontSize: 10 }}>{track.participant.identity}</Text>
                             </View>
                         ) : (
                             <VideoTrack
@@ -216,9 +221,9 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                                 style={styles.video}
                             />
                         )}
-                        <View style={styles.interpreterLabel}>
-                            <Text style={styles.interpreterName} numberOfLines={1}>
-                                🤟 Intérprete
+                        <View style={styles.sidebarLabel}>
+                            <Text style={styles.sidebarName} numberOfLines={1}>
+                                {track.participant.identity}
                             </Text>
                         </View>
                     </View>
@@ -228,7 +233,18 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
     );
 }
 
-function ControlsView({ onHangup, conversationId, userId, roomName, username, layoutMode, onToggleLayout }: {
+function ControlsView({ 
+    onHangup, 
+    conversationId, 
+    userId, 
+    roomName, 
+    username, 
+    layoutMode, 
+    onToggleLayout,
+    isManualPipMode,
+    onRestoreFromPip,
+    onMinimize
+}: {
     onHangup: () => void;
     conversationId?: string;
     userId?: string;
@@ -236,6 +252,9 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username, la
     username: string;
     layoutMode: LayoutMode;
     onToggleLayout: () => void;
+    isManualPipMode: boolean;
+    onRestoreFromPip?: () => void;
+    onMinimize?: () => void;
 }) {
     const { user } = useAuth();
     const { isMicrophoneEnabled, isCameraEnabled, localParticipant } = useLocalParticipant();
@@ -252,7 +271,6 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username, la
     };
 
     const handleDisconnect = async () => {
-        // Send call_ended message to the conversation
         if (conversationId && userId) {
             try {
                 await chatService.sendMessage({
@@ -266,10 +284,8 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username, la
             }
         }
 
-        // Reset interpreter status if applicable
         if (user?.role === 'interpreter' && user.id) {
             try {
-                console.log('🔄 Setting interpreter status to available...');
                 await chatService.updateInterpreterStatus(user.id, false);
             } catch (e) {
                 console.error('Error updating interpreter status:', e);
@@ -320,7 +336,24 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username, la
 
     return (
         <>
-            {/* Layout toggle button - top right */}
+            {isManualPipMode && (
+                <TouchableOpacity
+                    style={styles.pipRestoreButton}
+                    onPress={onRestoreFromPip}
+                >
+                    <Text style={{ fontSize: 24 }}>↗️</Text>
+                </TouchableOpacity>
+            )}
+
+            {!isManualPipMode && (
+                <TouchableOpacity
+                    style={styles.minimizeButton}
+                    onPress={onMinimize}
+                >
+                    <Text style={{ fontSize: 20 }}>🔽</Text>
+                </TouchableOpacity>
+            )}
+
             <TouchableOpacity
                 style={styles.layoutToggleButton}
                 onPress={onToggleLayout}
@@ -333,7 +366,7 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username, la
                 </Text>
             </TouchableOpacity>
 
-            <View style={styles.controlsContainer}>
+            <View style={[styles.controlsContainer, isManualPipMode && styles.controlsContainerMini]}>
                 <TouchableOpacity
                     style={[styles.button, !isMicrophoneEnabled && styles.buttonDisabled]}
                     onPress={toggleMic}
@@ -341,7 +374,6 @@ function ControlsView({ onHangup, conversationId, userId, roomName, username, la
                     <MicrophoneIcon size={24} color={isMicrophoneEnabled ? '#000' : '#fff'} />
                 </TouchableOpacity>
 
-                {/* Interpreter Button */}
                 <TouchableOpacity
                     style={[styles.button, { backgroundColor: '#fff' }]}
                     onPress={handleInviteInterpreters}
@@ -406,17 +438,60 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 12,
     },
-    // Interpreter layout styles
     interpreterLayout: {
         flex: 1,
         flexDirection: 'row',
     },
     mainVideoArea: {
-        flex: 2,
+        flex: 1,
     },
     mainParticipant: {
         flex: 1,
         position: 'relative',
+    },
+    interpreterMainLabel: {
+        position: 'absolute',
+        bottom: 80,
+        left: 16,
+        right: 16,
+        backgroundColor: 'rgba(124, 58, 237, 0.9)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    interpreterMainName: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: '700',
+    },
+    participantsSidebar: {
+        width: 120,
+        backgroundColor: '#0a0a0a',
+        borderLeftWidth: 2,
+        borderLeftColor: '#333',
+    },
+    sidebarVideo: {
+        height: 160,
+        position: 'relative',
+        borderBottomWidth: 1,
+        borderBottomColor: '#333',
+    },
+    sidebarLabel: {
+        position: 'absolute',
+        bottom: 4,
+        left: 4,
+        right: 4,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        paddingHorizontal: 4,
+        paddingVertical: 2,
+        borderRadius: 4,
+        alignItems: 'center',
+    },
+    sidebarName: {
+        color: '#fff',
+        fontSize: 9,
+        fontWeight: '500',
     },
     interpreterSidebar: {
         width: 130,
@@ -444,7 +519,6 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontWeight: '600',
     },
-    // Layout toggle button
     layoutToggleButton: {
         position: 'absolute',
         top: 50,
@@ -492,5 +566,33 @@ const styles = StyleSheet.create({
         height: 64,
         borderRadius: 32,
         backgroundColor: '#dc2626',
+    },
+    pipRestoreButton: {
+        position: 'absolute',
+        top: 20,
+        left: 20,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 100,
+    },
+    minimizeButton: {
+        position: 'absolute',
+        top: 50,
+        left: 16,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    controlsContainerMini: {
+        bottom: 10,
+        transform: [{ scale: 0.8 }],
     }
 });

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getLocalContacts } from '../../database/chatDatabase';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface Contact {
     id: string; // our local DB id
@@ -40,6 +41,7 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
     onSelect,
     onClose,
 }) => {
+    const { colors, isDark } = useTheme();
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -102,17 +104,17 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
 
         return (
             <TouchableOpacity
-                style={styles.contactItem}
+                style={[styles.contactItem, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
                 onPress={() => onSelect(item.contact_user_id)}
             >
-                <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{getInitial(displayName)}</Text>
+                <View style={[styles.avatar, { backgroundColor: isDark ? colors.surface : '#D1D5DB' }]}>
+                    <Text style={[styles.avatarText, { color: colors.text }]}>{getInitial(displayName)}</Text>
                 </View>
                 <View style={styles.contactInfo}>
-                    <Text style={styles.contactName}>{displayName}</Text>
-                    {item.phone && <Text style={styles.contactPhone}>{item.phone}</Text>}
+                    <Text style={[styles.contactName, { color: colors.text }]}>{displayName}</Text>
+                    {item.phone && <Text style={[styles.contactPhone, { color: colors.textSecondary }]}>{item.phone}</Text>}
                 </View>
-                <Ionicons name="add-circle-outline" size={24} color="#10B981" />
+                <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
             </TouchableOpacity>
         );
     };
@@ -124,25 +126,25 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
             presentationStyle="pageSheet"
             onRequestClose={onClose}
         >
-            <View style={styles.container}>
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
                 {/* Header */}
-                <View style={styles.header}>
+                <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                     <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                        <Text style={styles.closeButtonText}>Cancelar</Text>
+                        <Text style={[styles.closeButtonText, { color: colors.error }]}>Cancelar</Text>
                     </TouchableOpacity>
-                    <Text style={styles.title}>Añadir Participante</Text>
+                    <Text style={[styles.title, { color: colors.text }]}>Añadir Participante</Text>
                     <View style={{ width: 60 }} />
                 </View>
 
                 {/* Search */}
-                <View style={styles.searchContainer}>
-                    <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
+                <View style={[styles.searchContainer, { backgroundColor: isDark ? colors.inputBg : '#E5E7EB' }]}>
+                    <Ionicons name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
                     <TextInput
-                        style={styles.searchInput}
+                        style={[styles.searchInput, { color: colors.text }]}
                         placeholder="Buscar contacto..."
                         value={searchQuery}
                         onChangeText={handleSearch}
-                        placeholderTextColor="#9CA3AF"
+                        placeholderTextColor={colors.textMuted}
                     />
                 </View>
 
@@ -159,7 +161,7 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
                         contentContainerStyle={styles.listContent}
                         ListEmptyComponent={
                             <View style={styles.centerContainer}>
-                                <Text style={styles.emptyText}>
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                                     {contacts.length === 0
                                         ? 'No tienes contactos disponibles para añadir.'
                                         : 'No se encontraron resultados.'}
