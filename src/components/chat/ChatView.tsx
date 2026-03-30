@@ -28,6 +28,7 @@ import { UpgradeModal } from '../UpgradeModal';
 import { Contact } from '../../services/contact.service';
 import { Message } from '../../hooks/useChat';
 import { User } from '../../types/auth.types';
+import { MessageActionSheet } from './MessageActionSheet';
 
 interface ChatViewProps {
   conversationId: string;
@@ -71,7 +72,7 @@ export function ChatView(props: ChatViewProps) {
   
   // Chat Logic Hook
   const { 
-    messages, sendMessage, markMessagesAsRead
+    messages, sendMessage, editMessage, markMessagesAsRead
   } = useChat(conversationId, userId, { 
     readReceiptsEnabled: currentUser?.readReceiptsEnabled ?? true 
   });
@@ -97,6 +98,8 @@ export function ChatView(props: ChatViewProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [ttsSound, setTtsSound] = useState<Audio.Sound | null>(null);
+  const [actionMessage, setActionMessage] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [upgradeFeature, setUpgradeFeature] = useState<'transcription' | 'transcription_blocked' | 'lsc' | 'correction' | 'correction_blocked' | 'tts' | 'interpreter'>('correction');
   
   // Animations
@@ -110,6 +113,16 @@ export function ChatView(props: ChatViewProps) {
   // Handlers
   const handleSend = async () => {
     if (!messageText.trim()) return;
+
+    // Editing mode — update existing message
+    if (editingMessage) {
+      const newText = messageText.trim();
+      setEditingMessage(null);
+      setMessageText('');
+      await editMessage(editingMessage.id, newText);
+      return;
+    }
+
     const textToSend = messageText;
     const metadata = replyMessage ? {
       replyToId: replyMessage.id,
@@ -209,6 +222,42 @@ export function ChatView(props: ChatViewProps) {
     });
 
     onNavigateCall(roomName, username, conversationId, userId);
+  };
+
+  // ── Message long-press actions ──────────────────────────────────────────
+  const handleLongPress = (msg: Message) => {
+    setActionMessage(msg);
+  };
+
+  const handleEditMessage = (msg: Message) => {
+    setEditingMessage(msg);
+    setMessageText(msg.content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setMessageText('');
+  };
+
+  const handleDeleteMessage = (msg: Message) => {
+    Alert.alert(
+      'Eliminar mensaje',
+      '¿Eliminar este mensaje para todos?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatService.deleteMessage(msg.id, userId);
+            } catch {
+              Alert.alert('Error', 'No se pudo eliminar el mensaje');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleTextToSpeech = async () => {
@@ -323,7 +372,7 @@ export function ChatView(props: ChatViewProps) {
         messages={messages}
         uploadingMessages={uploadingMessages}
         userId={userId}
-        onLongPress={() => {}} 
+        onLongPress={handleLongPress}
         onSwipeReply={(msg) => setReplyMessage(msg)}
         onJoinCall={handleCall}
         colors={colors}
@@ -349,6 +398,8 @@ export function ChatView(props: ChatViewProps) {
           correctionOpacity={correctionOpacity}
           replyMessage={replyMessage}
           setReplyMessage={setReplyMessage}
+          editingMessage={editingMessage}
+          onCancelEdit={handleCancelEdit}
           inputAreaHeight={inputAreaHeight}
           setInputAreaHeight={setInputAreaHeight}
           colors={colors}
@@ -378,6 +429,18 @@ export function ChatView(props: ChatViewProps) {
           initialPhone={otherUserPhone || ''}
         />
       )}
+
+      <MessageActionSheet
+        message={actionMessage}
+        currentUserId={userId}
+        onClose={() => setActionMessage(null)}
+        onReply={(msg) => {
+          setReplyMessage(msg);
+          setActionMessage(null);
+        }}
+        onEdit={handleEditMessage}
+        onDelete={handleDeleteMessage}
+      />
 
       <UpgradeModal
         visible={showUpgradeModal}

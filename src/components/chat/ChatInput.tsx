@@ -27,6 +27,8 @@ interface ChatInputProps {
   correctionOpacity?: RNAnimated.Value;
   replyMessage?: Message | null;
   setReplyMessage?: (msg: Message | null) => void;
+  editingMessage?: Message | null;
+  onCancelEdit?: () => void;
   inputAreaHeight?: number;
   setInputAreaHeight?: (h: number) => void;
   colors?: ThemeColors;
@@ -47,6 +49,8 @@ export const ChatInput = ({
   correctionOpacity = new RNAnimated.Value(0),
   replyMessage = null,
   setReplyMessage = () => {},
+  editingMessage = null,
+  onCancelEdit = () => {},
   inputAreaHeight = 48,
   setInputAreaHeight = () => {},
   colors,
@@ -94,6 +98,18 @@ export const ChatInput = ({
           <View style={{ width: 40, height: 5, borderRadius: 2.5, backgroundColor: isDark ? '#666' : '#D1D5DB' }} />
         </View>
       </GestureDetector>
+
+      {/* Editing Banner */}
+      {editingMessage && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)', padding: 8, borderLeftWidth: 4, borderLeftColor: '#6366F1', marginBottom: 4 }}>
+          <Ionicons name="pencil" size={14} color="#6366F1" style={{ marginRight: 6 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#6366F1', fontWeight: 'bold', fontSize: 12 }}>Editando mensaje</Text>
+            <Text numberOfLines={1} style={{ color: finalColors.textSecondary, fontSize: 12 }}>{editingMessage.content}</Text>
+          </View>
+          <TouchableOpacity onPress={onCancelEdit}><Ionicons name="close-circle" size={20} color={finalColors.textMuted} /></TouchableOpacity>
+        </View>
+      )}
 
       {/* Reply Preview */}
       {replyMessage && (

@@ -38,6 +38,7 @@ export interface Message {
     createdAt: string;
     updatedAt?: string;
     readAt?: string;
+    deletedAt?: string;
     isMine: boolean;
     // Reply metadata
     replyToId?: string;
@@ -82,6 +83,7 @@ export function useChat(
         createdAt: m.createdAt,
         updatedAt: m.updatedAt,
         readAt: m.readAt,
+        deletedAt: m.deletedAt,
         isMine: m.isMine,
         replyToId: m.replyToId,
         replyToContent: m.replyToContent,
@@ -132,6 +134,7 @@ export function useChat(
                 const msgCreatedAt = (msg as any).createdAt || (msg as any).created_at;
                 const msgUpdatedAt = (msg as any).updatedAt || (msg as any).updated_at;
                 const msgReadAt = (msg as any).readAt || (msg as any).read_at;
+                const msgDeletedAt = (msg as any).deletedAt || (msg as any).deleted_at;
                 const isMine = msgSenderId === userId;
 
                 // Determine status based on server data
@@ -155,6 +158,7 @@ export function useChat(
                     createdAt: msgCreatedAt || new Date().toISOString(),
                     updatedAt: msgUpdatedAt,
                     readAt: msgReadAt,
+                    deletedAt: msgDeletedAt,
                     isMine,
                     // Reply metadata from server
                     replyToId: (msg as any).replyToId || (msg as any).reply_to_id || msg.metadata?.replyToId,
@@ -269,15 +273,24 @@ export function useChat(
                     } else if (payload.eventType === 'UPDATE') {
                         const msg = payload.new as { read_at?: string; sender_id: string; id: string };
 
-                        // If it got marked as read, update local status DIRECTLY for instant UI response (blue check)
-                        if (msg.read_at) {
-                            console.log(`👁️ Message ${msg.id} marked as read via DB, updating UI`);
-                            updateMessageStatus(msg.id, 'read');
-                            loadLocalMessages();
+                        // If it's a message edit (content or updated_at changed)
+                        const updatedMsg = payload.new as any;
+                        if (updatedMsg.content || updatedMsg.updated_at) {
+                            console.log(`✏️ Message ${updatedMsg.id} updated via DB, updating UI`);
+                            const existing = getLocalMessages(conversationId).find(m => m.id === updatedMsg.id || m.serverId === updatedMsg.id);
+                            if (existing) {
+                                saveMessage({
+                                    ...existing,
+                                    content: updatedMsg.content || existing.content,
+                                    updatedAt: updatedMsg.updated_at || existing.updatedAt,
+                                    status: (updatedMsg.read_at) ? 'read' : (existing.status as MessageStatus),
+                                });
+                                loadLocalMessages();
+                            }
                         }
 
-                        // Also sync to ensure we have any other potential changes (like edited text)
-                        if (msg.sender_id !== userId || !msg.read_at) {
+                        // Also sync as safety if needed
+                        if (msg.sender_id !== userId && !updatedMsg.content) {
                             syncFromServer();
                         }
                     } else if (payload.eventType === 'DELETE') {
@@ -539,28 +552,46 @@ export function useChat(
         loadLocalMessages();
     }, [messages, conversationId, userId, loadLocalMessages]);
 
-    // Edit a message
+    // Edit a message (WhatsApp style)
     const editMessage = useCallback(async (messageId: string, content: string) => {
         const existingMsg = messages.find(m => m.id === messageId || m.serverId === messageId);
-
         if (!existingMsg) return;
 
-        try {
-            await chatService.editMessage(existingMsg.serverId || messageId, content, userId);
+        // Optimistic UI Update: Update current state
+        const localNow = new Date().toISOString();
+        setMessages(prev => prev.map(m => 
+            (m.id === messageId || m.serverId === messageId) ? { ...m, content, updatedAt: localNow } : m
+        ));
 
-            // Update local DB
+        try {
+            const { message: serverMsg } = await chatService.editMessage(existingMsg.serverId || messageId, content, userId);
+
+            // Update local DB with confirmed data from server
             saveMessage({
                 ...existingMsg,
-                content,
-                updatedAt: new Date().toISOString(),
+                content: serverMsg.content,
+                updatedAt: (serverMsg as any).updated_at || (serverMsg as any).updatedAt || localNow,
+                serverId: serverMsg.id,
             });
 
+            // Reload to ensure final consistency
             loadLocalMessages();
+
+            // BroadCast fast path (optional, if we want real-time edits for others)
+            if (channelRef.current && channelRef.current.state === 'joined') {
+                channelRef.current.send({
+                    type: 'broadcast',
+                    event: 'message_updated', // We can handle this in our realtime listener
+                    payload: { messageId: serverMsg.id, content: serverMsg.content, updatedAt: (serverMsg as any).updated_at }
+                });
+            }
         } catch (err) {
             console.error('Error editing message:', err);
             setError('Error al editar mensaje');
+            // If failed, reload local messages to revert UI
+            loadLocalMessages();
         }
-    }, [messages, loadLocalMessages]);
+    }, [messages, loadLocalMessages, userId]);
 
     // Delete a message
     const deleteMessage = useCallback(async (messageId: string) => {

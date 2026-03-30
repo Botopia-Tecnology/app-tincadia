@@ -23,6 +23,7 @@ interface MessageBubbleProps {
     publicId?: string;
     duration?: number; // New prop for audio duration in seconds
     senderName?: string;
+    updatedAt?: string;
 }
 
 export function MessageBubble({
@@ -36,7 +37,8 @@ export function MessageBubble({
     replyToSender,
     publicId,
     duration,
-    senderName
+    senderName,
+    updatedAt
 }: MessageBubbleProps) {
     const [mediaUri, setMediaUri] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -209,6 +211,9 @@ export function MessageBubble({
         );
     };
 
+    const isDeleted = content === '🚫 Mensaje eliminado' || updatedAt?.includes('deleted'); // Fallback check
+    const isEdited = !isDeleted && updatedAt && new Date(updatedAt).getTime() > new Date(time).getTime() + 1000; // 1s buffer
+
     const renderMedia = () => {
         if (isLoading) {
             return (
@@ -354,22 +359,31 @@ export function MessageBubble({
                 {renderReplyQuote()}
                     <Autolink
                         text={content}
-                        email
-                        url
+                        email={!isDeleted}
+                        url={!isDeleted}
                         stripPrefix={false}
-                        selectable={true}
+                        selectable={!isDeleted}
                         linkStyle={{ textDecorationLine: 'underline', color: isMine ? 'white' : '#4F46E5', fontWeight: 'bold' }}
-                        style={[styles.content, isMine ? styles.contentMine : styles.contentOther]}
+                        style={[
+                            styles.content, 
+                            isMine ? styles.contentMine : styles.contentOther,
+                            isDeleted && { fontStyle: 'italic', opacity: 0.6 }
+                        ]}
                     />
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
                         <TouchableOpacity 
                             onPress={handleSpeak} 
-                            style={[{ padding: 4 }, isSpeaking && { opacity: 0.5 }]}
-                            disabled={isSpeaking}
+                            style={[{ padding: 4 }, (isSpeaking || isDeleted) && { opacity: 0.3 }]}
+                            disabled={isSpeaking || isDeleted}
                         >
                             <Ionicons name={isSpeaking ? "volume-high" : "volume-medium-outline"} size={16} color={isMine ? 'rgba(255,255,255,0.7)' : '#4F46E5'} />
                         </TouchableOpacity>
                         <View style={styles.footer}>
+                            {isEdited && (
+                                <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther, { marginRight: 4, fontStyle: 'italic' }]}>
+                                    (editado)
+                                </Text>
+                            )}
                             <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
                                 {formatTime(time)}
                             </Text>
@@ -388,6 +402,11 @@ export function MessageBubble({
                 {renderReplyQuote()}
                 {renderMedia()}
                 <View style={[styles.footer, { paddingHorizontal: 8, paddingBottom: 4 }]}>
+                    {isEdited && (
+                        <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther, { marginRight: 4, fontStyle: 'italic' }]}>
+                            (editado)
+                        </Text>
+                    )}
                     <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
                         {formatTime(time)}
                     </Text>

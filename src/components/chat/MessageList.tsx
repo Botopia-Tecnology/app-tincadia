@@ -94,9 +94,12 @@ export const MessageList = ({
       );
     }
 
+    const isDeleted = msg.deletedAt;
+
     return (
       <Swipeable
         ref={(ref) => { if (ref) swipeableRefs.current.set(item.id, ref); }}
+        enabled={!isDeleted}
         renderRightActions={() => (
           <View style={{ width: 60, justifyContent: 'center', alignItems: 'center' }}>
             <Ionicons name="arrow-undo" size={24} color={colors.textMuted} />
@@ -109,7 +112,10 @@ export const MessageList = ({
           if (swipeable) swipeable.close();
         }}
       >
-        <Pressable onLongPress={() => onLongPress(item)} delayLongPress={250}>
+        <Pressable 
+          onLongPress={() => !isDeleted && onLongPress(item)}
+          delayLongPress={250}
+        >
           <MessageBubble
             content={item.content}
             time={item.createdAt}
@@ -121,6 +127,7 @@ export const MessageList = ({
             replyToSender={item.replyToSender}
             publicId={item.metadata?.publicId}
             duration={item.metadata?.duration}
+            updatedAt={item.updatedAt}
           />
         </Pressable>
       </Swipeable>

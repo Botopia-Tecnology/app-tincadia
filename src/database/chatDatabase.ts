@@ -426,7 +426,7 @@ export function getMessages(conversationId: string): LocalMessage[] {
         metadata: string | null;
     }>(
         `SELECT * FROM messages 
-     WHERE conversation_id = ? AND deleted_at IS NULL
+     WHERE conversation_id = ?
      ORDER BY created_at ASC`,
         [conversationId]
     );
@@ -457,7 +457,7 @@ export function getMessages(conversationId: string): LocalMessage[] {
 export function getLastMessageTimestamp(conversationId: string): string | null {
     const database = ensureInitialized();
     const result = database.getFirstSync<{ max_created: string | null }>(
-        `SELECT MAX(created_at) as max_created FROM messages WHERE conversation_id = ? AND server_id IS NOT NULL`,
+        `SELECT MAX(created_at) as max_created FROM messages WHERE conversation_id = ?`,
         [conversationId]
     );
     return result?.max_created || null;
@@ -484,7 +484,7 @@ export function getPendingMessages(conversationId: string): LocalMessage[] {
         metadata: string | null;
     }>(
         `SELECT * FROM messages 
-     WHERE conversation_id = ? AND status = 'pending' AND deleted_at IS NULL
+     WHERE conversation_id = ? AND status = 'pending'
      ORDER BY created_at ASC`,
         [conversationId]
     );
