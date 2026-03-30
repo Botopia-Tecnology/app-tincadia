@@ -42,7 +42,7 @@ import { appStyles as styles } from '../styles/App.styles';
 
 // Initialize Sentry with Session Replay
 Sentry.init({
-  dsn: 'https://[REDACTED]@o4510623853314048.ingest.us.sentry.io/4510623870615552',
+  dsn: 'https://922f74ca4e17c001f4ecd489c52e1055@o4510623853314048.ingest.us.sentry.io/4510623870615552',
   debug: __DEV__,
   tracesSampleRate: 1.0,
   replaysSessionSampleRate: __DEV__ ? 1.0 : 0.1,
