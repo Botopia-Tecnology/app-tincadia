@@ -15,11 +15,12 @@ import {
     ScrollView,
     ActivityIndicator,
     Image,
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { contactService, Contact, UpdateContactDto } from '../../services/contact.service';
 import { chatService } from '../../services/chat.service';
-import { saveContact, getMediaForConversation, saveMediaUrl, getMediaUrl } from '../../database/chatDatabase';
+import { saveContact, getMediaForConversation, saveMediaUrl, getMediaUrl, deleteContact as deleteLocalContact, deleteConversation } from '../../database/chatDatabase';
 import { contactProfileStyles as styles } from '../../styles/ContactProfile.styles';
 import { BackArrowIcon } from '../icons/NavigationIcons';
 import { mediaService } from '../../services/media.service';
@@ -104,9 +105,9 @@ export function ContactProfileScreen({
                     const userData = response?.user || response?.profile;
                     if (userData) {
                         setOriginalProfile({
-                            firstName: userData.firstName || userData.first_name,
-                            lastName: userData.lastName || userData.last_name,
-                            phone: userData.phone,
+                            firstName: (userData as any).firstName || (userData as any).first_name,
+                            lastName: (userData as any).lastName || (userData as any).last_name,
+                            phone: (userData as any).phone as string,
                         });
                     }
                 } catch (err) {
@@ -279,6 +280,46 @@ export function ContactProfileScreen({
         setFirstName(initialFirstName || '');
         setLastName(initialLastName || '');
         setIsEditing(false);
+    };
+
+    const handleDeleteContact = () => {
+        Alert.alert(
+            'Eliminar Contacto',
+            '¿Estás seguro de que deseas eliminar este contacto? Esta acción también eliminará todos los mensajes y la conversación asociada.',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        if (!contactId) return;
+                        setIsSaving(true);
+                        try {
+                            // 1. Remote delete
+                            await contactService.deleteContact(contactId, userId);
+
+                            // 2. Local delete (SQLite)
+                            deleteLocalContact(contactId);
+
+                            // 2b. Also delete local conversation if we have the ID (matching backend behavior)
+                            if (conversationId) {
+                                deleteConversation(conversationId);
+                            }
+
+                            // 3. Callback to parent to close/navigate
+                            if (onDeleteContact) {
+                                onDeleteContact();
+                            }
+                        } catch (err) {
+                            console.error('Error deleting contact:', err);
+                            Alert.alert('Error', 'No se pudo eliminar el contacto. Inténtalo de nuevo.');
+                        } finally {
+                            setIsSaving(false);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     // Get display name for header
@@ -464,7 +505,7 @@ export function ContactProfileScreen({
                 {isContact && (
                     <TouchableOpacity
                         style={[styles.logoutButton, { marginTop: 24, marginBottom: 8 }]}
-                        onPress={() => onDeleteContact && onDeleteContact()}
+                        onPress={handleDeleteContact}
                     >
                         <Text style={styles.logoutButtonText}>Eliminar Contacto</Text>
                     </TouchableOpacity>
