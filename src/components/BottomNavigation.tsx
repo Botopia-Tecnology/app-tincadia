@@ -14,10 +14,11 @@ import { chatService } from '../services/chat.service';
 import { useSubscription } from '../hooks/useSubscription';
 import { UpgradeModal } from './UpgradeModal';
 import { Video } from 'lucide-react-native';
+import { NavigateFunction } from '../types/navigation.types';
 
 interface BottomNavigationProps {
     currentScreen: 'chats' | 'courses' | 'sos' | 'profile';
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call', params?: any) => void;
+    onNavigate: NavigateFunction;
 }
 
 export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigationProps) {

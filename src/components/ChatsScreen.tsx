@@ -42,6 +42,21 @@ interface ChatsScreenProps {
   onInitialConversationOpened?: () => void;
 }
 
+interface SelectedChat {
+  conversationId: string;
+  otherUserName: string;
+  otherUserPhone?: string;
+  otherUserId?: string;
+  isUnknown?: boolean;
+  isGroup?: boolean;
+  description?: string;
+  contactId?: string;
+  alias?: string;
+  customFirstName?: string;
+  customLastName?: string;
+  otherUserAvatar?: string;
+}
+
 export function ChatsScreen({ onNavigate, initialConversation, onInitialConversationOpened }: ChatsScreenProps) {
   const { user } = useAuth();
   const { colors } = useTheme();
@@ -75,7 +90,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   } = useChatList(userId);
 
   // UI Local State
-  const [selectedChat, setSelectedChat] = useState<any | null>(null);
+  const [selectedChat, setSelectedChat] = useState<SelectedChat | null>(null);
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showFabMenu, setShowFabMenu] = useState(false);
@@ -146,7 +161,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     if (selectedChat?.isUnknown && selectedChat.conversationId) {
       const updatedItem = chatItems.find(item => item.conversationId === selectedChat.conversationId);
       if (updatedItem && updatedItem.type === 'contact') {
-        setSelectedChat((prev: any) => prev ? ({
+        setSelectedChat((prev: SelectedChat | null) => prev ? ({
           ...prev,
           otherUserName: updatedItem.displayName,
           otherUserPhone: updatedItem.phone,
@@ -155,7 +170,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
           alias: updatedItem.alias,
           customFirstName: updatedItem.customFirstName,
           customLastName: updatedItem.customLastName,
-          avatarUrl: updatedItem.avatarUrl || prev.avatarUrl
+          avatarUrl: updatedItem.avatarUrl || prev.otherUserAvatar
         }) : null);
       }
     }
@@ -182,7 +197,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         alias: chat.alias,
         customFirstName: chat.customFirstName,
         customLastName: chat.customLastName,
-        avatarUrl: chat.avatarUrl,
+        otherUserAvatar: chat.avatarUrl,
       });
     } catch (err) {
       console.error('Error starting conversation:', err);
@@ -190,7 +205,13 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   };
 
   const handleLongPress = (item: ChatListItemType) => {
-    const options: any[] = [
+    interface ChatOption {
+      text: string;
+      style?: 'default' | 'cancel' | 'destructive';
+      onPress?: () => void;
+    }
+
+    const options: ChatOption[] = [
       { text: 'Cancelar', style: 'cancel' },
     ];
 
@@ -208,7 +229,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     }
 
     if (options.length > 1) {
-      Alert.alert('Opciones', `¿Qué deseas hacer con ${item.displayName}?`, options);
+      Alert.alert('Opciones', `¿Qué deseas hacer con ${item.displayName}?`, options as any);
     }
   };
 
@@ -257,7 +278,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
                 customLastName: contact.customLastName,
               });
             }
-            setSelectedChat((prev: any) => prev ? ({ ...prev, otherUserName: contact.alias || `${contact.customFirstName} ${contact.customLastName}`.trim(), isUnknown: false }) : null);
+            setSelectedChat((prev: SelectedChat | null) => prev ? ({ ...prev, otherUserName: contact.alias || `${contact.customFirstName} ${contact.customLastName}`.trim(), isUnknown: false }) : null);
             syncFromServer(false);
           }}
           onNavigateCall={(roomName, username, conversationId, passedUserId) => onNavigate('call', { roomName, username, conversationId, userId: passedUserId })}
@@ -305,11 +326,11 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
 
       {/* Filters */}
       <View style={[styles.filtersContainer, { backgroundColor: colors.background }]}>
-        {['all', 'contacts', 'groups'].map((f) => (
+        {(['all', 'contacts', 'groups'] as const).map((f) => (
           <TouchableOpacity
             key={f}
             style={[styles.filterChip, { backgroundColor: colors.surface }, activeFilter === f && styles.filterChipActive]}
-            onPress={() => setActiveFilter(f as any)}
+            onPress={() => setActiveFilter(f)}
           >
             <Text style={[styles.filterText, { color: colors.textSecondary }, activeFilter === f && styles.filterTextActive]}>
               {f === 'all' ? 'Todos' : f === 'contacts' ? 'Contactos' : 'Grupos'}

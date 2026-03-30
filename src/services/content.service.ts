@@ -2,6 +2,24 @@
 import { API_URL, API_ENDPOINTS } from '../config/api.config';
 import { authService } from './auth.service';
 
+export interface Lesson {
+    id: string;
+    title: string;
+    videoUrl?: string | null;
+    durationSeconds?: number;
+    isPaid?: boolean;
+    isFreePreview?: boolean;
+    locked?: boolean;
+}
+
+export interface Module {
+    id: string;
+    title: string;
+    description?: string;
+    isPaid?: boolean;
+    lessons?: Lesson[];
+}
+
 export interface Course {
     id: string;
     title: string;
@@ -19,21 +37,7 @@ export interface Course {
     accessScope?: 'course' | 'module' | 'lesson';
     isPaid?: boolean;
     previewLimit?: number | null;
-    modules?: {
-        id: string;
-        title: string;
-        description?: string;
-        isPaid?: boolean;
-        lessons?: Array<{
-            id: string;
-            title: string;
-            videoUrl?: string | null;
-            durationSeconds?: number;
-            isPaid?: boolean;
-            isFreePreview?: boolean;
-            locked?: boolean;
-        }>;
-    }[];
+    modules?: Module[];
 }
 
 export interface Category {

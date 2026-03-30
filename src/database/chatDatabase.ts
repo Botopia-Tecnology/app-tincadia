@@ -685,6 +685,17 @@ export function markConversationAsRead(conversationId: string) {
 
 // ==================== CONTACTS ====================
 
+export interface LocalContact {
+    id: string;
+    owner_id: string;
+    contact_user_id: string;
+    phone: string;
+    alias: string;
+    custom_first_name: string;
+    custom_last_name: string;
+    updated_at: string;
+}
+
 /**
  * Save or update a contact
  */

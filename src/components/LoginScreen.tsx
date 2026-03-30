@@ -297,7 +297,11 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             onPress={handleGoogleLogin}
             disabled={!googleReady || isLoading}
           >
-            <GoogleIcon size={24} color="#FFFFFF" />
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <GoogleIcon size={24} color="#FFFFFF" />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -305,7 +309,11 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             onPress={handleAppleLogin}
             disabled={!isAppleAvailable || isLoading}
           >
-            <AppleIcon size={32} color="#FFFFFF" />
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <AppleIcon size={32} color="#FFFFFF" />
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>

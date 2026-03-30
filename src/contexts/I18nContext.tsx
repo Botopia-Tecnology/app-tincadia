@@ -60,19 +60,19 @@ export function I18nProvider({ children, defaultLocale = 'es' }: I18nProviderPro
   };
 
   // Función para obtener traducciones usando notación de punto (ej: "common.loading")
-  const t = (key: string): any => {
+  const t = (key: string): string => {
     const keys = key.split('.');
-    let value: any = translationsMap[locale];
+    let value: unknown = translationsMap[locale];
 
     for (const k of keys) {
-      if (value && typeof value === 'object' && k in value) {
-        value = value[k];
+      if (value && typeof value === 'object' && k in (value as Record<string, unknown>)) {
+        value = (value as Record<string, unknown>)[k];
       } else {
         // Si no se encuentra la clave, intentar con español como fallback
         value = translationsMap.es;
         for (const fallbackKey of keys) {
-          if (value && typeof value === 'object' && fallbackKey in value) {
-            value = value[fallbackKey];
+          if (value && typeof value === 'object' && fallbackKey in (value as Record<string, unknown>)) {
+            value = (value as Record<string, unknown>)[fallbackKey];
           } else {
             return key; // Devolver la clave si no se encuentra
           }
@@ -81,8 +81,8 @@ export function I18nProvider({ children, defaultLocale = 'es' }: I18nProviderPro
       }
     }
 
-    // Devolver el valor tal cual (puede ser string, array, objeto, etc.)
-    return value !== undefined ? value : key;
+    // Devolver el valor como string
+    return typeof value === 'string' ? value : key;
   };
 
   // Renderizar inmediatamente con el locale por defecto, luego actualizar cuando se cargue

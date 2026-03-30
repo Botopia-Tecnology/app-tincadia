@@ -20,7 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { chatService } from '../../services/chat.service';
 import { mediaService } from '../../services/media.service';
 import { supabase } from '../../lib/supabase';
-import { getLocalContacts } from '../../database/chatDatabase';
+import { getLocalContacts, LocalContact } from '../../database/chatDatabase';
 import { EditStringModal } from '../modals/EditStringModal';
 import { ContactSelectionModal } from '../modals/ContactSelectionModal';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -61,7 +61,7 @@ export function GroupProfileView({
     const [isUpdating, setIsUpdating] = useState(false);
     const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'member'>('member');
     const [localDescription, setLocalDescription] = useState(groupDescription || '');
-    const [localContacts, setLocalContacts] = useState<any[]>([]);
+    const [localContacts, setLocalContacts] = useState<LocalContact[]>([]);
 
     // Modals state
     const [editModalVisible, setEditModalVisible] = useState(false);
@@ -172,8 +172,9 @@ export function GroupProfileView({
                             } else {
                                 onBack();
                             }
-                        } catch (error: any) {
-                            Alert.alert('Error', error.message || 'No se pudo salir del grupo');
+                        } catch (error: unknown) {
+                            const err = error as { message?: string };
+                            Alert.alert('Error', err.message || 'No se pudo salir del grupo');
                         } finally {
                             setIsUpdating(false);
                         }
@@ -195,8 +196,9 @@ export function GroupProfileView({
             await chatService.addParticipant(conversationId, userId, contactUserId);
             await fetchParticipants();
             Alert.alert('Éxito', 'Usuario añadido correctamente');
-        } catch (e: any) {
-            Alert.alert('Error', e.message || 'No se pudo añadir al usuario');
+        } catch (error: unknown) {
+            const err = error as { message?: string };
+            Alert.alert('Error', err.message || 'No se pudo añadir al usuario');
         } finally {
             setIsUpdating(false);
         }
@@ -250,9 +252,10 @@ export function GroupProfileView({
             }
 
             Alert.alert('Éxito', 'Foto del grupo actualizada correctamente');
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error updating group image:', error);
-            Alert.alert('Error', 'No se pudo actualizar la foto: ' + (error.message || 'Error desconocido'));
+            const err = error as { message?: string };
+            Alert.alert('Error', 'No se pudo actualizar la foto: ' + (err.message || 'Error desconocido'));
         } finally {
             setIsUpdating(false);
         }
@@ -286,7 +289,10 @@ export function GroupProfileView({
 
         try {
             setIsUpdating(true);
-            const updates: any = { conversationId, adminId: userId };
+            const updates: { conversationId: string; adminId: string; title?: string; description?: string } = { 
+                conversationId, 
+                adminId: userId 
+            };
 
             if (editModalConfig.field === 'title') {
                 updates.title = value.trim();

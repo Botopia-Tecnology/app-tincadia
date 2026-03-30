@@ -4,8 +4,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { chatService } from '../services/chat.service';
 import { contactService, Contact } from '../services/contact.service';
+import { Conversation } from '../types/chat.types';
 import { appNotificationService } from '../services/appNotification.service';
 import { useContactsSync } from './useContactsSync';
+import { API_URL } from '../config/api.config';
 import {
   getConversations as getLocalConversations,
   getLocalContacts,
@@ -56,11 +58,17 @@ export const useChatList = (userId: string) => {
   // Transform helper
   const transformToItems = useCallback((
     contacts: Contact[],
-    conversations: any[]
+    conversations: Conversation[]
   ): ChatListItem[] => {
     const contactsByUserId = new Map(contacts.filter(c => c.contactUserId).map(c => [c.contactUserId, c]));
     const contactsByPhone = new Map(contacts.filter(c => c.phone).map(c => [c.phone.replace(/\D/g, ''), c]));
     const conversationsByUserId = new Map(conversations.map(conv => [conv.otherUserId, conv]));
+
+    const normalizeUrl = (url?: string) => {
+      if (!url) return undefined;
+      if (url.startsWith('http')) return url;
+      return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+    };
 
     const items: ChatListItem[] = conversations.map(conv => {
       if (conv.isGroup) {
@@ -74,7 +82,7 @@ export const useChatList = (userId: string) => {
           unreadCount: conv.unreadCount || 0,
           lastMessage: conv.lastMessage,
           lastMessageTime: conv.lastMessageAt,
-          avatarUrl: conv.imageUrl || conv.otherUserAvatar,
+          avatarUrl: normalizeUrl(conv.imageUrl || conv.otherUserAvatar),
           description: conv.description,
         };
       }
@@ -109,7 +117,7 @@ export const useChatList = (userId: string) => {
           alias: contact.alias,
           customFirstName: contact.customFirstName,
           customLastName: contact.customLastName,
-          avatarUrl: conv.otherUserAvatar,
+          avatarUrl: normalizeUrl(conv.otherUserAvatar),
         };
       } else {
         return {
@@ -122,7 +130,7 @@ export const useChatList = (userId: string) => {
           unreadCount: conv.unreadCount || 0,
           lastMessage: conv.lastMessage,
           lastMessageTime: conv.lastMessageAt,
-          avatarUrl: conv.otherUserAvatar,
+          avatarUrl: normalizeUrl(conv.otherUserAvatar),
         };
       }
     });
@@ -332,7 +340,7 @@ export const useChatList = (userId: string) => {
       .channel('messages-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          const newMsg = payload.new as any;
+          const newMsg = payload.new as { sender_id: string; conversation_id: string; type: string; created_at: string };
           const isMine = newMsg.sender_id === userId;
           if (newMsg.conversation_id && !isMine) {
             let previewContent = 'Nuevo mensaje...';
@@ -351,7 +359,7 @@ export const useChatList = (userId: string) => {
 
     const userChannel = supabase.channel(`user:${userId}`)
       .on('broadcast', { event: 'new_message' }, (payload) => {
-        const newMsg = payload.payload;
+        const newMsg = payload.payload as { conversationId: string; content: string; createdAt: string };
         if (newMsg) {
           updateConversationPreview(newMsg.conversationId, newMsg.content, newMsg.createdAt, true);
           loadFromLocalCache();

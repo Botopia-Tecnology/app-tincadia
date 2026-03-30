@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { authService } from '../../services/auth.service';
+import { FirebaseAuthTypes } from '@react-native-firebase/auth';
 
 interface PhoneVerificationModalProps {
     visible: boolean;
@@ -13,7 +14,7 @@ export function PhoneVerificationModal({ visible, onClose, onVerified, initialPh
     const [step, setStep] = useState<'phone' | 'code'>('phone');
     const [phoneNumber, setPhoneNumber] = useState(initialPhoneNumber);
     const [code, setCode] = useState('');
-    const [confirm, setConfirm] = useState<any>(null);
+    const [confirm, setConfirm] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -46,12 +47,13 @@ export function PhoneVerificationModal({ visible, onClose, onVerified, initialPh
             const confirmation = await authService.signInWithPhoneNumber(formattedPhone);
             setConfirm(confirmation);
             setStep('code');
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error sending code', error);
+            const err = error as { code?: string };
             let msg = 'No se pudo enviar el código. Intenta de nuevo.';
-            if (error.code === 'auth/invalid-phone-number') msg = 'El número de teléfono no es válido.';
-            if (error.code === 'auth/quota-exceeded') msg = 'Límite de SMS excedido por hoy.';
-            if (error.code === 'auth/too-many-requests') msg = 'Demasiados intentos. Espera un momento.';
+            if (err.code === 'auth/invalid-phone-number') msg = 'El número de teléfono no es válido.';
+            if (err.code === 'auth/quota-exceeded') msg = 'Límite de SMS excedido por hoy.';
+            if (err.code === 'auth/too-many-requests') msg = 'Demasiados intentos. Espera un momento.';
             Alert.alert('Error', msg);
         } finally {
             setLoading(false);

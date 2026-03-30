@@ -6,40 +6,16 @@
 
 import { apiClient } from '../lib/api-client';
 import { API_ENDPOINTS, API_URL } from '../config/api.config';
+import { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata } from '../types/chat.types';
 
-export interface Message {
-    id: string;
-    conversationId: string;
-    senderId: string;
-    content: string;
-    type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended';
-    createdAt: string;
-    isRead: boolean;
-}
-
-export interface Conversation {
-    id: string;
-    participants: string[];
-    otherUserId: string;
-    otherUserName?: string;
-    otherUserPhone?: string;
-    otherUserAvatar?: string;
-    lastMessage?: string;
-    lastMessageAt?: string;
-    unreadCount: number;
-    // Group fields
-    type?: 'direct' | 'group';
-    isGroup?: boolean;
-    title?: string;
-    imageUrl?: string;
-}
+export type { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata };
 
 interface SendMessageDto {
     conversationId: string;
     senderId: string;
     content: string;
     type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended';
-    metadata?: any;
+    metadata?: MessageMetadata;
 }
 
 interface CreateConversationDto {
@@ -67,8 +43,7 @@ export const chatService = {
     /**
      * Get a user's profile (for viewing original registration name)
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async getUserProfile(userId: string): Promise<{ user?: any; profile?: any }> {
+    async getUserProfile(userId: string): Promise<UserProfile> {
         return apiClient(API_ENDPOINTS.USER_PROFILE(userId), {
             method: 'GET',
         });
@@ -359,7 +334,7 @@ export const chatService = {
     /**
      * Update group information (Admin only)
      */
-    async updateGroup(data: { conversationId: string; adminId: string; title?: string; imageUrl?: string; description?: string }): Promise<{ group: any }> {
+    async updateGroup(data: { conversationId: string; adminId: string; title?: string; imageUrl?: string; description?: string }): Promise<{ group: Group }> {
         return apiClient('/chat/groups', {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -369,7 +344,7 @@ export const chatService = {
     /**
      * Get participants of a group
      */
-    async getGroupParticipants(conversationId: string): Promise<any[]> {
+    async getGroupParticipants(conversationId: string): Promise<GroupParticipant[]> {
         return apiClient(`/chat/groups/${conversationId}/participants`, {
             method: 'GET',
         });

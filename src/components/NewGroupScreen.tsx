@@ -21,9 +21,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { mediaService } from '../services/media.service';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
+import { NavigateFunction } from '../types/navigation.types';
 
 interface NewGroupScreenProps {
-    onNavigate: (screen: 'chats', params?: any) => void;
+    onNavigate: NavigateFunction;
     onBack: () => void;
     userId: string;
 }
@@ -141,11 +142,12 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
                 groupTitle: title.trim(),
                 groupDescription: description.trim(),
             });
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const err = error as { message?: string };
             alert.show({
                 type: 'error',
                 title: 'Error',
-                message: error.message || 'No se pudo crear el grupo.'
+                message: err.message || 'No se pudo crear el grupo.'
             });
         } finally {
             setIsCreating(false);

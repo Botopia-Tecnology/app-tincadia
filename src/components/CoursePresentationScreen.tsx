@@ -7,11 +7,12 @@ import { paymentsService } from '../services/payments.service';
 import { useSubscription } from '../hooks/useSubscription';
 import { BackArrowIcon } from './icons/NavigationIcons';
 import { useTheme } from '../contexts/ThemeContext';
+import { NavigateFunction } from '../types/navigation.types';
 
 interface CoursePresentationScreenProps {
     courseId: string;
     onBack: () => void;
-    onNavigate: (screen: 'course_player', params?: any) => void;
+    onNavigate: NavigateFunction;
     userId: string;
 }
 
@@ -74,14 +75,14 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
         }
     }
 
-    const handleBuy = async () => {
-        // Redirection to web for purchase as requested
+    const handleUnlock = async () => {
+        // Redirection to web for unlock as requested
         const url = `https://tincadia.com/cursos`;
         const supported = await Linking.canOpenURL(url);
         if (supported) {
             await Linking.openURL(url);
         } else {
-            Alert.alert('Compra', 'Visita tincadia.com/cursos para adquirir este curso.');
+            Alert.alert('Desbloquear', 'Visita tincadia.com/cursos para desbloquear este curso.');
         }
     };
 
@@ -108,10 +109,7 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
     const isFree = !course.isPaid;
     const canAccess = isFree || isPremium || hasAccess;
 
-    const formatPrice = (cents?: number) => {
-        if (!cents) return 'Gratis';
-        return `$${(cents / 100).toLocaleString('es-CO')} COP`;
-    };
+    // Format price function removed to avoid pricing mentions on the app.
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -139,7 +137,7 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
                     <View style={styles.badgeContainer}>
                         <View style={[styles.badge, course.isPaid ? { backgroundColor: isDark ? '#451a03' : '#fef3c7' } : { backgroundColor: isDark ? '#064e3b' : '#d1fae5' }]}>
                             <Text style={[styles.badgeText, course.isPaid ? { color: isDark ? '#fbbf24' : '#d97706' } : { color: isDark ? '#34d399' : '#059669' }]}>
-                                {course.isPaid ? 'Premium' : 'Gratuito'}
+                                {course.isPaid ? 'Exclusivo' : 'Gratuito'}
                             </Text>
                         </View>
                         <View style={[styles.badge, { backgroundColor: isDark ? colors.surface : '#f3f4f6' }]}>
@@ -176,9 +174,9 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
             {/* Bottom Action Bar */}
             <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
                 <View style={styles.priceInfo}>
-                    <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>{canAccess ? 'Tienes acceso' : 'Precio del curso'}</Text>
+                    <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>{canAccess ? 'Acceso disponible' : 'Contenido exclusivo'}</Text>
                     <Text style={[styles.priceValue, { color: colors.text }, canAccess && { color: colors.success }]}>
-                        {canAccess ? 'Disponible' : formatPrice(course.priceInCents)}
+                        {canAccess ? 'Desbloqueado' : 'Bloqueado'}
                     </Text>
                 </View>
 
@@ -190,8 +188,8 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
                         <Text style={styles.buyButtonText}>Ir al Curso ▶</Text>
                     </TouchableOpacity>
                 ) : (
-                    <TouchableOpacity style={[styles.buyButton, { backgroundColor: '#dc2626' }]} onPress={handleBuy}>
-                        <Text style={styles.buyButtonText}>Comprar Ahora</Text>
+                    <TouchableOpacity style={[styles.buyButton, { backgroundColor: '#dc2626' }]} onPress={handleUnlock}>
+                        <Text style={styles.buyButtonText}>Desbloquear en la web</Text>
                     </TouchableOpacity>
                 )}
             </View>

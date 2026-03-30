@@ -16,9 +16,9 @@ import { useAuth } from '../contexts/AuthContext';
 
 // Web Client ID from Google Cloud Console (also configured in Supabase)
 // Web Client ID from Google Cloud Console (also configured in Supabase)
-const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB || '432950882488-80s791qdafaslmilmos19mndc9427n60.apps.googleusercontent.com';
-const IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || '432950882488-3i05sq8v8tfdrpq1l2tdplt364qco4e7.apps.googleusercontent.com';
-const ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID || '432950882488-fo834dmnq90rr53j5rake064k3tae4u3.apps.googleusercontent.com';
+const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB;
+const IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS;
+const ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID;
 
 // Configure Google Sign-In once
 let isConfigured = false;
@@ -38,9 +38,9 @@ function configureGoogleSignIn() {
 }
 
 export function useGoogleAuth() {
-    const { loginWithOAuth, isLoading } = useAuth();
+    const { loginWithOAuth, isLoading, setError: setAuthError } = useAuth();
     const [isReady, setIsReady] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [localError, setLocalError] = useState<string | null>(null);
 
     // Configure on mount
     useEffect(() => {
@@ -49,12 +49,13 @@ export function useGoogleAuth() {
             setIsReady(true);
         } catch (err) {
             console.error('Failed to configure Google Sign-In:', err);
-            setError('Failed to initialize Google Sign-In');
+            setLocalError('Failed to initialize Google Sign-In');
         }
     }, []);
 
     const signInWithGoogle = useCallback(async () => {
-        setError(null);
+        setAuthError(null);
+        setLocalError(null);
 
         try {
             console.log('🚀 Starting Google Sign-In...');
@@ -82,8 +83,9 @@ export function useGoogleAuth() {
                 // User cancelled the sign-in
                 console.log('Google Sign-In was cancelled');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Google Sign-In error:', err);
+            let message = 'An unexpected error occurred';
 
             if (isErrorWithCode(err)) {
                 switch (err.code) {
@@ -92,19 +94,22 @@ export function useGoogleAuth() {
                         console.log('User cancelled Google Sign-In');
                         return;
                     case statusCodes.IN_PROGRESS:
-                        setError('Sign-in already in progress');
+                        message = 'Sign-in already in progress';
                         break;
                     case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
-                        setError('Google Play Services not available');
+                        message = 'Google Play Services not available';
                         break;
                     default:
-                        setError(err.message || 'Failed to sign in with Google');
+                        message = err.message || 'Failed to sign in with Google';
                 }
-            } else {
-                setError(err.message || 'An unexpected error occurred');
+            } else if (err instanceof Error) {
+                message = err.message || 'An unexpected error occurred';
             }
+
+            setLocalError(message);
+            setAuthError(message);
         }
-    }, [loginWithOAuth]);
+    }, [loginWithOAuth, setAuthError]);
 
     const signOut = useCallback(async () => {
         try {
@@ -120,6 +125,6 @@ export function useGoogleAuth() {
         signOut,
         isReady,
         isLoading,
-        error,
+        error: localError,
     };
 }

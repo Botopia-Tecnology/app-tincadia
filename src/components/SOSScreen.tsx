@@ -5,13 +5,15 @@ import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
 import { emergencyService } from '../services/emergency.service';
 import { emergencyContactsStorage, EmergencyContact } from '../services/emergencyContacts.storage';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSubscription } from '../hooks/useSubscription';
+import { UpgradeModal } from './UpgradeModal';
 import { chatService } from '../services/chat.service';
 import {
     Siren,
@@ -29,16 +31,17 @@ import {
     Video
 } from 'lucide-react-native';
 import { SearchIcon } from './icons/NavigationIcons';
+import { NavigateFunction } from '../types/navigation.types';
 
 interface EmergencyType {
     id: string;
-    icon: any;
+    icon: React.ElementType;
     color: string;
     label: string;
 }
 
 interface SOSScreenProps {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call', params?: { roomName?: string; username?: string; conversationId?: string; userId?: string }) => void;
+    onNavigate: NavigateFunction;
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
@@ -55,6 +58,9 @@ export function SOSScreen({
 }: SOSScreenProps) {
     const { user } = useAuth();
     const { colors, isDark } = useTheme();
+    const { canUseInterpreter } = useSubscription(userId);
+
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
     const emergencyTypes: EmergencyType[] = [
         { id: '1', icon: Flame, color: '#EF4444', label: 'BOMBEROS' },
@@ -289,6 +295,11 @@ export function SOSScreen({
             return;
         }
 
+        if (!canUseInterpreter) {
+            setShowUpgradeModal(true);
+            return;
+        }
+
         const username = user?.firstName || user?.email || 'Usuario';
         const roomName = `sos-${userId}-${Date.now()}`;
 
@@ -316,7 +327,7 @@ export function SOSScreen({
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]} dismissOnPress={false}>
             <StatusBar style={isDark ? 'light' : 'dark'} />
 
             {/* Header */}
@@ -346,7 +357,7 @@ export function SOSScreen({
                 </View>
             </View>
 
-            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 160 }} showsVerticalScrollIndicator={false}>
 
                 {/* Status Card / Instructions */}
                 <View style={[styles.statusCard, {
@@ -478,9 +489,21 @@ export function SOSScreen({
                     </Text>
                 </View>
 
+                {/* Disclaimer */}
+                <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center', paddingHorizontal: 24, marginTop: 8, lineHeight: 16 }}>
+                    Esta funcionalidad es una herramienta de asistencia comunicativa y no sustituye los servicios oficiales de emergencia. Al usarla, aceptas los{' '}
+                    <Text style={{ textDecorationLine: 'underline' }} onPress={() => Linking.openURL('https://www.tincadia.com/terminos')}>términos y condiciones</Text>.
+                </Text>
+
             </ScrollView>
 
+            <UpgradeModal
+                visible={showUpgradeModal}
+                onClose={() => setShowUpgradeModal(false)}
+                feature="interpreter"
+            />
+
             <BottomNavigation currentScreen="sos" onNavigate={onNavigate} />
-        </SafeAreaView>
+        </KeyboardSafeView>
     );
 }

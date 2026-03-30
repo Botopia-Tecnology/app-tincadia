@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share, Switch } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share, Switch, RefreshControl } from 'react-native';
 import { Settings, Moon, Sun } from 'lucide-react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
@@ -7,6 +7,7 @@ import { profileScreenStyles as styles } from '../styles/ProfileScreen.styles';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme, ThemeMode } from '../contexts/ThemeContext';
 import { useSubscription } from '../hooks/useSubscription';
+import { API_URL } from '../config/api.config';
 import { useAlert } from './common/CustomAlert';
 import {
     ChatIcon,
@@ -21,13 +22,14 @@ import {
 } from './icons/NavigationIcons';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
+import { NavigateFunction } from '../types/navigation.types';
 
 import { EditProfileScreen } from './profile/EditProfileScreen';
 import { PrivacyScreen } from './profile/PrivacyScreen';
 import { EmergencyContactsScreen } from './profile/EmergencyContactsScreen';
 
 interface ProfileScreenProps {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call', params?: any) => void;
+    onNavigate: NavigateFunction;
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
@@ -39,25 +41,33 @@ export function ProfileScreen({
     userId,
     onShowNotifications,
 }: ProfileScreenProps) {
-    const { user, logout, isLoading } = useAuth();
-    const { subscriptionStatus, isPremium, isBasico } = useSubscription(userId);
+    const { user, logout, isLoading, refreshProfile } = useAuth();
+    const { subscriptionStatus, isPremium, isBasico, refreshSubscription, isLoading: isSubscriptionLoading } = useSubscription(userId);
     const alert = useAlert();
     const { colors, isDark, themeMode, setThemeMode, systemTheme } = useTheme();
     // Local state to manage sub-screen navigation
     const [subScreen, setSubScreen] = useState<'none' | 'editProfile' | 'privacy' | 'emergencyContacts'>('none');
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Derive plan display label from subscription status
     const getPlanLabel = () => {
+        if (isSubscriptionLoading && !subscriptionStatus) return '';
         if (!subscriptionStatus?.hasSubscription) return 'Plan Gratis';
-        const planType = subscriptionStatus.planType || '';
-        if (planType === 'personal_premium') return 'Plan Premium';
-        if (planType === 'empresa_corporate') return 'Membresía Empresarial';
-        if (planType === 'personal_free') return 'Plan Básico';
+        const planType = typeof subscriptionStatus.planType === 'string' ? subscriptionStatus.planType.toLowerCase() : '';
+        if (planType.includes('premium')) return 'Plan Premium';
+        if (planType.includes('corporate')) return 'Membresía Empresarial';
+        if (planType.includes('free') || planType.includes('basico')) return 'Plan Básico';
         return 'Plan Básico';
     };
     const planLabel = getPlanLabel();
 
-
+    // Helper to get full avatar URL
+    const getAvatarSource = () => {
+        if (!user?.avatarUrl) return require('../../assets/user.png');
+        if (user.avatarUrl.startsWith('http')) return { uri: user.avatarUrl };
+        // Normalize relative path
+        return { uri: `${API_URL}${user.avatarUrl.startsWith('/') ? '' : '/'}${user.avatarUrl}` };
+    };
 
     const handleInviteFriends = async () => {
         try {
@@ -124,59 +134,57 @@ export function ProfileScreen({
                     <BackArrowIcon size={32} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Perfil</Text>
-                {userId && onShowNotifications ? (
-                    <NotificationBell
-                        userId={userId}
-                        onPress={onShowNotifications}
-                        color={colors.text}
-                    />
-                ) : (
-                    <View style={[styles.notificationButton, { backgroundColor: colors.card }]} />
-                )}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {userId && onShowNotifications ? (
+                        <NotificationBell
+                            userId={userId}
+                            onPress={onShowNotifications}
+                            color={colors.text}
+                        />
+                    ) : (
+                        <View style={[styles.notificationButton, { backgroundColor: colors.card }]} />
+                    )}
+                </View>
             </View>
 
-            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
-                {/* Profile Section (Reduced for Menu View) */}
-                <View style={[styles.profileSection, { flexDirection: 'row', marginBottom: 32 }]}>
+            <ScrollView
+                style={styles.content}
+                contentContainerStyle={{ paddingBottom: 100 }}
+            >
+                {/* Profile Section - Centered Vertical Layout */}
+                <View style={[styles.profileSection, { marginBottom: 32 }]}>
                     <View style={styles.avatarContainer}>
                         <Image
-                            source={user?.avatarUrl ? { uri: user.avatarUrl } : require('../../assets/user.png')}
-                            style={[styles.avatar, { width: 80, height: 80, borderRadius: 40 }]}
+                            source={getAvatarSource()}
+                            style={[styles.avatar, { width: 100, height: 100, borderRadius: 50 }]}
                         />
                     </View>
-                    <View style={[styles.userInfo, { marginLeft: 20 }]}>
-                        <Text style={[styles.userName, { fontSize: 18, color: colors.text }]}>
+                    <View style={styles.userInfo}>
+                        <Text style={[styles.userName, { fontSize: 20, color: colors.text, textAlign: 'center' }]}>
                             {user ? `${user.firstName} ${user.lastName}` : 'Usuario'}
                         </Text>
                         {user?.email && (
-                            <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4 }}>{user.email}</Text>
+                            <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, textAlign: 'center' }}>{user.email}</Text>
                         )}
-                        {/* Plan Badge - Clickable */}
-                        <TouchableOpacity
-                            onPress={() => Linking.openURL('https://www.tincadia.com/pricing')}
-                            activeOpacity={0.7}
-                        >
-                            <View style={{
-                                marginTop: 8,
-                                paddingHorizontal: 12,
-                                paddingVertical: 4,
-                                backgroundColor: isPremium ? '#FFD700' : '#E5E7EB',
-                                borderRadius: 12,
-                                alignSelf: 'flex-start',
-                                flexDirection: 'row',
-                                alignItems: 'center'
+                        {/* Plan Badge - Centered */}
+                        <View style={{
+                            marginTop: 12,
+                            paddingHorizontal: 16,
+                            paddingVertical: 6,
+                            backgroundColor: isPremium ? '#FFD700' : ((isSubscriptionLoading && !subscriptionStatus) ? colors.surface : '#E5E7EB'),
+                            borderRadius: 16,
+                            alignSelf: 'center',
+                            flexDirection: 'row',
+                            alignItems: 'center'
+                        }}>
+                            <Text style={{
+                                color: isPremium ? '#000' : '#4B5563',
+                                fontSize: 13,
+                                fontWeight: '700',
                             }}>
-                                <Text style={{
-                                    color: isPremium ? '#000' : '#4B5563',
-                                    fontSize: 12,
-                                    fontWeight: '600',
-                                    marginRight: 4
-                                }}>
-                                    {planLabel}
-                                </Text>
-                                <ChevronRightIcon size={12} color={isPremium ? '#000' : '#666'} />
-                            </View>
-                        </TouchableOpacity>
+                                {planLabel}
+                            </Text>
+                        </View>
                     </View>
                 </View>
 
@@ -323,13 +331,22 @@ export function ProfileScreen({
                     onPress={handleLogout}
                     disabled={isLoading}
                 >
-                    {isLoading ? (
-                        <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                        <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
-                            Cerrar Sesión
-                        </Text>
-                    )}
+                    <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+                        Cerrar Sesión
+                    </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={{
+                        marginTop: 16,
+                        alignItems: 'center',
+                        paddingVertical: 10,
+                    }}
+                    onPress={() => Linking.openURL('https://www.tincadia.com/contacto#eliminar-cuenta')}
+                >
+                    <Text style={{ color: '#FF3B30', fontSize: 13 }}>
+                        Eliminar cuenta
+                    </Text>
                 </TouchableOpacity>
             </ScrollView>
 

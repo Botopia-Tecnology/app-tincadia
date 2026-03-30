@@ -14,8 +14,8 @@ const SESSION_KEY = 'tincadia_supabaseSession';
 
 // Web fallback using localStorage (less secure, but SecureStore doesn't work on web)
 // NOTE: This project is typed for React Native (no DOM lib), so we must not reference `window` directly.
-const getWebLocalStorage = (): any | null => {
-    const g: any = globalThis as any;
+const getWebLocalStorage = (): Storage | null => {
+    const g = globalThis as unknown as { localStorage?: Storage };
     return g && g.localStorage ? g.localStorage : null;
 };
 

@@ -203,7 +203,6 @@ export const chatViewStyles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     fontSize: 16,
-    maxHeight: 100,
     color: '#111827',
   },
   pencilButton: {

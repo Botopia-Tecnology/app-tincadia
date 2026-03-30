@@ -102,7 +102,13 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
     };
 
     const handleAvatarPress = () => {
-        const buttons: any[] = [
+        interface ProfileButton {
+            text: string;
+            onPress?: () => void;
+            style?: 'default' | 'cancel' | 'destructive';
+        }
+
+        const buttons: ProfileButton[] = [
             { text: 'Seleccionar de Galería', onPress: handlePickImage },
             { text: 'Cancelar', style: 'cancel' }
         ];
@@ -118,7 +124,7 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
         Alert.alert(
             'Foto de Perfil',
             'Selecciona una opción',
-            buttons
+            buttons as any // Alert.alert expects any[] but our structure is correct
         );
     };
 
@@ -130,7 +136,7 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
     const handleSaveField = async (value: string) => {
         if (!user) return;
         try {
-            const updateData: any = {};
+            const updateData: { firstName?: string; lastName?: string } = {};
             updateData[editingField] = value;
             await authService.updateProfile(user.id, updateData);
             await refreshProfile();

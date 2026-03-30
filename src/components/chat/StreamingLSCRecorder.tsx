@@ -9,7 +9,7 @@ import {
     Alert,
     Platform,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../config/api.config';
@@ -76,11 +76,9 @@ export function StreamingLSCRecorder({
         }
     }, [visible]);
 
-    const handleMessage = (event: any) => {
-        // ... same handler ...
+    const handleMessage = (event: WebViewMessageEvent) => {
         try {
             const data = JSON.parse(event.nativeEvent.data);
-            // ... switch/case ...
             switch (data.type) {
                 case 'status':
                     setStatus(data.payload);

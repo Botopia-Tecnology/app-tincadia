@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, ViewStyle, TextStyle, ImageStyle } from 'react-native';
 import { PlusIcon } from '../icons/NavigationIcons';
 import { ChatListItem as ChatListItemType } from '../../hooks/useChatList';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -32,7 +32,7 @@ interface ChatListItemProps {
   onPress: (item: ChatListItemType) => void;
   onLongPress: (item: ChatListItemType) => void;
   onAddContact?: (item: ChatListItemType) => void;
-  styles: any;
+  styles: Record<string, ViewStyle | TextStyle | ImageStyle>;
 }
 
 export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles }: ChatListItemProps) => {
@@ -48,11 +48,13 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
   const renderLastMessage = () => {
     if (!item.lastMessage) return item.phone;
 
-    if (item.lastMessage.includes('📞') || item.lastMessage.includes('Llamada')) {
-      const isEnded = item.lastMessage.includes('finalizada');
+    if (item.lastMessage.includes('📞') || item.lastMessage.toLowerCase().includes('llamada')) {
+      const isEnded = item.lastMessage.toLowerCase().match(/(finalizada|rechazada|perdida)/);
+      const displayText = isEnded ? item.lastMessage.replace('📞', '☎️') : '📞 Llamada entrante';
+      
       return (
         <Text style={{ color: isEnded ? '#EF4444' : '#3B82F6', fontWeight: '500' }}>
-          {isEnded ? '☎️ Llamada finalizada' : '📞 Llamada entrante'}
+          {displayText}
         </Text>
       );
     }

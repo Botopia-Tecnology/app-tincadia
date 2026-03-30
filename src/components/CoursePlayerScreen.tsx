@@ -4,8 +4,9 @@ import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
-import { contentService, Course } from '../services/content.service';
+import { contentService, Course, Module, Lesson } from '../services/content.service';
 import { PlayIcon, PauseIcon, SkipForwardIcon, SkipBackwardIcon, FullscreenIcon } from './icons/NavigationIcons';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface CoursePlayerScreenProps {
     courseId: string;
@@ -16,9 +17,10 @@ interface CoursePlayerScreenProps {
 }
 
 export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps) {
+    const { colors, isDark } = useTheme();
     const [course, setCourse] = useState<Course | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeLesson, setActiveLesson] = useState<any | null>(null);
+    const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
     const [expandedModules, setExpandedModules] = useState<string[]>([]);
     const [hasPaidAccess] = useState(false); // TODO: conectar con suscripción real
 
@@ -37,7 +39,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
         };
     }, [courseId]);
 
-    const isLessonLocked = useCallback((c: Course, module: any, lesson: any) => {
+    const isLessonLocked = useCallback((c: Course, module: Module | { isPaid?: boolean }, lesson: Lesson) => {
         if (lesson?.locked) return true;
         if (lesson?.videoUrl) return false;
 
@@ -61,7 +63,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
             // Seleccionar primera lección accesible
             const modules = data.modules || [];
             let firstModuleId: string | undefined;
-            let firstLesson: any | null = null;
+            let firstLesson: Lesson | null = null;
             for (const mod of modules) {
                 for (const les of mod.lessons || []) {
                     if (!isLessonLocked(data, mod, les)) {
@@ -93,10 +95,10 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
         );
     };
 
-    const handleLessonSelect = (module: any, lesson: any) => {
+    const handleLessonSelect = (module: Module, lesson: Lesson) => {
         if (!course) return;
         if (isLessonLocked(course, module, lesson)) {
-            Alert.alert('Contenido de pago', 'Desbloquea para continuar.');
+            Alert.alert('Contenido bloqueado', 'Debes desbloquear este contenido en la web para continuar.');
             return;
         }
         setActiveLesson(lesson);
@@ -295,46 +297,52 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
             </View>
 
             {/* Content List */}
-            <ScrollView style={styles.contentList}>
-                <View style={styles.courseInfo}>
-                    <Text style={styles.courseTitle}>{course.title}</Text>
+            <ScrollView style={[styles.contentList, { backgroundColor: colors.background }]}>
+                <View style={[styles.courseInfo, { borderBottomColor: colors.border }]}>
+                    <Text style={[styles.courseTitle, { color: colors.text }]}>{course.title}</Text>
                     {activeLesson && (
-                        <Text style={styles.lessonTitle}>
+                        <Text style={[styles.lessonTitle, { color: colors.primary }]}>
                             Estás viendo: {activeLesson.title}
                         </Text>
                     )}
                 </View>
 
                 <View style={styles.playlistContainer}>
-                    <Text style={styles.playlistHeader}>Contenido del Curso</Text>
+                    <Text style={[styles.playlistHeader, { color: colors.textSecondary }]}>Contenido del Curso</Text>
 
-                    {course.modules?.map((module: any) => (
-                        <View key={module.id} style={styles.moduleCard}>
+                    {course.modules?.map((module: Module) => (
+                        <View key={module.id} style={[styles.moduleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <TouchableOpacity
-                                style={styles.moduleHeader}
+                                style={[styles.moduleHeader, { backgroundColor: colors.surface }]}
                                 onPress={() => toggleModule(module.id)}
                             >
-                                <Text style={styles.moduleTitle}>{module.title}</Text>
-                                <Text>{expandedModules.includes(module.id) ? '▲' : '▼'}</Text>
+                                <Text style={[styles.moduleTitle, { color: colors.text }]}>{module.title}</Text>
+                                <Text style={{ color: colors.textSecondary }}>{expandedModules.includes(module.id) ? '▲' : '▼'}</Text>
                             </TouchableOpacity>
 
                                     {expandedModules.includes(module.id) && (
-                                        <View style={styles.lessonsContainer}>
-                                            {module.lessons?.map((lesson: any) => (
+                                        <View style={[styles.lessonsContainer, { borderTopColor: colors.border }]}>
+                                            {module.lessons?.map((lesson: Lesson) => (
                                                 <TouchableOpacity
                                                     key={lesson.id}
                                                     style={[
                                                         styles.lessonItem,
-                                                        activeLesson?.id === lesson.id && styles.activeLessonItem
+                                                        { borderBottomColor: colors.border },
+                                                        activeLesson?.id === lesson.id && {
+                                                            backgroundColor: isDark ? 'rgba(76, 175, 80, 0.1)' : '#f0fdf4',
+                                                            borderLeftWidth: 4,
+                                                            borderLeftColor: colors.primary
+                                                        }
                                                     ]}
                                                     onPress={() => handleLessonSelect(module, lesson)}
                                                 >
-                                                    <Text style={styles.playIcon}>
+                                                    <Text style={[styles.playIcon, { color: activeLesson?.id === lesson.id ? colors.primary : colors.textSecondary }]}>
                                                         {activeLesson?.id === lesson.id ? '▶' : '•'}
                                                     </Text>
                                                     <Text style={[
                                                         styles.lessonText,
-                                                        activeLesson?.id === lesson.id && styles.activeLessonText
+                                                        { color: colors.text },
+                                                        activeLesson?.id === lesson.id && { color: colors.primary, fontWeight: '600' }
                                                     ]}>
                                                         {lesson.title}
                                                     </Text>
@@ -342,7 +350,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
                                                 </TouchableOpacity>
                                             ))}
                                             {(!module.lessons || module.lessons.length === 0) && (
-                                                <Text style={styles.emptyModuleText}>Sin lecciones</Text>
+                                                <Text style={[styles.emptyModuleText, { color: colors.textMuted }]}>Sin lecciones</Text>
                                             )}
                                         </View>
                                     )}

@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { contactService, Contact } from '../services/contact.service';
-import { getLocalContacts, saveContact } from '../database/chatDatabase';
+import { getLocalContacts, saveContact, LocalContact } from '../database/chatDatabase';
 
 const LAST_SYNC_KEY = 'tincadia_contacts_last_sync_';
 
 // Map SQLite cached contact to Service Contact
-const mapLocalToService = (local: any): Contact => ({
+const mapLocalToService = (local: LocalContact): Contact => ({
     id: local.id,
     ownerId: local.owner_id,
     contactUserId: local.contact_user_id,

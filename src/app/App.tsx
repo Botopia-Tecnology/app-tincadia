@@ -9,7 +9,8 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackHandler, Platform, Text, View, ActivityIndicator, StyleSheet } from 'react-native';
+import { BackHandler, Platform, Text, View, ActivityIndicator, StyleSheet, AppState } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Sentry from '@sentry/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PostHogProvider } from 'posthog-react-native';
@@ -17,8 +18,10 @@ import * as Notifications from 'expo-notifications';
 import { I18nProvider } from '../contexts/I18nContext';
 import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import { SubscriptionProvider } from '../contexts/SubscriptionContext';
 import { chatService } from '../services/chat.service';
 import { useSubscription } from '../hooks/useSubscription';
+import { ScreenName, NavigationParams } from '../types/navigation.types';
 import { SplashScreen } from '../components/SplashScreen';
 import { LoginScreen } from '../components/LoginScreen';
 import { CompleteProfileScreen } from '../components/CompleteProfileScreen';
@@ -42,7 +45,7 @@ import { appStyles as styles } from '../styles/App.styles';
 
 // Initialize Sentry with Session Replay
 Sentry.init({
-  dsn: 'https://922f74ca4e17c001f4ecd489c52e1055@o4510623853314048.ingest.us.sentry.io/4510623870615552',
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   debug: __DEV__,
   tracesSampleRate: 1.0,
   replaysSessionSampleRate: __DEV__ ? 1.0 : 0.1,
@@ -61,18 +64,34 @@ Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data;
     const isCall = data?.type === 'call' || data?.type === 'call_invite';
+    // Always read AppState DYNAMICALLY inside the handler, never capture it outside.
+    // When the app is in foreground the in-app modal handles call UI,
+    // but we still need the system notification for when it's in background/killed.
+    const isForeground = AppState.currentState === 'active';
+
+    if (isCall) {
+      return {
+        // Show system notification only in background so it rings even when the
+        // app is not visible. The foreground listener will show the in-app modal.
+        shouldShowAlert: !isForeground,
+        shouldPlaySound: !isForeground,
+        shouldSetBadge: false,
+        shouldShowBanner: !isForeground,
+        shouldShowList: true,
+      };
+    }
 
     return {
-      shouldShowAlert: !isCall,
-      shouldPlaySound: !isCall,
+      shouldShowAlert: true,
+      shouldPlaySound: true,
       shouldSetBadge: false,
-      shouldShowBanner: !isCall,
-      shouldShowList: !isCall,
+      shouldShowBanner: true,
+      shouldShowList: true,
     };
   },
 });
 
-type ScreenName = 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'notifications' | 'course_player' | 'new_group' | 'course_presentation';
+
 
 function AppContent() {
   const { isAuthenticated, profileComplete, isLoading, user } = useAuth();
@@ -80,7 +99,7 @@ function AppContent() {
   
   // Navigation stack
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
-  const [callParams, setCallParams] = useState<{ roomName: string; username: string; conversationId?: string; userId?: string } | null>(null);
+  const [callParams, setCallParams] = useState<{ roomName?: string; username?: string; conversationId?: string; userId?: string } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null>(null);
   
@@ -88,8 +107,8 @@ function AppContent() {
 
   const currentScreen = useMemo(() => screenStack[screenStack.length - 1] ?? 'chats', [screenStack]);
 
-  const navigate = useCallback((next: ScreenName, params?: any) => {
-    if (next === 'call' && params) setCallParams(params);
+  const navigate = useCallback((next: ScreenName, params?: NavigationParams) => {
+    if (next === 'call' && params) setCallParams(params as any);
     if ((next === 'course_player' || next === 'course_presentation') && params?.courseId) setSelectedCourseId(params.courseId);
     if (next === 'chats' && params?.conversationId) {
       setInitialChatParams({
@@ -267,10 +286,12 @@ function InnerApp() {
   return (
     <I18nProvider>
       <AuthProvider>
-        <AlertProvider>
-          <LSCPreloader />
-          <AppContent />
-        </AlertProvider>
+        <SubscriptionProvider>
+          <AlertProvider>
+            <LSCPreloader />
+            <AppContent />
+          </AlertProvider>
+        </SubscriptionProvider>
       </AuthProvider>
     </I18nProvider>
   );
@@ -279,18 +300,21 @@ function InnerApp() {
 function App() {
   try {
     return (
-      <PostHogProvider
-        apiKey={process.env.EXPO_PUBLIC_POSTHOG_KEY}
-        options={{
-          host: process.env.EXPO_PUBLIC_POSTHOG_HOST,
-        }}
-      >
-        <SafeAreaProvider>
-          <ThemeProvider>
-            <InnerApp />
-          </ThemeProvider>
-        </SafeAreaProvider>
-      </PostHogProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <PostHogProvider
+          apiKey={process.env.EXPO_PUBLIC_POSTHOG_KEY}
+          options={{
+            host: process.env.EXPO_PUBLIC_POSTHOG_HOST,
+            disabled: true, // Desactivado por defecto hasta que se obtenga el permiso (ATT)
+          }}
+        >
+          <SafeAreaProvider>
+            <ThemeProvider>
+              <InnerApp />
+            </ThemeProvider>
+          </SafeAreaProvider>
+        </PostHogProvider>
+      </GestureHandlerRootView>
     );
   } catch (error) {
     console.error('Error en App:', error);

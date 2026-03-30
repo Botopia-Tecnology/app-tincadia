@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import {
     getMessages as getLocalMessages,
     saveMessage,
@@ -22,7 +23,9 @@ import {
     MessageStatus,
 } from '../database/chatDatabase';
 import { chatService } from '../services/chat.service';
+import { MessageMetadata } from '../types/chat.types';
 import { supabase } from '../lib/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface Message {
     id: string;
@@ -41,12 +44,12 @@ export interface Message {
     replyToContent?: string;
     replyToSender?: string;
     // General metadata (audio duration, publicId, etc.)
-    metadata?: Record<string, any>;
+    metadata?: MessageMetadata;
 }
 
 interface UseChatReturn {
     messages: Message[];
-    sendMessage: (content: string, type?: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended', metadata?: any, localContent?: string) => Promise<void>;
+    sendMessage: (content: string, type?: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended', metadata?: MessageMetadata, localContent?: string) => Promise<void>;
     editMessage: (messageId: string, content: string) => Promise<void>;
     deleteMessage: (messageId: string) => Promise<void>;
     isLoading: boolean;
@@ -55,13 +58,17 @@ interface UseChatReturn {
     markMessagesAsRead: () => Promise<void>;
 }
 
-export function useChat(conversationId: string, userId: string): UseChatReturn {
+export function useChat(
+    conversationId: string, 
+    userId: string, 
+    options?: { readReceiptsEnabled?: boolean }
+): UseChatReturn {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isSyncingRef = useRef(false);
-    const channelRef = useRef<any>(null);
+    const channelRef = useRef<RealtimeChannel | null>(null);
 
     // Transform LocalMessage to UI Message
     const transformMessage = useCallback((m: LocalMessage): Message => ({
@@ -107,11 +114,9 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
             const { messages: serverMessages } = await chatService.getMessages(conversationId, lastTimestamp || undefined);
 
             // Filter only new messages if we have a timestamp (client-side filter as fallback)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newMessages = lastTimestamp
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                ? serverMessages.filter((msg: any) => {
-                    const msgCreatedAt = msg.createdAt || msg.created_at;
+                ? serverMessages.filter((msg) => {
+                    const msgCreatedAt = (msg as any).createdAt || (msg as any).created_at;
                     return msgCreatedAt > lastTimestamp;
                 })
                 : serverMessages;
@@ -121,13 +126,12 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
             }
 
             // Process all server messages (update existing or insert new)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            serverMessages.forEach((msg: any) => {
-                const msgConversationId = msg.conversationId || msg.conversation_id;
-                const msgSenderId = msg.senderId || msg.sender_id;
-                const msgCreatedAt = msg.createdAt || msg.created_at;
-                const msgUpdatedAt = msg.updatedAt || msg.updated_at;
-                const msgReadAt = msg.readAt || msg.read_at;
+            serverMessages.forEach((msg) => {
+                const msgConversationId = (msg as any).conversationId || (msg as any).conversation_id;
+                const msgSenderId = (msg as any).senderId || (msg as any).sender_id;
+                const msgCreatedAt = (msg as any).createdAt || (msg as any).created_at;
+                const msgUpdatedAt = (msg as any).updatedAt || (msg as any).updated_at;
+                const msgReadAt = (msg as any).readAt || (msg as any).read_at;
                 const isMine = msgSenderId === userId;
 
                 // Determine status based on server data
@@ -153,11 +157,11 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     readAt: msgReadAt,
                     isMine,
                     // Reply metadata from server
-                    replyToId: msg.replyToId || msg.reply_to_id || msg.metadata?.replyToId,
-                    replyToContent: msg.replyToContent || msg.reply_to_content || msg.metadata?.replyToContent,
-                    replyToSender: msg.replyToSender || msg.reply_to_sender || msg.metadata?.replyToSender,
+                    replyToId: (msg as any).replyToId || (msg as any).reply_to_id || msg.metadata?.replyToId,
+                    replyToContent: (msg as any).replyToContent || (msg as any).reply_to_content || msg.metadata?.replyToContent,
+                    replyToSender: (msg as any).replyToSender || (msg as any).reply_to_sender || msg.metadata?.replyToSender,
                     // Metadata (duration, publicId, etc.)
-                    metadata: msg.metadata,
+                    metadata: msg.metadata as MessageMetadata,
                 });
             });
 
@@ -165,8 +169,8 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 console.log('📥 Got', newMessages.length, 'new messages');
 
                 // If there are new messages that are NOT mine, mark as read automatically
-                const hasIncoming = newMessages.some((msg: any) => {
-                    const msgSenderId = msg.senderId || msg.sender_id;
+                const hasIncoming = newMessages.some((msg) => {
+                    const msgSenderId = (msg as any).senderId || (msg as any).sender_id;
                     return msgSenderId !== userId;
                 });
 
@@ -185,12 +189,27 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
         }
     }, [conversationId, userId, loadLocalMessages]);
 
+    // Listen for local manual updates (fallback for instant UI like Call drops)
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('chat_local_update', (updatedConvId) => {
+            if (updatedConvId === conversationId) {
+                loadLocalMessages();
+            }
+        });
+        return () => sub.remove();
+    }, [conversationId, loadLocalMessages]);
+
     // Mark messages as read when user enters the chat
     const markMessagesAsRead = useCallback(async () => {
         // ✅ UPDATE LOCAL CACHE IMMEDIATELY (OPTIMISTIC)
         // This ensures the badge disappears even if user exits before API completes
         markConversationAsRead(conversationId);
         console.log('✓ Local conversation cache updated (unreadCount = 0) - OPTIMISTIC');
+
+        if (options?.readReceiptsEnabled === false) {
+            console.log('🚫 Read receipts disabled, skipping network sync');
+            return;
+        }
 
         // --- 1. BROADCAST FAST PATH (Optimistic) ---
         // We send this BEFORE the API call for zero-latency feedback to the sender.
@@ -201,7 +220,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     type: 'broadcast',
                     event: 'message_read',
                     payload: { conversationId, readerId: userId, timestamp: new Date().toISOString() },
-                }).then((resp: any) => {
+                }).then((resp) => {
                     console.log('🚀 Optimistic ACK Sent Status:', resp);
                 });
             } else {
@@ -236,19 +255,19 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     filter: `conversation_id=eq.${conversationId}`,
                 },
                 (payload) => {
-                    const newId = (payload.new as any)?.id;
-                    const oldId = (payload.old as any)?.id;
+                    const newId = (payload.new as { id: string }).id;
+                    const oldId = (payload.old as { id: string }).id;
                     console.log(`⚡ Real-time event [${payload.eventType}] for msg: ${newId || oldId}`);
 
                     if (payload.eventType === 'INSERT') {
-                        const msg = payload.new as any;
+                        const msg = payload.new as { sender_id: string };
                         if (msg.sender_id !== userId) {
                             console.log('📥 Incoming message via DB insert, syncing for decryption...');
                         }
                         // Sync to get decrypted content (and any status updates)
                         syncFromServer();
                     } else if (payload.eventType === 'UPDATE') {
-                        const msg = payload.new as any;
+                        const msg = payload.new as { read_at?: string; sender_id: string; id: string };
 
                         // If it got marked as read, update local status DIRECTLY for instant UI response (blue check)
                         if (msg.read_at) {
@@ -263,7 +282,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                         }
                     } else if (payload.eventType === 'DELETE') {
                         console.log('🗑️ Message deleted, removing local copy');
-                        const oldIdItem = (payload.old as any)?.id;
+                        const oldIdItem = (payload.old as { id: string }).id;
                         if (oldIdItem) {
                             deleteLocalMessage(oldIdItem);
                             loadLocalMessages();
@@ -275,7 +294,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 'broadcast',
                 { event: 'new_message' },
                 (payload) => {
-                    const msg = payload.payload;
+                    const msg = payload.payload as any;
                     console.log('🚀 Broadcast [new_message] received:', msg?.id);
 
                     // Handle both snake_case (from DB) and camelCase (from sender broadcast)
@@ -283,7 +302,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     const msgSenderId = msg?.senderId || msg?.sender_id;
                     const msgCreatedAt = msg?.createdAt || msg?.created_at;
 
-                    if (msg && msgConversationId?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId) {
+                    if (msg && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId) {
                         // 1. Save locally for instant rendering
                         saveMessage({
                             id: msg.id,
@@ -312,7 +331,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     console.log('🚀 Broadcast [message_read] received:', payload);
 
                     // IF WE ARE THE SENDER of the messages being read
-                    const readerId = payload.payload?.readerId;
+                    const readerId = (payload.payload as { readerId: string })?.readerId;
                     if (readerId && readerId !== userId) {
                         console.log('✅ Instant UI Update: Marking messages as read');
 
@@ -383,7 +402,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
     }, [conversationId, userId, loadLocalMessages, syncFromServer, markMessagesAsRead]);
 
     // Send a message with optimistic update (WhatsApp style)
-    const sendMessage = useCallback(async (content: string, type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended' = 'text', metadata?: any, localContent?: string) => {
+    const sendMessage = useCallback(async (content: string, type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended' = 'text', metadata?: MessageMetadata, localContent?: string) => {
         if (!content.trim()) return;
 
         // Optimistic update
@@ -401,9 +420,9 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
             isMine: true,
             updatedAt: now,
             // Reply metadata
-            replyToId: metadata?.replyToId,
-            replyToContent: metadata?.replyToContent,
-            replyToSender: metadata?.replyToSender,
+            replyToId: metadata?.replyToId as string | undefined,
+            replyToContent: metadata?.replyToContent as string | undefined,
+            replyToSender: metadata?.replyToSender as string | undefined,
         };
 
         saveMessage(localMessage);
@@ -413,21 +432,20 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
 
         try {
             // Send to server
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const { message: serverMsg } = await chatService.sendMessage({
                 conversationId,
                 senderId: userId,
                 content,
                 type,
                 metadata, // Pass metadata (e.g., publicId)
-            }) as { message: any };
+            });
 
             // Update local message: pending → SENT
             deleteLocalMessage(tempId);
 
-            const serverMsgConvId = serverMsg.conversationId || serverMsg.conversation_id || conversationId;
-            const serverMsgSenderId = serverMsg.senderId || serverMsg.sender_id || userId;
-            const serverMsgCreatedAt = serverMsg.createdAt || serverMsg.created_at || now;
+            const serverMsgConvId = (serverMsg as any).conversationId || (serverMsg as any).conversation_id || conversationId;
+            const serverMsgSenderId = (serverMsg as any).senderId || (serverMsg as any).sender_id || userId;
+            const serverMsgCreatedAt = (serverMsg as any).createdAt || (serverMsg as any).created_at || now;
 
             saveMessage({
                 id: serverMsg.id,
@@ -442,9 +460,9 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                 readAt: undefined,
                 isMine: true,
                 // Reply metadata from server or local
-                replyToId: serverMsg.replyToId || serverMsg.reply_to_id || metadata?.replyToId,
-                replyToContent: serverMsg.replyToContent || serverMsg.reply_to_content || metadata?.replyToContent,
-                replyToSender: serverMsg.replyToSender || serverMsg.reply_to_sender || metadata?.replyToSender,
+                replyToId: ((serverMsg as any).replyToId || (serverMsg as any).reply_to_id || metadata?.replyToId) as string | undefined,
+                replyToContent: ((serverMsg as any).replyToContent || (serverMsg as any).reply_to_content || metadata?.replyToContent) as string | undefined,
+                replyToSender: ((serverMsg as any).replyToSender || (serverMsg as any).reply_to_sender || metadata?.replyToSender) as string | undefined,
             });
 
             // --- BROADCAST FAST PATH (Send) ---
@@ -493,13 +511,12 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
 
         for (const msg of pendingMsgs) {
             try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const { message: serverMsg } = await chatService.sendMessage({
                     conversationId: msg.conversationId,
                     senderId: msg.senderId,
                     content: msg.content,
                     type: 'text',
-                }) as { message: any };
+                });
 
                 // Update local message
                 deleteLocalMessage(msg.id);
@@ -511,7 +528,7 @@ export function useChat(conversationId: string, userId: string): UseChatReturn {
                     content: serverMsg.content,
                     type: 'text',
                     status: 'sent',
-                    createdAt: serverMsg.createdAt || serverMsg.created_at,
+                    createdAt: (serverMsg as any).createdAt || (serverMsg as any).created_at,
                     isMine: true,
                 });
             } catch (err) {

@@ -12,6 +12,8 @@ import { useChat } from '../../hooks/useChat';
 import { mediaService } from '../../services/media.service';
 import { chatService } from '../../services/chat.service';
 import { chatViewStyles } from '../../styles/ChatsScreen.styles';
+import { Audio } from 'expo-av';
+import { API_URL } from '../../config/api.config';
 
 // Components
 import { ChatHeader } from './ChatHeader';
@@ -21,6 +23,11 @@ import { AudioRecorder } from './AudioRecorder';
 import { StreamingLSCRecorder } from './StreamingLSCRecorder';
 import { AddContactModal } from '../AddContactModal';
 import { ContactProfileScreen } from './ContactProfileScreen';
+import { useSubscription } from '../../hooks/useSubscription';
+import { UpgradeModal } from '../UpgradeModal';
+import { Contact } from '../../services/contact.service';
+import { Message } from '../../hooks/useChat';
+import { User } from '../../types/auth.types';
 
 interface ChatViewProps {
   conversationId: string;
@@ -38,9 +45,19 @@ interface ChatViewProps {
   customFirstName?: string;
   customLastName?: string;
   groupDescription?: string;
-  onContactUpdate?: (contact: any) => void;
+  onContactUpdate?: (contact: Contact) => void;
   onNavigateCall: (roomName: string, username: string, conversationId: string, userId: string) => void;
-  currentUser?: any;
+  currentUser?: User | null;
+}
+
+interface UploadingMessage {
+  id: string;
+  content: string;
+  localUri: string;
+  type: 'image' | 'video';
+  status: 'uploading';
+  createdAt: string;
+  senderId: string;
 }
 
 export function ChatView(props: ChatViewProps) {
@@ -55,18 +72,32 @@ export function ChatView(props: ChatViewProps) {
   // Chat Logic Hook
   const { 
     messages, sendMessage, markMessagesAsRead
-  } = useChat(conversationId, userId);
+  } = useChat(conversationId, userId, { 
+    readReceiptsEnabled: currentUser?.readReceiptsEnabled ?? true 
+  });
+
+  // Limits Logic
+  const {
+    planTier,
+    canUseCorrection, recordCorrectionUse,
+    canUseTranscription, recordTranscriptionUse,
+    canUseLSC, canUseTTS
+  } = useSubscription(userId);
 
   // UI State
   const [messageText, setMessageText] = useState('');
-  const [replyMessage, setReplyMessage] = useState<any>(null);
+  const [replyMessage, setReplyMessage] = useState<Message | null>(null);
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [showVideoTranslator, setShowVideoTranslator] = useState(false);
-  const [uploadingMessages, setUploadingMessages] = useState<any[]>([]);
+  const [uploadingMessages, setUploadingMessages] = useState<UploadingMessage[]>([]);
   const [inputAreaHeight, setInputAreaHeight] = useState(48);
   const [isRecordingMode, setIsRecordingMode] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [ttsSound, setTtsSound] = useState<Audio.Sound | null>(null);
+  const [upgradeFeature, setUpgradeFeature] = useState<'transcription' | 'transcription_blocked' | 'lsc' | 'correction' | 'correction_blocked' | 'tts' | 'interpreter'>('correction');
   
   // Animations
   const correctionOpacity = useRef(new Animated.Value(0)).current;
@@ -100,6 +131,13 @@ export function ChatView(props: ChatViewProps) {
 
   const handleCorrection = async () => {
     if (!messageText.trim() || isCorrecting) return;
+
+    if (!canUseCorrection()) {
+        setUpgradeFeature(planTier === 'gratis' ? 'correction_blocked' : 'correction');
+        setShowUpgradeModal(true);
+        return;
+    }
+    
     setIsCorrecting(true);
     
     Animated.loop(
@@ -112,6 +150,7 @@ export function ChatView(props: ChatViewProps) {
     try {
       const { correctedText } = await chatService.correctMessage(messageText);
       setMessageText(correctedText);
+      recordCorrectionUse();
       Vibration.vibrate(50);
     } catch (err) {
       console.error('Correction error:', err);
@@ -152,16 +191,90 @@ export function ChatView(props: ChatViewProps) {
       const audioAsset = { uri, type: 'audio' as const, fileName: `audio_${Date.now()}.m4a` };
       const result = await mediaService.uploadMedia(audioAsset);
       await sendMessage(result.publicId, 'audio', { publicId: result.publicId, duration });
+      recordTranscriptionUse();
       setIsRecordingMode(false);
     } catch (err) {
       Alert.alert('Error', 'Error al enviar audio');
     }
   };
 
-  const handleCall = () => {
+  const handleCall = async () => {
     const roomName = `conv_${conversationId}`;
-    const username = currentUser?.first_name || 'Usuario';
+    const username = currentUser?.firstName || 'Usuario';
+    
+    // Send a message of type 'call' to trigger notification for the other user
+    // We don't await this to avoid delaying the UI navigation
+    sendMessage('📞 Llamada iniciada', 'call', { roomName }).catch(err => {
+      console.error('Failed to send call notification message:', err);
+    });
+
     onNavigateCall(roomName, username, conversationId, userId);
+  };
+
+  const handleTextToSpeech = async () => {
+    if (!messageText.trim()) return;
+
+    if (!canUseTTS) {
+        setUpgradeFeature('tts');
+        setShowUpgradeModal(true);
+        return;
+    }
+
+    // Stop if already speaking
+    if (isSpeaking) {
+      if (ttsSound) {
+        await ttsSound.stopAsync();
+        await ttsSound.unloadAsync();
+        setTtsSound(null);
+      }
+      setIsSpeaking(false);
+      return;
+    }
+
+    try {
+      Vibration.vibrate(40);
+      setIsSpeaking(true);
+
+      const result = await fetch(`${API_URL}/model/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: messageText }),
+      }).then(r => r.json());
+
+      if (!result?.audioUrl) throw new Error('No audioUrl received');
+
+      const { sound } = await Audio.Sound.createAsync({ uri: result.audioUrl });
+      setTtsSound(sound);
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setIsSpeaking(false);
+          sound.unloadAsync();
+          setTtsSound(null);
+        }
+      });
+      await sound.playAsync();
+    } catch (e) {
+      console.error('TTS error:', e);
+      setIsSpeaking(false);
+    }
+  };
+
+  const handleAudioRecorderMode = () => {
+    if (!canUseTranscription()) {
+        setUpgradeFeature(planTier === 'gratis' ? 'transcription_blocked' : 'transcription');
+        setShowUpgradeModal(true);
+        return;
+    }
+    setIsRecordingMode(true);
+  };
+
+  const handleVideoTranslatorPress = () => {
+    if (!canUseLSC) {
+        setUpgradeFeature('lsc');
+        setShowUpgradeModal(true);
+        return;
+    }
+    setShowVideoTranslator(true);
   };
 
   if (showProfile) {
@@ -183,10 +296,10 @@ export function ChatView(props: ChatViewProps) {
           setShowProfile(false);
           onBack();
         }}
-        onContactUpdated={(contact: any) => {
+        onContactUpdated={(contact: Contact) => {
           if (onContactUpdate) onContactUpdate(contact);
         }}
-        onContactAdded={(contact: any) => {
+        onContactAdded={(contact: Contact) => {
           if (onContactUpdate) onContactUpdate(contact);
         }}
       />
@@ -202,6 +315,7 @@ export function ChatView(props: ChatViewProps) {
         displayName={otherUserName}
         avatarUrl={otherUserAvatar}
         subTitle={otherUserPhone}
+        isUnknown={isUnknown}
         colors={colors}
       />
 
@@ -215,6 +329,7 @@ export function ChatView(props: ChatViewProps) {
         colors={colors}
         isDark={isDark}
         swipeableRefs={swipeableRefs}
+        readReceiptsEnabled={currentUser?.readReceiptsEnabled ?? true}
       />
 
       {isRecordingMode ? (
@@ -225,12 +340,12 @@ export function ChatView(props: ChatViewProps) {
           setMessageText={setMessageText}
           onSend={handleSend}
           onMediaPick={handleMediaPick}
-          onAudioRecorderMode={() => setIsRecordingMode(true)}
-          onVideoTranslatorPress={() => setShowVideoTranslator(true)}
-          onTextToSpeech={() => {}} // Disabled as expo-speech is not installed
+          onAudioRecorderMode={handleAudioRecorderMode}
+          onVideoTranslatorPress={handleVideoTranslatorPress}
+          onTextToSpeech={handleTextToSpeech}
           onCorrection={handleCorrection}
           isCorrecting={isCorrecting}
-          isSpeaking={false}
+          isSpeaking={isSpeaking}
           correctionOpacity={correctionOpacity}
           replyMessage={replyMessage}
           setReplyMessage={setReplyMessage}
@@ -257,12 +372,18 @@ export function ChatView(props: ChatViewProps) {
           onClose={() => setShowAddContactModal(false)}
           onContactAdded={(contact) => {
             setShowAddContactModal(false);
-            if (onContactUpdate) onContactUpdate(contact);
+            if (contact && onContactUpdate) onContactUpdate(contact as Contact);
           }}
           userId={userId}
           initialPhone={otherUserPhone || ''}
         />
       )}
+
+      <UpgradeModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature={upgradeFeature}
+      />
     </View>
   );
 }

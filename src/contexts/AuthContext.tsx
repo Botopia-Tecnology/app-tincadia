@@ -36,6 +36,7 @@ interface AuthContextValue {
     updateProfile: (data: UpdateProfileDto) => Promise<void>;
     logout: () => Promise<void>;
     clearError: () => void;
+    setError: (message: string | null) => void;
     refreshProfile: () => Promise<void>;
 }
 
@@ -59,10 +60,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const checkAuth = async () => {
             try {
                 // Timeout promise
-                const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Auth check timeout')), 5000));
+                const timeout = new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Auth check timeout')), 5000));
 
                 // Actual check
-                const authCheck = async () => {
+                const authCheck = async (): Promise<{ user: User; isProfileComplete: boolean } | null> => {
                     const hasToken = await authService.hasStoredToken();
                     if (!hasToken) {
                         return null;
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 };
 
                 // Race
-                const result: any = await Promise.race([authCheck(), timeout]);
+                const result = await Promise.race([authCheck(), timeout]);
 
                 if (result) {
                     setUser({
@@ -190,6 +191,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const logout = useCallback(async () => {
         setIsLoading(true);
         try {
+            // Unregister push token before logging out to avoid cross-user notification leaks
+            if (user?.id) {
+                try {
+                    await authService.updatePushToken(user.id, '');
+                    console.log('📱 Cleared push token for user');
+                } catch (e) {
+                    console.warn('Could not clear push token:', e);
+                }
+            }
+
             await authService.logout();
             // Clear local chat database when logging out
             try {
@@ -204,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setError(null);
             setIsLoading(false);
         }
-    }, []);
+    }, [user]);
 
     const clearError = useCallback(() => {
         setError(null);
@@ -236,8 +247,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updateProfile,
         logout,
         clearError,
+        setError,
         refreshProfile,
-    }), [user, isLoading, error, login, register, loginWithOAuth, updateProfile, logout, clearError, refreshProfile]);
+    }), [user, isLoading, error, login, register, loginWithOAuth, updateProfile, logout, clearError, setError, refreshProfile]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

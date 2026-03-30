@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, SafeAreaView, Alert, Image, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, SafeAreaView, Alert, Image, Dimensions, DeviceEventEmitter } from 'react-native';
 import {
     LiveKitRoom,
     useTracks,
@@ -18,6 +18,9 @@ import { API_URL } from '../config/api.config';
 import { CameraIcon, MicrophoneIcon, PhoneIcon } from '../components/icons/NavigationIcons';
 import { chatService } from '../services/chat.service';
 import { useAuth } from '../contexts/AuthContext';
+import { saveMessage, deleteMessage } from '../database/chatDatabase';
+import { useSubscription } from '../hooks/useSubscription';
+import { UpgradeModal } from '../components/UpgradeModal';
 
 type LayoutMode = 'grid' | 'interpreter';
 
@@ -46,6 +49,17 @@ export const CallScreen = ({
     const [url, setUrl] = useState<string | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
 
+    // Listen for remote call rejections/hang-ups
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('external_call_ended', (data) => {
+            if (data.conversationId === conversationId || data.roomName === roomName) {
+                console.log('📱 Remote call end detected, terminating local call...');
+                onBack(); // Exit the screen, unmount LiveKitRoom
+            }
+        });
+        return () => sub.remove();
+    }, [conversationId, roomName, onBack]);
+
     useEffect(() => {
         let isMounted = true;
 
@@ -69,7 +83,7 @@ export const CallScreen = ({
 
                 if (data.token && isMounted) {
                     setToken(data.token);
-                    setUrl('wss://tincadia-azanv2gh.livekit.cloud');
+                    setUrl('wss://tincadia-or0042ea.livekit.cloud');
                 }
             } catch (e) {
                 console.error('Failed to setup call', e);
@@ -101,6 +115,7 @@ export const CallScreen = ({
                 video={true}
                 onDisconnected={onBack}
             >
+                <RingingSoundManager />
                 <VideoView layoutMode={layoutMode} />
                 <ControlsView
                     onHangup={onBack}
@@ -142,6 +157,60 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
     return null;
 }
 
+function RingingSoundManager() {
+    const participants = useParticipants();
+    const soundRef = useRef<Audio.Sound | null>(null);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const playSound = async () => {
+            try {
+                // If only local participant is in the room, play dialing sound
+                if (participants.length <= 1) {
+                    if (!soundRef.current) {
+                        const { sound } = await Audio.Sound.createAsync(
+                            require('../../assets/ringing.wav'),
+                            { shouldPlay: true, isLooping: true }
+                        );
+                        if (isMounted) {
+                            soundRef.current = sound;
+                        } else {
+                            sound.unloadAsync();
+                        }
+                    }
+                } else {
+                    // Someone joined, stop ringing
+                    if (soundRef.current) {
+                        await soundRef.current.stopAsync();
+                        await soundRef.current.unloadAsync();
+                        soundRef.current = null;
+                    }
+                }
+            } catch (error) {
+                console.log('Error managing ringing sound', error);
+            }
+        };
+
+        playSound();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [participants.length]);
+
+    useEffect(() => {
+        return () => {
+            if (soundRef.current) {
+                soundRef.current.stopAsync();
+                soundRef.current.unloadAsync();
+            }
+        };
+    }, []);
+
+    return null;
+}
+
 function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
     const tracks = useTracks([Track.Source.Camera]);
     const participants = useParticipants();
@@ -167,6 +236,7 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                             <VideoTrack
                                 trackRef={track}
                                 style={styles.video}
+                                mirror={true}
                             />
                         )}
                         <View style={styles.participantLabel}>
@@ -194,6 +264,7 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                                 <VideoTrack
                                     trackRef={track}
                                     style={styles.video}
+                                    mirror={true}
                                 />
                             )}
                             <View style={styles.interpreterMainLabel}>
@@ -219,6 +290,7 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                             <VideoTrack
                                 trackRef={track}
                                 style={styles.video}
+                                mirror={true}
                             />
                         )}
                         <View style={styles.sidebarLabel}>
@@ -259,6 +331,8 @@ function ControlsView({
     const { user } = useAuth();
     const { isMicrophoneEnabled, isCameraEnabled, localParticipant } = useLocalParticipant();
     const room = useRoomContext();
+    const { canUseInterpreter } = useSubscription(userId);
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
     const toggleMic = async () => {
         const enabled = !isMicrophoneEnabled;
@@ -270,36 +344,68 @@ function ControlsView({
         await localParticipant.setCameraEnabled(enabled);
     };
 
-    const handleDisconnect = async () => {
+    const handleDisconnect = () => {
+        // Disconnect immediately to avoid UI hang
+        if (room) {
+            room.disconnect().catch(e => console.error('Error disconnecting room:', e));
+        }
+        onHangup();
+
+        // Perform side-effects in the background
         if (conversationId && userId) {
-            try {
-                await chatService.sendMessage({
+            // 1. Optimistic Local Save for Instant UI Feedback
+            const tempId = `call_${Date.now()}`;
+            saveMessage({
+                id: tempId,
+                serverId: tempId,
+                conversationId,
+                senderId: userId,
+                content: '📞 Llamada finalizada',
+                type: 'call_ended',
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                isMine: true
+            });
+            DeviceEventEmitter.emit('chat_local_update', conversationId);
+
+            // 2. Network Sync
+            chatService.sendMessage({
+                conversationId,
+                senderId: userId,
+                content: '📞 Llamada finalizada',
+                type: 'call_ended'
+            }).then(({ message: serverMsg }) => {
+                deleteMessage(tempId);
+                saveMessage({
+                    id: serverMsg.id,
+                    serverId: serverMsg.id,
                     conversationId,
                     senderId: userId,
                     content: '📞 Llamada finalizada',
-                    type: 'call_ended'
+                    type: 'call_ended',
+                    status: 'sent',
+                    createdAt: (serverMsg as any).createdAt || (serverMsg as any).created_at || new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    isMine: true
                 });
-            } catch (e) {
-                console.log('Could not send call_ended message:', e);
-            }
+                DeviceEventEmitter.emit('chat_local_update', conversationId);
+            }).catch(e => console.log('Could not send call_ended message:', e));
         }
 
         if (user?.role === 'interpreter' && user.id) {
-            try {
-                await chatService.updateInterpreterStatus(user.id, false);
-            } catch (e) {
-                console.error('Error updating interpreter status:', e);
-            }
+            chatService.updateInterpreterStatus(user.id, false)
+                .catch(e => console.error('Error updating interpreter status:', e));
         }
-
-        if (room) {
-            await room.disconnect();
-        }
-        onHangup();
     };
 
     const handleInviteInterpreters = async () => {
         if (!userId) return;
+
+        if (!canUseInterpreter) {
+            setShowUpgradeModal(true);
+            return;
+        }
 
         try {
             Alert.alert(
@@ -342,15 +448,6 @@ function ControlsView({
                     onPress={onRestoreFromPip}
                 >
                     <Text style={{ fontSize: 24 }}>↗️</Text>
-                </TouchableOpacity>
-            )}
-
-            {!isManualPipMode && (
-                <TouchableOpacity
-                    style={styles.minimizeButton}
-                    onPress={onMinimize}
-                >
-                    <Text style={{ fontSize: 20 }}>🔽</Text>
                 </TouchableOpacity>
             )}
 
@@ -399,6 +496,13 @@ function ControlsView({
                     <CameraIcon size={24} color={isCameraEnabled ? '#000' : '#fff'} />
                 </TouchableOpacity>
             </View>
+
+            {/* Imported Modal Component for feature lock */}
+            <UpgradeModal
+                visible={showUpgradeModal}
+                onClose={() => setShowUpgradeModal(false)}
+                feature="interpreter"
+            />
         </>
     );
 }

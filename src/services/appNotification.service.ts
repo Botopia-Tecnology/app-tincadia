@@ -97,7 +97,7 @@ export const appNotificationService = {
     /**
      * Send a test push notification to the current device
      */
-    async sendTestPush(userId: string, token: string): Promise<any> {
+    async sendTestPush(userId: string, token: string): Promise<{ success: boolean; message?: string }> {
         return apiClient(API_ENDPOINTS.PUSH_TEST, {
             method: 'POST',
             body: JSON.stringify({ userId, token }),

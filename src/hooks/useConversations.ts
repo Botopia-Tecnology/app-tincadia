@@ -9,6 +9,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { getConversations, saveConversation } from '../database/chatDatabase';
 import { chatService, Conversation as ApiConversation } from '../services/chat.service';
+import { API_URL } from '../config/api.config';
 
 export interface Conversation {
     id: string;
@@ -49,18 +50,26 @@ export function useConversations(userId: string): UseConversationsReturn {
         type?: string | null;
         title?: string | null;
         image_url?: string | null;
-    }): Conversation => ({
-        id: c.id,
-        otherUserId: c.other_user_id || undefined,
-        otherUserName: c.other_user_name,
-        otherUserAvatar: c.other_user_avatar,
-        lastMessage: c.last_message,
-        lastMessageAt: c.last_message_at,
-        unreadCount: c.unread_count,
-        type: (c.type as 'direct' | 'group') || 'direct',
-        title: c.title || undefined,
-        imageUrl: c.image_url || undefined,
-    });
+    }): Conversation => {
+        const normalizeUrl = (url?: string | null) => {
+            if (!url) return '';
+            if (url.startsWith('http')) return url;
+            return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+        };
+
+        return {
+            id: c.id,
+            otherUserId: c.other_user_id || undefined,
+            otherUserName: c.other_user_name,
+            otherUserAvatar: normalizeUrl(c.other_user_avatar),
+            lastMessage: c.last_message,
+            lastMessageAt: c.last_message_at,
+            unreadCount: c.unread_count,
+            type: (c.type as 'direct' | 'group') || 'direct',
+            title: c.title || undefined,
+            imageUrl: normalizeUrl(c.image_url),
+        };
+    };
 
     // Load conversations from local SQLite
     const loadLocalConversations = useCallback(() => {

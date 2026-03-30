@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Animated as RNAnimated } from
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { SendIcon } from '../icons/NavigationIcons';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface AudioRecorderProps {
     onSend: (uri: string, duration: number) => void;
@@ -11,6 +12,7 @@ interface AudioRecorderProps {
 }
 
 export function AudioRecorder({ onSend, onCancel, activeColor = '#4F46E5' }: AudioRecorderProps) {
+    const { colors, isDark } = useTheme();
     const [isRecording, setIsRecording] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [duration, setDuration] = useState(0);
@@ -190,6 +192,7 @@ export function AudioRecorder({ onSend, onCancel, activeColor = '#4F46E5' }: Aud
                             style={[
                                 styles.waveBar,
                                 {
+                                    backgroundColor: colors.textSecondary,
                                     height: isPaused ? 3 : height,
                                     opacity: waveAnim.interpolate({
                                         inputRange: [0, 1],
@@ -205,10 +208,10 @@ export function AudioRecorder({ onSend, onCancel, activeColor = '#4F46E5' }: Aud
     };
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {/* Top Row: Timer + Waveform */}
             <View style={styles.topRow}>
-                <Text style={styles.timerText}>{formatDuration(duration)}</Text>
+                <Text style={[styles.timerText, { color: colors.text }]}>{formatDuration(duration)}</Text>
                 {renderWaveform()}
             </View>
 
@@ -216,7 +219,7 @@ export function AudioRecorder({ onSend, onCancel, activeColor = '#4F46E5' }: Aud
             <View style={styles.bottomRow}>
                 {/* Cancel Button */}
                 <TouchableOpacity onPress={handleCancel} style={styles.cancelButton}>
-                    <Ionicons name="trash-outline" size={24} color="#9CA3AF" />
+                    <Ionicons name="trash-outline" size={24} color={colors.textMuted} />
                 </TouchableOpacity>
 
                 {/* Pause/Resume Button */}
@@ -224,12 +227,12 @@ export function AudioRecorder({ onSend, onCancel, activeColor = '#4F46E5' }: Aud
                     <Ionicons
                         name={isPaused ? "play" : "pause"}
                         size={28}
-                        color="#EF4444"
+                        color={colors.error}
                     />
                 </TouchableOpacity>
 
                 {/* Send Button */}
-                <TouchableOpacity onPress={handleSend} style={[styles.sendButton, { backgroundColor: '#22C55E' }]}>
+                <TouchableOpacity onPress={handleSend} style={[styles.sendButton, { backgroundColor: colors.success }]}>
                     <SendIcon size={22} color="white" />
                 </TouchableOpacity>
             </View>

@@ -19,7 +19,7 @@ export const paymentsService = {
             // Handle if it returns object { purchased: true } or literal true
             if (typeof response === 'boolean') return response;
             if (typeof response === 'object' && response !== null && 'purchased' in response) {
-                return (response as any).purchased === true;
+                return (response as { purchased: boolean }).purchased === true;
             }
             // Fallback: if it's a non-empty object/truthy that isn't explicit false, 
             // BUT given the bug, maybe it returns {} (truthy) when it should be false?
@@ -30,8 +30,13 @@ export const paymentsService = {
             // If checks fail, safer to return false.
             // So default should be false.
             return response === true;
-        } catch (error) {
-            console.error('Error checking purchase status:', error);
+        } catch (error: unknown) {
+            const err = error as { status?: number; message?: string };
+            // Silently fail if endpoint doesn't exist yet to avoid console spam,
+            // as this feature is currently handled externally or missing on backend.
+            if (err?.status !== 404 && !err?.message?.includes('Cannot GET')) {
+                console.error('Error checking purchase status:', error);
+            }
             return false;
         }
     },
@@ -59,6 +64,7 @@ export const paymentsService = {
             const response = await apiClient<SubscriptionStatus>(`/payments/subscriptions/status/${userId}`, {
                 method: 'GET',
             });
+            console.log('📡 [paymentsService] Raw Subscription Response:', JSON.stringify(response));
             return response;
         } catch (error) {
             console.error('Error fetching subscription status:', error);
@@ -76,5 +82,5 @@ export interface SubscriptionStatus {
     currentPeriodEnd?: string;
     cancelAtPeriodEnd?: boolean;
     permissions?: string[];
-    features?: Record<string, any>;
+    features?: Record<string, unknown>;
 }

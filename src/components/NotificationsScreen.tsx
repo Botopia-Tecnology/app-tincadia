@@ -13,6 +13,7 @@ import {
     FlatList,
     ActivityIndicator,
     RefreshControl,
+    DeviceEventEmitter
 } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -154,6 +155,8 @@ export function NotificationsScreen({ userId, onBack }: NotificationsScreenProps
         const markAllRead = async () => {
             try {
                 await appNotificationService.markAllAsRead(userId);
+                // Emit event to NotificationBell so it resets its count Optimistically
+                DeviceEventEmitter.emit('notifications_read');
             } catch (error) {
                 console.error('Error marking all as read:', error);
             }

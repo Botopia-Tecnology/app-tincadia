@@ -302,25 +302,39 @@ class MediaService {
         return this.recording !== null;
     }
     /**
-     * Download media to local file system
+     * Download media to local file system with persistent caching
      * @param storageKeyOrUrl - The public ID or URL of the media
      * @param mediaType - The type of media ('image' | 'video' | 'audio') to determine resource type
      */
     async downloadMedia(storageKeyOrUrl: string, mediaType?: 'image' | 'video' | 'audio'): Promise<string | null> {
         try {
+            if (!storageKeyOrUrl) return null;
+
+            // 1. Generate a consistent filename for caching
+            // We use the storageKeyOrUrl itself to create a unique but predictable filename
+            // Sanitizing to remove special characters that might break file systems
+            const safeFilename = storageKeyOrUrl.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const extension = mediaType === 'video' ? 'mp4' : (mediaType === 'audio' ? 'm4a' : 'jpg');
+            const fileUri = `${FileSystem.documentDirectory}${safeFilename}.${extension}`;
+
+            // 2. Check if file already exists in persistent storage
+            const fileInfo = await FileSystem.getInfoAsync(fileUri);
+            if (fileInfo.exists) {
+                console.log(`📦 [MediaService] Using cached media: ${fileUri}`);
+                return fileUri;
+            }
+
             let urlToDownload = storageKeyOrUrl;
 
-            // If it's not a URL (doesn't start with http), assume it's a storage key
+            // 3. If it's not a URL (doesn't start with http), it's a storage key (Public ID)
             if (!storageKeyOrUrl.startsWith('http')) {
-                console.log(`🔑 Fetching signed URL for key: ${storageKeyOrUrl}`);
+                console.log(`🔑 [MediaService] Fetching signed URL for key: ${storageKeyOrUrl}`);
                 try {
                     const token = await authService.getToken();
-                    // Map mediaType to Cloudinary resourceType
                     let resourceType: 'image' | 'video' | 'raw' = 'image';
                     if (mediaType === 'audio') resourceType = 'raw';
                     else if (mediaType === 'video') resourceType = 'video';
 
-                    // We need to fetch the signed URL from the backend
                     const response = await fetch(API_URL + API_ENDPOINTS.GET_SIGNED_URL, {
                         method: 'POST',
                         headers: {
@@ -329,27 +343,29 @@ class MediaService {
                         },
                         body: JSON.stringify({ publicId: storageKeyOrUrl, resourceType })
                     });
+                    
                     if (response.ok) {
                         const data = await response.json();
                         if (data.url) {
                             urlToDownload = data.url;
-                            console.log('✅ Got signed URL:', urlToDownload);
                         }
-                    } else {
-                        console.warn('⚠️ Failed to get signed URL, trying original key just in case');
                     }
-
                 } catch (e) {
                     console.error('Error fetching signed URL:', e);
-                    // Fallback to trying original string, might fail if it's not a URL
                 }
             }
 
-            const filename = urlToDownload.split('/').pop()?.split('?')[0] || `media_${Date.now()}`;
-            const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+            // If we still don't have a valid URL to download, fail
+            if (!urlToDownload.startsWith('http')) {
+                console.warn('⚠️ [MediaService] No valid URL to download after processing');
+                return null;
+            }
 
+            // 4. Download the file to persistent storage
+            console.log(`📡 [MediaService] Downloading media to cache: ${urlToDownload}`);
             const { uri } = await FileSystem.downloadAsync(urlToDownload, fileUri);
             return uri;
+
         } catch (error) {
             console.error('Download media error:', error);
             return null;

@@ -7,7 +7,7 @@
 import { apiClient } from '../lib/api-client';
 import { tokenStorage, userStorage } from '../lib/secure-storage';
 import { API_ENDPOINTS, API_URL } from '../config/api.config';
-import auth from '@react-native-firebase/auth';
+import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
     LoginDto,
@@ -372,7 +372,7 @@ export const authService = {
      * Send OTP to phone number
      * Returns the confirmation object to be used for verification
      */
-    async signInWithPhoneNumber(phoneNumber: string): Promise<any> {
+    async signInWithPhoneNumber(phoneNumber: string): Promise<FirebaseAuthTypes.ConfirmationResult> {
         const confirmation = await auth().signInWithPhoneNumber(phoneNumber);
         return confirmation;
     },
@@ -380,7 +380,7 @@ export const authService = {
     /**
      * Verify the OTP code
      */
-    async confirmCode(confirmResult: any, code: string): Promise<User | null> {
+    async confirmCode(confirmResult: FirebaseAuthTypes.ConfirmationResult, code: string): Promise<FirebaseAuthTypes.User | null> {
         try {
             const result = await confirmResult.confirm(code);
             // The result.user contains the Firebase user.

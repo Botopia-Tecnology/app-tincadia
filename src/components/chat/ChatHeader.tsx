@@ -4,6 +4,10 @@ import { BackArrowIcon, VideoCallIcon } from '../icons/NavigationIcons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { chatViewStyles } from '../../styles/ChatsScreen.styles';
 
+import { API_URL } from '../../config/api.config';
+
+import { ThemeColors } from '../../contexts/ThemeContext';
+
 interface ChatHeaderProps {
   onBack: () => void;
   onProfilePress: () => void;
@@ -11,10 +15,21 @@ interface ChatHeaderProps {
   displayName: string;
   avatarUrl?: string;
   subTitle?: string;
-  colors: any;
+  isUnknown?: boolean;
+  colors: ThemeColors;
 }
 
-export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, avatarUrl, subTitle, colors }: ChatHeaderProps) => {
+export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, avatarUrl, subTitle, isUnknown }: ChatHeaderProps) => {
+  const { colors, isDark } = useTheme();
+
+  const normalizeUrl = (url?: string) => {
+    if (!url) return undefined;
+    if (url.startsWith('http')) return url;
+    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+  };
+
+  const finalAvatarUrl = normalizeUrl(avatarUrl);
+
   return (
     <View style={[chatViewStyles.header, {
       backgroundColor: colors.card,
@@ -25,9 +40,13 @@ export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, a
       </TouchableOpacity>
 
       <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} onPress={onProfilePress}>
-        <View style={chatViewStyles.avatarSmall}>
-          {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+        <View style={[
+          chatViewStyles.avatarSmall,
+          isUnknown && { backgroundColor: '#9CA3AF' },
+          finalAvatarUrl ? { backgroundColor: 'transparent' } : {}
+        ]}>
+          {finalAvatarUrl ? (
+            <Image source={{ uri: finalAvatarUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
           ) : (
             <Text style={chatViewStyles.avatarSmallText}>{displayName.charAt(0).toUpperCase()}</Text>
           )}
@@ -41,7 +60,7 @@ export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, a
       </TouchableOpacity>
 
       <TouchableOpacity style={{ padding: 8 }} onPress={onCallPress}>
-        <VideoCallIcon size={24} color="#FFFFFF" />
+        <VideoCallIcon size={24} isDark={isDark} />
       </TouchableOpacity>
     </View>
   );

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Alert } from 'react-native';
 import * as Linking from 'expo-linking';
 import { chatService } from '../services/chat.service';
+import { User } from '../types/auth.types';
+import { NavigationParams } from '../types/navigation.types';
 
 /**
  * Hook to handle deep linking:
@@ -11,10 +13,10 @@ import { chatService } from '../services/chat.service';
  */
 export const useDeepLinking = (
   isAuthenticated: boolean,
-  user: any,
+  user: User | null,
   isPremium: boolean,
   isSubscriptionLoading: boolean,
-  onJoinCall: (params: any) => void
+  onJoinCall: (params: NavigationParams) => void
 ) => {
   const [isProcessingLink, setIsProcessingLink] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);

@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { appNotificationService } from '../services/appNotification.service';
 import { NotificationIcon } from './icons/NavigationIcons';
 
@@ -38,6 +38,15 @@ export function NotificationBell({
             }
         };
         loadUnreadCount();
+
+        // Listen for optimistic read marks from NotificationsScreen
+        const subscription = DeviceEventEmitter.addListener('notifications_read', () => {
+            setUnreadCount(0);
+        });
+
+        return () => {
+            subscription.remove();
+        };
     }, [userId, refreshTrigger]);
 
     return (

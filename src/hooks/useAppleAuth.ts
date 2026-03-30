@@ -58,12 +58,16 @@ export function useAppleAuth() {
 
             console.log('✅ Apple Backend Auth completed');
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Apple Sign-In error:', err);
-            if (err.code === 'ERR_CANCELED') {
+            
+            // Cast to check for code property which expo-apple-authentication uses
+            const appleError = err as { code?: string; message?: string };
+            
+            if (appleError.code === 'ERR_CANCELED') {
                 console.log('User cancelled Apple Sign-In');
             } else {
-                setError(err.message || 'Failed to sign in with Apple');
+                setError(appleError.message || 'Failed to sign in with Apple');
                 Alert.alert('Error', 'No se pudo iniciar sesión con Apple.');
             }
         }

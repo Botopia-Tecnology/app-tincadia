@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     KeyboardAvoidingView,
+    KeyboardAvoidingViewProps,
     StyleSheet,
     Platform,
     TouchableWithoutFeedback,
@@ -42,7 +43,7 @@ export const KeyboardSafeView = ({
     edges = ['top', 'bottom']
 }: Props) => {
     // Initial behavior based on platform
-    const [behavior, setBehavior] = useState<any>(
+    const [behavior, setBehavior] = useState<KeyboardAvoidingViewProps['behavior']>(
         Platform.OS === 'ios' ? 'padding' : undefined
     );
 

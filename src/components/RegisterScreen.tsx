@@ -309,6 +309,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!isLoading}
+                textContentType="emailAddress"
+                autoComplete="email"
               />
               <View style={{ width: '90%', alignSelf: 'center', position: 'relative' }}>
                 <TextInput
@@ -320,6 +322,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   editable={!isLoading}
+                  textContentType="oneTimeCode"
+                  autoComplete="off"
                 />
                 <TouchableOpacity
                   style={{
@@ -348,6 +352,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
                   editable={!isLoading}
+                  textContentType="oneTimeCode"
+                  autoComplete="off"
                 />
                 <TouchableOpacity
                   style={{
@@ -378,6 +384,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                 onChangeText={setFirstName}
                 autoCapitalize="words"
                 editable={!isLoading}
+                textContentType="givenName"
+                autoComplete="given-name"
               />
               <TextInput
                 style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
@@ -387,6 +395,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                 onChangeText={setLastName}
                 autoCapitalize="words"
                 editable={!isLoading}
+                textContentType="familyName"
+                autoComplete="family-name"
               />
               <View style={styles.documentRow}>
                 <TouchableOpacity
@@ -407,6 +417,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   onChangeText={setDocumentNumber}
                   keyboardType="numeric"
                   editable={!isLoading}
+                  textContentType="none"
+                  autoComplete="off"
                 />
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
@@ -426,6 +438,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   }}
                   keyboardType="phone-pad"
                   editable={!isLoading}
+                  textContentType="telephoneNumber"
+                  autoComplete="tel"
                 />
                 {/* Phone verification temporarily disabled - just show check if phone is valid */}
                 {phone.length > 7 && (

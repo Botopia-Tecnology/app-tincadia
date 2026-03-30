@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Image, FlatList, TextInput, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
 import { BottomNavigation } from './BottomNavigation';
@@ -10,6 +10,7 @@ import { contentService, Course } from '../services/content.service';
 import { paymentsService } from '../services/payments.service';
 import { useCourses } from '../hooks/useCourses';
 import { useTheme } from '../contexts/ThemeContext';
+import { NavigateFunction } from '../types/navigation.types';
 
 interface CourseCategory {
     title: string;
@@ -17,7 +18,7 @@ interface CourseCategory {
 }
 
 interface CoursesScreenProps {
-    onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'course_player' | 'course_presentation' | 'call', params?: any) => void;
+    onNavigate: NavigateFunction;
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
@@ -132,7 +133,7 @@ export function CoursesScreen({
     );
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <KeyboardSafeView style={[styles.container, { backgroundColor: colors.background }]} dismissOnPress={false}>
             <StatusBar style={colors.statusBar} />
 
             {/* Header */}
@@ -205,6 +206,6 @@ export function CoursesScreen({
             )}
 
             <BottomNavigation currentScreen="courses" onNavigate={onNavigate} />
-        </SafeAreaView>
+        </KeyboardSafeView>
     );
 }

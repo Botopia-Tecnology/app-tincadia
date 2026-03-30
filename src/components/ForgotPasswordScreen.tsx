@@ -64,11 +64,12 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
         try {
             await authService.requestPasswordReset(trimmedEmail);
             setIsSuccess(true);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error al solicitar recuperación de contraseña:', err);
 
             // Handle specific error messages
-            const errorMessage = err?.message || err?.error || 'Error desconocido';
+            const errorObj = err as { message?: string; error?: string };
+            const errorMessage = errorObj?.message || errorObj?.error || 'Error desconocido';
 
             if (errorMessage.includes('not found') || errorMessage.includes('no encontrado')) {
                 setError('No existe una cuenta con este correo electrónico');

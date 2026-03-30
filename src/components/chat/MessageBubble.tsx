@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Dimensions, StyleSheet, Pressable } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Dimensions, StyleSheet, Pressable, Vibration } from 'react-native';
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { messageBubbleStyles as styles } from '../../styles/ChatComponents.styles';
 import { Ionicons } from '@expo/vector-icons';
 import { mediaService } from '../../services/media.service';
 import Autolink from 'react-native-autolink';
+import { API_URL } from '../../config/api.config';
+import { apiClient } from '../../lib/api-client';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -15,7 +17,7 @@ interface MessageBubbleProps {
     isMine: boolean;
     isSynced?: boolean;
     isRead?: boolean;
-    type?: string;
+    type?: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended';
     replyToContent?: string;
     replyToSender?: string;
     publicId?: string;
@@ -53,25 +55,34 @@ export function MessageBubble({
                     return;
                 }
 
-                // 2. If we have a publicId, it's likely a secure asset needing a signed URL
-                if (publicId) {
-                    setIsLoading(true);
-                    try {
-                        const localUri = await mediaService.downloadMedia(publicId, type as 'image' | 'video' | 'audio');
-                        if (localUri) {
-                            setMediaUri(localUri);
-                        } else {
-                            setMediaUri(content);
-                        }
-                    } catch (e) {
-                        console.error('Failed to load secure media:', e);
-                        setMediaUri(content);
-                    } finally {
-                        setIsLoading(false);
+                setIsLoading(true);
+                try {
+                    const normalizeUrl = (url: string) => {
+                        if (url.startsWith('http')) return url;
+                        return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+                    };
+
+                    // 2. Try to get media through the caching service
+                    // We prefer publicId for signed URLs, but fall back to content URL
+                    const storageKeyOrUrl = publicId || normalizeUrl(content);
+                    const localUri = await mediaService.downloadMedia(storageKeyOrUrl, type as 'image' | 'video' | 'audio');
+                    
+                    if (localUri) {
+                        setMediaUri(localUri);
+                    } else {
+                        // Final fallback if caching fails
+                        setMediaUri(normalizeUrl(content));
                     }
-                } else {
-                    // 3. Fallback to normal URL (public assets)
-                    setMediaUri(content);
+                } catch (e) {
+                    console.error('Failed to load/cache media:', e);
+                    // Minimal fallback
+                    if (!content.startsWith('http')) {
+                        setMediaUri(`${API_URL}${content.startsWith('/') ? '' : '/'}${content}`);
+                    } else {
+                        setMediaUri(content);
+                    }
+                } finally {
+                    setIsLoading(false);
                 }
             }
         };
@@ -132,6 +143,48 @@ export function MessageBubble({
         if (!dateString) return '';
         const date = new Date(dateString);
         return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const [ttsSound, setTtsSound] = useState<Audio.Sound | null>(null);
+
+    const handleSpeak = async () => {
+        if (isSpeaking) {
+            // Stop playback if already speaking
+            if (ttsSound) {
+                await ttsSound.stopAsync();
+                await ttsSound.unloadAsync();
+                setTtsSound(null);
+            }
+            setIsSpeaking(false);
+            return;
+        }
+
+        try {
+            setIsSpeaking(true);
+            Vibration.vibrate(40);
+
+            const result = await apiClient<{ success: boolean; audioUrl: string }>('/model/tts', {
+                method: 'POST',
+                body: JSON.stringify({ text: content }),
+            });
+
+            if (!result?.audioUrl) throw new Error('No audioUrl received');
+
+            const { sound } = await Audio.Sound.createAsync({ uri: result.audioUrl });
+            setTtsSound(sound);
+            sound.setOnPlaybackStatusUpdate((status) => {
+                if (status.isLoaded && status.didJustFinish) {
+                    setIsSpeaking(false);
+                    sound.unloadAsync();
+                    setTtsSound(null);
+                }
+            });
+            await sound.playAsync();
+        } catch (e) {
+            console.error('TTS error:', e);
+            setIsSpeaking(false);
+        }
     };
 
     // Helper to format duration
@@ -308,11 +361,20 @@ export function MessageBubble({
                         linkStyle={{ textDecorationLine: 'underline', color: isMine ? 'white' : '#4F46E5', fontWeight: 'bold' }}
                         style={[styles.content, isMine ? styles.contentMine : styles.contentOther]}
                     />
-                    <View style={styles.footer}>
-                        <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
-                            {formatTime(time)}
-                        </Text>
-                        {renderCheckmarks()}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                        <TouchableOpacity 
+                            onPress={handleSpeak} 
+                            style={[{ padding: 4 }, isSpeaking && { opacity: 0.5 }]}
+                            disabled={isSpeaking}
+                        >
+                            <Ionicons name={isSpeaking ? "volume-high" : "volume-medium-outline"} size={16} color={isMine ? 'rgba(255,255,255,0.7)' : '#4F46E5'} />
+                        </TouchableOpacity>
+                        <View style={styles.footer}>
+                            <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
+                                {formatTime(time)}
+                            </Text>
+                            {renderCheckmarks()}
+                        </View>
                     </View>
                 </View>
             </View>

@@ -1,9 +1,10 @@
 import React from 'react';
+import { StyleProp, ViewStyle } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, Rect } from 'react-native-svg';
 
 interface IconProps {
     size?: number;
-    style?: any;
+    style?: StyleProp<ViewStyle>;
     color?: string;
 }
 

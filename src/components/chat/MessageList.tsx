@@ -4,17 +4,31 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { MessageBubble } from './MessageBubble';
 import { chatViewStyles } from '../../styles/ChatsScreen.styles';
+import { Message } from '../../hooks/useChat';
+import { ThemeColors } from '../../contexts/ThemeContext';
+
+interface UploadingMessage {
+  id: string;
+  content: string;
+  localUri: string;
+  type: 'image' | 'video';
+  status: 'uploading';
+  createdAt: string;
+  senderId: string;
+  metadata?: { duration?: number };
+}
 
 interface MessageListProps {
-  messages: any[];
-  uploadingMessages: any[];
+  messages: Message[];
+  uploadingMessages: UploadingMessage[];
   userId: string;
-  onLongPress: (msg: any) => void;
-  onSwipeReply: (msg: any) => void;
+  onLongPress: (msg: Message) => void;
+  onSwipeReply: (msg: Message) => void;
   onJoinCall: () => void;
-  colors: any;
+  colors: ThemeColors;
   isDark: boolean;
   swipeableRefs: React.MutableRefObject<Map<string, Swipeable | null>>;
+  readReceiptsEnabled?: boolean;
 }
 
 export const MessageList = ({
@@ -26,33 +40,43 @@ export const MessageList = ({
   onJoinCall,
   colors,
   isDark,
-  swipeableRefs
+  swipeableRefs,
+  readReceiptsEnabled = true
 }: MessageListProps) => {
 
-  const renderMessageItem = ({ item }: { item: any }) => {
-    if (item.status === 'uploading') {
+  const renderMessageItem = ({ item }: { item: Message | UploadingMessage }) => {
+    if ('status' in item && item.status === 'uploading') {
+      const uploader = item as UploadingMessage;
       return (
         <View style={{ opacity: 0.7 }}>
           <MessageBubble
-            content={item.localUri}
-            time={item.createdAt}
+            content={uploader.localUri}
+            time={uploader.createdAt}
             isMine={true}
             isSynced={false}
-            type={item.type}
-            duration={item.metadata?.duration}
+            type={uploader.type}
+            duration={uploader.metadata?.duration}
           />
           <ActivityIndicator style={{ position: 'absolute', alignSelf: 'center', top: '40%' }} color="white" />
         </View>
       );
     }
 
-    const isMe = item.senderId === userId;
+    const msg = item as Message;
+    const isMe = msg.senderId === userId;
 
-    if (item.type === 'call') {
+    if (msg.type === 'call') {
+      const getSafeTime = (dateStr: string) => {
+        if (!dateStr) return 0;
+        const safe = dateStr.replace(' ', 'T');
+        return new Date(safe).getTime() || 0;
+      };
+
       const hasEnded = messages.some(m =>
-        m.type === 'call_ended' &&
-        new Date(m.createdAt).getTime() > new Date(item.createdAt).getTime()
+        (m.type === 'call_ended' || m.type === 'call_rejected') &&
+        getSafeTime(m.createdAt) > getSafeTime(item.createdAt)
       );
+
       return (
         <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center', marginVertical: 10 }]}>
           <View style={{ backgroundColor: isDark ? '#1E1E3F' : '#E0E7FF', padding: 15, borderRadius: 15, alignItems: 'center' }}>
@@ -65,16 +89,6 @@ export const MessageList = ({
             ) : (
               <Text style={{ color: colors.textMuted, fontStyle: 'italic', fontSize: 12 }}>Llamada finalizada</Text>
             )}
-          </View>
-        </View>
-      );
-    }
-
-    if (item.type === 'call_ended') {
-      return (
-        <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center', marginVertical: 10 }]}>
-          <View style={{ backgroundColor: isDark ? '#2A2A2A' : '#F3F4F6', padding: 10, borderRadius: 15, alignItems: 'center' }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12 }}>📞 Videollamada finalizada</Text>
           </View>
         </View>
       );
@@ -101,8 +115,8 @@ export const MessageList = ({
             time={item.createdAt}
             isMine={isMe}
             isSynced={item.status !== 'pending'}
-            isRead={item.status === 'read'}
-            type={item.type || 'text'}
+            isRead={item.status === 'read' && readReceiptsEnabled !== false}
+            type={(item.type as "image" | "video" | "call_ended" | "call" | "text" | "audio") || 'text'}
             replyToContent={item.replyToContent}
             replyToSender={item.replyToSender}
             publicId={item.metadata?.publicId}
@@ -113,7 +127,7 @@ export const MessageList = ({
     );
   };
 
-  const displayData = [...uploadingMessages, ...[...messages].filter(m => m.type !== 'call_rejected' && m.type !== 'sos_active').reverse()];
+  const displayData = [...uploadingMessages, ...[...messages].filter(m => m.type !== 'call_rejected' && m.type !== 'sos_active' && m.type !== 'call_ended').reverse()];
 
   return (
     <FlatList

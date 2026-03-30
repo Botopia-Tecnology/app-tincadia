@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, ViewStyle, TextStyle, ImageStyle } from 'react-native';
 import { NotificationIcon, SearchIcon } from '../icons/NavigationIcons';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -8,7 +8,7 @@ interface ChatsHeaderProps {
   onSearchChange: (text: string) => void;
   unreadCount: number;
   onNotificationsPress: () => void;
-  styles: any;
+  styles: Record<string, ViewStyle | TextStyle | ImageStyle>;
 }
 
 export const ChatsHeader = ({ searchQuery, onSearchChange, unreadCount, onNotificationsPress, styles }: ChatsHeaderProps) => {

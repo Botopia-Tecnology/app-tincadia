@@ -1,12 +1,17 @@
 import React, { useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, PanResponder, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Animated as RNAnimated } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
+import { useTheme } from '../../contexts/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { MagicPencilIcon } from '../icons/ActionIcons';
 import { MicrophoneIcon, SendIcon, PlusIcon } from '../icons/NavigationIcons';
 import { chatViewStyles } from '../../styles/ChatsScreen.styles';
+import { Message } from '../../hooks/useChat';
+import { ThemeColors } from '../../contexts/ThemeContext';
 
-const AnimatedGradient = Animated.createAnimatedComponent(LinearGradient);
+const AnimatedGradient = RNAnimated.createAnimatedComponent(LinearGradient);
 
 interface ChatInputProps {
   messageText: string;
@@ -19,12 +24,12 @@ interface ChatInputProps {
   onCorrection?: () => void;
   isCorrecting?: boolean;
   isSpeaking?: boolean;
-  correctionOpacity?: Animated.Value;
-  replyMessage?: any;
-  setReplyMessage?: (msg: any) => void;
+  correctionOpacity?: RNAnimated.Value;
+  replyMessage?: Message | null;
+  setReplyMessage?: (msg: Message | null) => void;
   inputAreaHeight?: number;
   setInputAreaHeight?: (h: number) => void;
-  colors?: any;
+  colors?: ThemeColors;
   isDark?: boolean;
 }
 
@@ -39,70 +44,79 @@ export const ChatInput = ({
   onCorrection = () => {},
   isCorrecting = false,
   isSpeaking = false,
-  correctionOpacity = new Animated.Value(0),
+  correctionOpacity = new RNAnimated.Value(0),
   replyMessage = null,
   setReplyMessage = () => {},
   inputAreaHeight = 48,
   setInputAreaHeight = () => {},
-  colors = { card: '#FFF', border: '#EEE', text: '#000', textSecondary: '#666', textMuted: '#999', inputBg: '#F3F4F6', icon: '#666' },
-  isDark = false
+  colors,
+  isDark: isDarkProp
 }: ChatInputProps) => {
+  const { colors: themeColors, isDark: themeIsDark } = useTheme();
+  const finalColors = colors || themeColors;
+  const isDark = isDarkProp ?? themeIsDark;
+
   const MIN_INPUT_HEIGHT = 48;
-  const MAX_INPUT_HEIGHT = 220;
+  const MAX_INPUT_HEIGHT = 400; // Expanded to 400px
   
-  const inputAreaHeightRef = useRef(inputAreaHeight);
+  const height = useSharedValue(inputAreaHeight);
   const dragStartHeight = useRef(inputAreaHeight);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        dragStartHeight.current = inputAreaHeightRef.current;
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        const newHeight = dragStartHeight.current - gestureState.dy;
-        const clamped = Math.max(MIN_INPUT_HEIGHT, Math.min(MAX_INPUT_HEIGHT, newHeight));
-        setInputAreaHeight(clamped);
-        inputAreaHeightRef.current = clamped;
-      },
-    })
-  ).current;
+  // Sync shared value with prop
+  React.useEffect(() => {
+    height.value = inputAreaHeight;
+  }, [inputAreaHeight]);
 
-  // Sync ref
-  inputAreaHeightRef.current = inputAreaHeight;
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      dragStartHeight.current = height.value;
+    })
+    .onUpdate((event) => {
+      const newHeight = dragStartHeight.current - event.translationY;
+      height.value = Math.max(MIN_INPUT_HEIGHT, Math.min(MAX_INPUT_HEIGHT, newHeight));
+    })
+    .onFinalize(() => {
+      runOnJS(setInputAreaHeight)(height.value);
+    });
+
+  const animatedInputStyle = useAnimatedStyle(() => ({
+    height: height.value,
+  }));
 
   return (
     <View style={[chatViewStyles.inputContainer, {
-      backgroundColor: colors.card,
-      borderTopColor: colors.border,
+      backgroundColor: finalColors.card,
+      borderTopColor: finalColors.border,
     }]}>
       {/* Drag Handle */}
-      <View {...panResponder.panHandlers} style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 6, marginBottom: 2 }}>
-        <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? '#555' : '#D1D5DB' }} />
-      </View>
+      <GestureDetector gesture={panGesture}>
+        <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 16, width: '100%' }}>
+          <View style={{ width: 40, height: 5, borderRadius: 2.5, backgroundColor: isDark ? '#666' : '#D1D5DB' }} />
+        </View>
+      </GestureDetector>
 
       {/* Reply Preview */}
       {replyMessage && (
         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', padding: 8, borderLeftWidth: 4, borderLeftColor: '#4F46E5', marginBottom: 4 }}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: '#4F46E5', fontWeight: 'bold', fontSize: 12 }}>Respondiendo...</Text>
-            <Text numberOfLines={1} style={{ color: colors.textSecondary, fontSize: 12 }}>{replyMessage.content}</Text>
+            <Text numberOfLines={1} style={{ color: finalColors.textSecondary, fontSize: 12 }}>{replyMessage.content}</Text>
           </View>
-          <TouchableOpacity onPress={() => setReplyMessage(null)}><Ionicons name="close-circle" size={20} color={colors.textMuted} /></TouchableOpacity>
+          <TouchableOpacity onPress={() => setReplyMessage(null)}><Ionicons name="close-circle" size={20} color={finalColors.textMuted} /></TouchableOpacity>
         </View>
       )}
 
       <View style={chatViewStyles.inputRow}>
-        <View style={[chatViewStyles.inputWrapper, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]}>
+        <Animated.View style={[chatViewStyles.inputWrapper, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6' }, animatedInputStyle]}>
           <AnimatedGradient
             colors={['rgba(255, 215, 0, 0.3)', 'rgba(255, 105, 180, 0.3)', 'rgba(0, 191, 255, 0.3)']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
             style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, { opacity: correctionOpacity }]}
           />
           <TextInput
-            style={[chatViewStyles.textInput, { color: colors.text, height: inputAreaHeight }]}
+            style={[chatViewStyles.textInput, { color: finalColors.text, height: '100%' }]}
             placeholder="Escribe un mensaje..."
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={finalColors.textMuted}
             multiline
             value={messageText}
             onChangeText={setMessageText}
@@ -110,18 +124,22 @@ export const ChatInput = ({
           <TouchableOpacity style={[chatViewStyles.pencilButton, { opacity: isCorrecting ? 0.5 : 1 }]} onPress={onCorrection} disabled={isCorrecting}>
             <MagicPencilIcon size={24} />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         <View style={chatViewStyles.actionsRow}>
           <View style={chatViewStyles.leftActions}>
-            <TouchableOpacity style={[chatViewStyles.mediaButton, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]} onPress={onMediaPick}>
-              <PlusIcon size={24} color={colors.icon} />
+            <TouchableOpacity style={[chatViewStyles.mediaButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6' }]} onPress={onMediaPick}>
+              <PlusIcon size={24} color={finalColors.icon} />
             </TouchableOpacity>
-            <TouchableOpacity style={[chatViewStyles.mediaButton, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]} onPress={onVideoTranslatorPress}>
+            <TouchableOpacity style={[chatViewStyles.mediaButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6' }]} onPress={onVideoTranslatorPress}>
               <Ionicons name="videocam" size={22} color="#4F46E5" />
             </TouchableOpacity>
-            <TouchableOpacity style={[chatViewStyles.mediaButton, { backgroundColor: isSpeaking ? (isDark ? '#4F46E5' : '#EEF2FF') : (isDark ? colors.inputBg : '#F3F4F6') }]} onPress={onTextToSpeech}>
-              <Ionicons name={isSpeaking ? 'volume-high' : 'volume-medium-outline'} size={22} color={isSpeaking ? '#4F46E5' : colors.icon} />
+            <TouchableOpacity 
+              style={[chatViewStyles.mediaButton, { backgroundColor: isSpeaking ? (isDark ? '#4F46E5' : '#EEF2FF') : (isDark ? finalColors.inputBg : '#F3F4F6') }]} 
+              onPress={onTextToSpeech}
+              disabled={isSpeaking}
+            >
+              <Ionicons name={isSpeaking ? 'volume-high' : 'volume-medium-outline'} size={22} color={isSpeaking ? '#4F46E5' : finalColors.icon} />
             </TouchableOpacity>
           </View>
 
@@ -130,8 +148,8 @@ export const ChatInput = ({
               <SendIcon size={20} color="#FFFFFF" />
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={[chatViewStyles.micButton, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]} onPress={onAudioRecorderMode}>
-              <MicrophoneIcon size={24} color={colors.icon} />
+            <TouchableOpacity style={[chatViewStyles.micButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6' }]} onPress={onAudioRecorderMode}>
+              <MicrophoneIcon size={24} color={finalColors.icon} />
             </TouchableOpacity>
           )}
         </View>

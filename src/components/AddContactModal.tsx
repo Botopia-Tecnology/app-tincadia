@@ -18,7 +18,7 @@ import {
     Alert,
 } from 'react-native';
 import * as Contacts from 'expo-contacts';
-import { contactService } from '../services/contact.service';
+import { contactService, Contact } from '../services/contact.service';
 import { addContactModalStyles as styles } from '../styles/AddContactModal.styles';
 import { showAlert } from './common/CustomAlert';
 
@@ -29,7 +29,7 @@ import { useTheme } from '../contexts/ThemeContext';
 interface AddContactModalProps {
     visible: boolean;
     onClose: () => void;
-    onContactAdded: (contact?: any) => void;
+    onContactAdded: (contact?: Partial<Contact>) => void;
     userId: string;
     initialPhone?: string;
     initialFirstName?: string;
@@ -168,12 +168,13 @@ export function AddContactModal({
                 message: 'Se ha añadido a tus contactos correctamente.',
             });
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error adding contact:', err);
+            const error = err as { message?: string };
 
             // Check for "already exists" error
             // The backend likely returns 400 or 409 with a message
-            const errorMsg = err?.message || '';
+            const errorMsg = error?.message || '';
 
             if (errorMsg.includes('already exists') || errorMsg.includes('ya existe') || errorMsg.includes('duplicate')) {
                 // IT ALREADY EXISTS! Treat as success for the UI (remove "Add" button)
