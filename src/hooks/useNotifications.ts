@@ -28,7 +28,8 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     senderId: string; 
     callerName: string; 
     callerPhoto?: string; 
-    participants?: CallParticipant[] 
+    participants?: CallParticipant[];
+    roomName?: string;
   } | null>(null);
   
   const [interpreterInvite, setInterpreterInvite] = useState<{ 
@@ -39,6 +40,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
 
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  const activeCallRef = useRef<string | null>(null);
 
   /**
    * Resolves the best caller name, photo and participants from local DB.
@@ -72,7 +74,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             participants = members.map((m: GroupParticipant) => ({
               id: m.id,
               name: `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Usuario',
-              avatar: (m as any).profilePicture || (m as any).avatar || (m as any).avatarUrl
+              avatar: m.avatarUrl
             }));
           }
         }
@@ -84,6 +86,24 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     return { callerName, callerPhoto, participants };
   }, []);
 
+  const CALL_TTL_MS = 30_000;
+
+  const isCallNotificationFresh = (notification: Notifications.Notification): boolean => {
+    const receivedAt = notification.date;
+    if (!receivedAt) return true;
+    return (Date.now() - receivedAt) < CALL_TTL_MS;
+  };
+
+  const shouldIgnoreCallNotification = (
+    data: Record<string, unknown>,
+    notification: Notifications.Notification
+  ): boolean => {
+    if (String(data.senderId) === user?.id) return true;
+    if (!isCallNotificationFresh(notification)) return true;
+    if (activeCallRef.current) return true;
+    return false;
+  };
+
   useEffect(() => {
     if (!user) return;
 
@@ -91,7 +111,6 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       if (!Device.isDevice) return;
 
       if (Platform.OS === 'android') {
-        await Notifications.deleteNotificationChannelAsync('default');
         await Notifications.setNotificationChannelAsync('default', {
           name: 'Default',
           importance: Notifications.AndroidImportance.MAX,
@@ -143,7 +162,16 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
 
         const data = lastResponse.notification.request.content.data;
 
+        // Always dismiss to prevent re-triggering
+        await Notifications.dismissNotificationAsync(
+          lastResponse.notification.request.identifier
+        ).catch(() => {});
+
         if (data?.type === 'call' && data?.conversationId && data?.senderId) {
+          if (shouldIgnoreCallNotification(data as Record<string, unknown>, lastResponse.notification)) {
+            console.log('📞 Ignoring call notification from initial recovery (stale/self/active)');
+            return;
+          }
           const { callerName, callerPhoto, participants } = await resolveCallerInfo(
             String(data.senderName || 'Usuario Tincadia'),
             String(data.senderId),
@@ -156,17 +184,16 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             callerName,
             callerPhoto,
             participants,
+            roomName: data.roomName ? String(data.roomName) : undefined,
           });
-          // Dismiss so it doesn't re-trigger on next app open
-          await Notifications.dismissNotificationAsync(
-            lastResponse.notification.request.identifier
-          ).catch(() => {});
         } else if (data?.type === 'call_invite' && data?.roomName && data?.senderId) {
-          setInterpreterInvite({
-            roomName: String(data.roomName),
-            senderId: String(data.senderId),
-            senderName: String(data.senderName || 'Usuario'),
-          });
+          if (user.role === 'interpreter') {
+            setInterpreterInvite({
+              roomName: String(data.roomName),
+              senderId: String(data.senderId),
+              senderName: String(data.senderName || 'Usuario'),
+            });
+          }
         } else if (data?.conversationId && data?.senderId) {
           // Regular message notification tapped while killed
           onNavigateToChat({
@@ -191,6 +218,11 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       const data = notification.request.content.data;
 
       if (data?.type === 'call' && data?.conversationId && data?.senderId) {
+        if (shouldIgnoreCallNotification(data as Record<string, unknown>, notification)) {
+          console.log('📞 Ignoring call notification in foreground (stale/self/active)');
+          Notifications.dismissNotificationAsync(notification.request.identifier).catch(() => {});
+          return;
+        }
         const { callerName, callerPhoto, participants } = await resolveCallerInfo(
           String(data.senderName || notification.request.content.title || 'Usuario Tincadia'),
           String(data.senderId),
@@ -204,16 +236,19 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           callerName,
           callerPhoto,
           participants,
+          roomName: data.roomName ? String(data.roomName) : undefined,
         });
         Notifications.dismissNotificationAsync(notification.request.identifier).catch(() => {});
       } else if (data?.type === 'call_invite' && data?.roomName && data?.senderId) {
-        setInterpreterInvite({
-          roomName: String(data.roomName),
-          senderId: String(data.senderId),
-          senderName: String(data.senderName || 'Usuario')
-        });
+        if (user.role === 'interpreter') {
+          setInterpreterInvite({
+            roomName: String(data.roomName),
+            senderId: String(data.senderId),
+            senderName: String(data.senderName || 'Usuario')
+          });
+        }
         Notifications.dismissNotificationAsync(notification.request.identifier).catch(() => {});
-      } else {
+      } else if (data?.type !== 'call_ended' && data?.type !== 'call_rejected') {
         Vibration.vibrate();
       }
 
@@ -235,6 +270,10 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       const data = response.notification.request.content.data;
 
       if (data?.type === 'call' && data?.conversationId && data?.senderId) {
+        if (shouldIgnoreCallNotification(data as Record<string, unknown>, response.notification)) {
+          console.log('📞 Ignoring call notification from tap (stale/self/active)');
+          return;
+        }
         const { callerName, callerPhoto, participants } = await resolveCallerInfo(
           String(data.senderName || 'Usuario Tincadia'),
           String(data.senderId),
@@ -247,6 +286,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           callerName,
           callerPhoto,
           participants,
+          roomName: data.roomName ? String(data.roomName) : undefined,
         });
       } else if (data?.type === 'call_invite' && data?.roomName) {
         setInterpreterInvite(null);
@@ -272,10 +312,15 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     };
   }, [user, resolveCallerInfo]);
 
+  const setActiveCall = useCallback((conversationId: string | null) => {
+    activeCallRef.current = conversationId;
+  }, []);
+
   return {
     incomingCall,
     setIncomingCall,
     interpreterInvite,
-    setInterpreterInvite
+    setInterpreterInvite,
+    setActiveCall
   };
 };

@@ -22,6 +22,7 @@ interface MessageListProps {
   messages: Message[];
   uploadingMessages: UploadingMessage[];
   userId: string;
+  isGroup?: boolean;
   onLongPress: (msg: Message) => void;
   onSwipeReply: (msg: Message) => void;
   onJoinCall: () => void;
@@ -35,6 +36,7 @@ export const MessageList = ({
   messages,
   uploadingMessages,
   userId,
+  isGroup = false,
   onLongPress,
   onSwipeReply,
   onJoinCall,
@@ -66,21 +68,26 @@ export const MessageList = ({
     const isMe = msg.senderId === userId;
 
     if (msg.type === 'call') {
+      const CALL_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
+
       const getSafeTime = (dateStr: string) => {
         if (!dateStr) return 0;
         const safe = dateStr.replace(' ', 'T');
         return new Date(safe).getTime() || 0;
       };
 
-      const hasEnded = messages.some(m =>
+      const callTime = getSafeTime(item.createdAt);
+      const isExpired = callTime > 0 && (Date.now() - callTime) > CALL_EXPIRY_MS;
+
+      const hasEnded = isExpired || messages.some(m =>
         (m.type === 'call_ended' || m.type === 'call_rejected') &&
-        getSafeTime(m.createdAt) > getSafeTime(item.createdAt)
+        getSafeTime(m.createdAt) > callTime
       );
 
       return (
         <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center', marginVertical: 10 }]}>
           <View style={{ backgroundColor: isDark ? '#1E1E3F' : '#E0E7FF', padding: 15, borderRadius: 15, alignItems: 'center' }}>
-            <Text style={{ fontWeight: 'bold', marginBottom: 5, color: colors.text }}>📞 Videollamada</Text>
+            <Text style={{ fontWeight: 'bold', marginBottom: 5, color: colors.text }}>Videollamada</Text>
             <Text style={{ marginBottom: 10, color: colors.textSecondary }}>{isMe ? 'Iniciaste una llamada' : 'Te invitaron a una llamada'}</Text>
             {!hasEnded ? (
               <TouchableOpacity onPress={onJoinCall} style={{ backgroundColor: '#4F46E5', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}>
@@ -127,6 +134,7 @@ export const MessageList = ({
             replyToSender={item.replyToSender}
             publicId={item.metadata?.publicId}
             duration={item.metadata?.duration}
+            senderName={isGroup && !isMe ? item.senderName : undefined}
             updatedAt={item.updatedAt}
           />
         </Pressable>

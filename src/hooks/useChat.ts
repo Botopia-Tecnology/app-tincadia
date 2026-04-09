@@ -32,6 +32,7 @@ export interface Message {
     serverId?: string;
     conversationId: string;
     senderId: string;
+    senderName?: string;
     content: string;
     type: string;
     status: MessageStatus;
@@ -59,10 +60,38 @@ interface UseChatReturn {
     markMessagesAsRead: () => Promise<void>;
 }
 
+/**
+ * Interface for server message response (supports both snake_case from DB and camelCase from DTOs)
+ */
+interface ServerMessage {
+    id: string;
+    conversationId?: string;
+    conversation_id?: string;
+    senderId?: string;
+    sender_id?: string;
+    content: string;
+    type?: string;
+    createdAt?: string;
+    created_at?: string;
+    updatedAt?: string;
+    updated_at?: string;
+    readAt?: string;
+    read_at?: string;
+    deletedAt?: string;
+    deleted_at?: string;
+    replyToId?: string;
+    reply_to_id?: string;
+    replyToContent?: string;
+    reply_to_content?: string;
+    replyToSender?: string;
+    reply_to_sender?: string;
+    metadata?: MessageMetadata;
+}
+
 export function useChat(
     conversationId: string, 
     userId: string, 
-    options?: { readReceiptsEnabled?: boolean }
+    options?: { readReceiptsEnabled?: boolean; isGroup?: boolean }
 ): UseChatReturn {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -70,6 +99,7 @@ export function useChat(
     const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isSyncingRef = useRef(false);
     const channelRef = useRef<RealtimeChannel | null>(null);
+    const senderNameMapRef = useRef<Map<string, string>>(new Map());
 
     // Transform LocalMessage to UI Message
     const transformMessage = useCallback((m: LocalMessage): Message => ({
@@ -77,6 +107,7 @@ export function useChat(
         serverId: m.serverId,
         conversationId: m.conversationId,
         senderId: m.senderId,
+        senderName: m.senderName,
         content: m.content,
         type: m.type,
         status: m.status,
@@ -90,6 +121,27 @@ export function useChat(
         replyToSender: m.replyToSender,
         metadata: m.metadata,
     }), []);
+
+    const resolveSenderName = useCallback((senderId: string): string | undefined => {
+        return senderNameMapRef.current.get(senderId);
+    }, []);
+
+    const loadGroupParticipants = useCallback(async () => {
+        if (!options?.isGroup) return;
+        try {
+            const participants = await chatService.getGroupParticipants(conversationId);
+            const nameMap = new Map<string, string>();
+            participants.forEach((p) => {
+                const name = `${p.firstName || (p as any).first_name || ''} ${p.lastName || (p as any).last_name || ''}`.trim();
+                if (name && p.id) {
+                    nameMap.set(p.id, name);
+                }
+            });
+            senderNameMapRef.current = nameMap;
+        } catch (err) {
+            console.error('Error loading group participants:', err);
+        }
+    }, [conversationId, options?.isGroup]);
 
     // Load messages from local SQLite (instant)
     const loadLocalMessages = useCallback(() => {
@@ -118,8 +170,9 @@ export function useChat(
             // Filter only new messages if we have a timestamp (client-side filter as fallback)
             const newMessages = lastTimestamp
                 ? serverMessages.filter((msg) => {
-                    const msgCreatedAt = (msg as any).createdAt || (msg as any).created_at;
-                    return msgCreatedAt > lastTimestamp;
+                    const m = msg as ServerMessage;
+                    const msgCreatedAt = m.createdAt || m.created_at;
+                    return msgCreatedAt && msgCreatedAt > lastTimestamp;
                 })
                 : serverMessages;
 
@@ -129,12 +182,13 @@ export function useChat(
 
             // Process all server messages (update existing or insert new)
             serverMessages.forEach((msg) => {
-                const msgConversationId = (msg as any).conversationId || (msg as any).conversation_id;
-                const msgSenderId = (msg as any).senderId || (msg as any).sender_id;
-                const msgCreatedAt = (msg as any).createdAt || (msg as any).created_at;
-                const msgUpdatedAt = (msg as any).updatedAt || (msg as any).updated_at;
-                const msgReadAt = (msg as any).readAt || (msg as any).read_at;
-                const msgDeletedAt = (msg as any).deletedAt || (msg as any).deleted_at;
+                const m = msg as ServerMessage;
+                const msgConversationId = m.conversationId || m.conversation_id;
+                const msgSenderId = m.senderId || m.sender_id;
+                const msgCreatedAt = m.createdAt || m.created_at;
+                const msgUpdatedAt = m.updatedAt || m.updated_at;
+                const msgReadAt = m.readAt || m.read_at;
+                const msgDeletedAt = m.deletedAt || m.deleted_at;
                 const isMine = msgSenderId === userId;
 
                 // Determine status based on server data
@@ -147,26 +201,29 @@ export function useChat(
                 }
 
                 // Save to local DB
-                saveMessage({
-                    id: msg.id,
-                    serverId: msg.id,
-                    conversationId: msgConversationId,
-                    senderId: msgSenderId,
-                    content: msg.content,
-                    type: msg.type || 'text',
-                    status,
-                    createdAt: msgCreatedAt || new Date().toISOString(),
-                    updatedAt: msgUpdatedAt,
-                    readAt: msgReadAt,
-                    deletedAt: msgDeletedAt,
-                    isMine,
-                    // Reply metadata from server
-                    replyToId: (msg as any).replyToId || (msg as any).reply_to_id || msg.metadata?.replyToId,
-                    replyToContent: (msg as any).replyToContent || (msg as any).reply_to_content || msg.metadata?.replyToContent,
-                    replyToSender: (msg as any).replyToSender || (msg as any).reply_to_sender || msg.metadata?.replyToSender,
-                    // Metadata (duration, publicId, etc.)
-                    metadata: msg.metadata as MessageMetadata,
-                });
+                if (msgConversationId && msgSenderId) {
+                  saveMessage({
+                      id: msg.id,
+                      serverId: msg.id,
+                      conversationId: msgConversationId,
+                      senderId: msgSenderId,
+                      senderName: resolveSenderName(msgSenderId),
+                      content: msg.content,
+                      type: msg.type || 'text',
+                      status,
+                      createdAt: msgCreatedAt || new Date().toISOString(),
+                      updatedAt: msgUpdatedAt,
+                      readAt: msgReadAt,
+                      deletedAt: msgDeletedAt,
+                      isMine,
+                      // Reply metadata from server
+                      replyToId: m.replyToId || m.reply_to_id || msg.metadata?.replyToId,
+                      replyToContent: m.replyToContent || m.reply_to_content || msg.metadata?.replyToContent,
+                      replyToSender: m.replyToSender || m.reply_to_sender || msg.metadata?.replyToSender,
+                      // Metadata (duration, publicId, etc.)
+                      metadata: msg.metadata as MessageMetadata,
+                  });
+                }
             });
 
             if (newMessages.length > 0) {
@@ -174,7 +231,8 @@ export function useChat(
 
                 // If there are new messages that are NOT mine, mark as read automatically
                 const hasIncoming = newMessages.some((msg) => {
-                    const msgSenderId = (msg as any).senderId || (msg as any).sender_id;
+                    const m = msg as ServerMessage;
+                    const msgSenderId = m.senderId || m.sender_id;
                     return msgSenderId !== userId;
                 });
 
@@ -191,7 +249,7 @@ export function useChat(
         } finally {
             isSyncingRef.current = false;
         }
-    }, [conversationId, userId, loadLocalMessages]);
+    }, [conversationId, userId, loadLocalMessages, resolveSenderName]);
 
     // Listen for local manual updates (fallback for instant UI like Call drops)
     useEffect(() => {
@@ -307,25 +365,26 @@ export function useChat(
                 'broadcast',
                 { event: 'new_message' },
                 (payload) => {
-                    const msg = payload.payload as any;
-                    console.log('🚀 Broadcast [new_message] received:', msg?.id);
+                    const sm = payload.payload as ServerMessage;
+                    console.log('🚀 Broadcast [new_message] received:', sm?.id);
 
                     // Handle both snake_case (from DB) and camelCase (from sender broadcast)
-                    const msgConversationId = msg?.conversationId || msg?.conversation_id;
-                    const msgSenderId = msg?.senderId || msg?.sender_id;
-                    const msgCreatedAt = msg?.createdAt || msg?.created_at;
+                    const msgConversationId = sm?.conversationId || sm?.conversation_id;
+                    const msgSenderId = sm?.senderId || sm?.sender_id;
+                    const msgCreatedAt = sm?.createdAt || sm?.created_at;
 
-                    if (msg && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId) {
+                    if (sm && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId) {
                         // 1. Save locally for instant rendering
                         saveMessage({
-                            id: msg.id,
-                            serverId: msg.id,
-                            conversationId: msgConversationId,
-                            senderId: msgSenderId,
-                            content: msg.content,
-                            type: msg.type || 'text',
+                            id: sm.id,
+                            serverId: sm.id,
+                            conversationId: msgConversationId as string,
+                            senderId: msgSenderId as string,
+                            senderName: resolveSenderName(msgSenderId as string),
+                            content: sm.content,
+                            type: sm.type || 'text',
                             status: 'delivered',
-                            createdAt: msgCreatedAt,
+                            createdAt: msgCreatedAt as string,
                             isMine: false,
                         });
                         loadLocalMessages();
@@ -396,13 +455,16 @@ export function useChat(
         setIsLoading(false);
 
         // 2. Mark messages as read IMMEDIATELY when entering chat
-        // This updates local cache right away (don't wait for sync)
         markMessagesAsRead();
 
-        // 3. Sync from server in background
-        syncFromServer();
+        // 3. Load group participants for sender name resolution, then sync
+        const init = async () => {
+            await loadGroupParticipants();
+            await syncFromServer();
+        };
+        init();
 
-        // 4. Poll for new messages every 30 seconds as fail-safe (increased from 15s)
+        // 4. Poll for new messages every 30 seconds as fail-safe
         pollingIntervalRef.current = setInterval(() => {
             syncFromServer();
         }, 30000);
@@ -412,7 +474,7 @@ export function useChat(
                 clearInterval(pollingIntervalRef.current);
             }
         };
-    }, [conversationId, userId, loadLocalMessages, syncFromServer, markMessagesAsRead]);
+    }, [conversationId, userId, loadLocalMessages, syncFromServer, markMessagesAsRead, loadGroupParticipants]);
 
     // Send a message with optimistic update (WhatsApp style)
     const sendMessage = useCallback(async (content: string, type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended' = 'text', metadata?: MessageMetadata, localContent?: string) => {
@@ -456,9 +518,10 @@ export function useChat(
             // Update local message: pending → SENT
             deleteLocalMessage(tempId);
 
-            const serverMsgConvId = (serverMsg as any).conversationId || (serverMsg as any).conversation_id || conversationId;
-            const serverMsgSenderId = (serverMsg as any).senderId || (serverMsg as any).sender_id || userId;
-            const serverMsgCreatedAt = (serverMsg as any).createdAt || (serverMsg as any).created_at || now;
+            const sm = serverMsg as ServerMessage;
+            const serverMsgConvId = sm.conversationId || sm.conversation_id || conversationId;
+            const serverMsgSenderId = sm.senderId || sm.sender_id || userId;
+            const serverMsgCreatedAt = sm.createdAt || sm.created_at || now;
 
             saveMessage({
                 id: serverMsg.id,
@@ -473,9 +536,9 @@ export function useChat(
                 readAt: undefined,
                 isMine: true,
                 // Reply metadata from server or local
-                replyToId: ((serverMsg as any).replyToId || (serverMsg as any).reply_to_id || metadata?.replyToId) as string | undefined,
-                replyToContent: ((serverMsg as any).replyToContent || (serverMsg as any).reply_to_content || metadata?.replyToContent) as string | undefined,
-                replyToSender: ((serverMsg as any).replyToSender || (serverMsg as any).reply_to_sender || metadata?.replyToSender) as string | undefined,
+                replyToId: (sm.replyToId || sm.reply_to_id || metadata?.replyToId) as string | undefined,
+                replyToContent: (sm.replyToContent || sm.reply_to_content || metadata?.replyToContent) as string | undefined,
+                replyToSender: (sm.replyToSender || sm.reply_to_sender || metadata?.replyToSender) as string | undefined,
             });
 
             // --- BROADCAST FAST PATH (Send) ---
@@ -501,7 +564,7 @@ export function useChat(
 
             // Update conversation preview in local DB (optimistic list update)
             // This ensures ChatsScreen shows the new message at the top immediately
-            const previewText = type === 'text' ? content : (type === 'image' ? '📷 Foto' : '🎤 Audio');
+            const previewText = type === 'text' ? content : (type === 'image' ? 'Foto' : 'Audio');
             updateConversationPreview(
                 conversationId,
                 previewText,
@@ -566,25 +629,25 @@ export function useChat(
         try {
             const { message: serverMsg } = await chatService.editMessage(existingMsg.serverId || messageId, content, userId);
 
-            // Update local DB with confirmed data from server
-            saveMessage({
-                ...existingMsg,
-                content: serverMsg.content,
-                updatedAt: (serverMsg as any).updated_at || (serverMsg as any).updatedAt || localNow,
-                serverId: serverMsg.id,
-            });
-
-            // Reload to ensure final consistency
-            loadLocalMessages();
-
-            // BroadCast fast path (optional, if we want real-time edits for others)
-            if (channelRef.current && channelRef.current.state === 'joined') {
-                channelRef.current.send({
-                    type: 'broadcast',
-                    event: 'message_updated', // We can handle this in our realtime listener
-                    payload: { messageId: serverMsg.id, content: serverMsg.content, updatedAt: (serverMsg as any).updated_at }
+                const sm = serverMsg as ServerMessage;
+                saveMessage({
+                    ...existingMsg,
+                    content: serverMsg.content,
+                    updatedAt: sm.updated_at || sm.updatedAt || localNow,
+                    serverId: serverMsg.id,
                 });
-            }
+
+                // Reload to ensure final consistency
+                loadLocalMessages();
+
+                // BroadCast fast path (optional, if we want real-time edits for others)
+                if (channelRef.current && channelRef.current.state === 'joined') {
+                    channelRef.current.send({
+                        type: 'broadcast',
+                        event: 'message_updated', // We can handle this in our realtime listener
+                        payload: { messageId: serverMsg.id, content: serverMsg.content, updatedAt: sm.updated_at }
+                    });
+                }
         } catch (err) {
             console.error('Error editing message:', err);
             setError('Error al editar mensaje');

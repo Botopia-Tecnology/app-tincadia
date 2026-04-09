@@ -68,7 +68,7 @@ const FEATURE_CONFIG = {
 };
 
 export function UpgradeModal({ visible, onClose, feature }: UpgradeModalProps) {
-    const config = FEATURE_CONFIG[feature];
+    const config = FEATURE_CONFIG[feature] || FEATURE_CONFIG.transcription;
 
     return (
         <Modal

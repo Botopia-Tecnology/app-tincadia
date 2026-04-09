@@ -23,6 +23,7 @@ import { AudioRecorder } from './AudioRecorder';
 import { StreamingLSCRecorder } from './StreamingLSCRecorder';
 import { AddContactModal } from '../AddContactModal';
 import { ContactProfileScreen } from './ContactProfileScreen';
+import { GroupProfileView } from './GroupProfileView';
 import { useSubscription } from '../../hooks/useSubscription';
 import { UpgradeModal } from '../UpgradeModal';
 import { Contact } from '../../services/contact.service';
@@ -65,16 +66,18 @@ export function ChatView(props: ChatViewProps) {
   const { 
     conversationId, userId, otherUserName, otherUserId, 
     onBack, onNavigateCall, currentUser, otherUserPhone, isUnknown, otherUserAvatar,
-    onContactUpdate, contactId, alias, customFirstName, customLastName
+    onContactUpdate, contactId, alias, customFirstName, customLastName,
+    isGroup, groupDescription
   } = props;
-  
+
   const { colors, isDark } = useTheme();
   
   // Chat Logic Hook
   const { 
     messages, sendMessage, editMessage, markMessagesAsRead
   } = useChat(conversationId, userId, { 
-    readReceiptsEnabled: currentUser?.readReceiptsEnabled ?? true 
+    readReceiptsEnabled: currentUser?.readReceiptsEnabled ?? true,
+    isGroup,
   });
 
   // Limits Logic
@@ -217,7 +220,7 @@ export function ChatView(props: ChatViewProps) {
     
     // Send a message of type 'call' to trigger notification for the other user
     // We don't await this to avoid delaying the UI navigation
-    sendMessage('📞 Llamada iniciada', 'call', { roomName }).catch(err => {
+    sendMessage('Llamada iniciada', 'call', { roomName }).catch(err => {
       console.error('Failed to send call notification message:', err);
     });
 
@@ -327,6 +330,23 @@ export function ChatView(props: ChatViewProps) {
   };
 
   if (showProfile) {
+    if (isGroup) {
+      return (
+        <GroupProfileView
+          conversationId={conversationId}
+          groupName={otherUserName}
+          groupDescription={groupDescription}
+          groupImage={otherUserAvatar}
+          userId={userId}
+          onBack={() => setShowProfile(false)}
+          onLeave={() => {
+            setShowProfile(false);
+            onBack();
+          }}
+        />
+      );
+    }
+
     return (
       <ContactProfileScreen
         userId={userId}
@@ -372,6 +392,7 @@ export function ChatView(props: ChatViewProps) {
         messages={messages}
         uploadingMessages={uploadingMessages}
         userId={userId}
+        isGroup={isGroup}
         onLongPress={handleLongPress}
         onSwipeReply={(msg) => setReplyMessage(msg)}
         onJoinCall={handleCall}

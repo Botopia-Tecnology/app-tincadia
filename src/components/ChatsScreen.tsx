@@ -16,7 +16,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../contexts/ThemeContext';
@@ -26,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { chatService } from '../services/chat.service';
 import { saveContact } from '../database/chatDatabase';
 import { useChatList, ChatListItem as ChatListItemType } from '../hooks/useChatList';
+import { NavigateFunction } from '../types/navigation.types';
 
 // Components
 import { BottomNavigation } from './BottomNavigation';
@@ -37,7 +38,7 @@ import { ChatsHeader } from './chat/ChatsHeader';
 import { PlusIcon, InviteIcon, AccountIcon } from './icons/NavigationIcons';
 
 interface ChatsScreenProps {
-  onNavigate: (screen: 'chats' | 'courses' | 'sos' | 'profile' | 'call' | 'new_group', params?: { roomName?: string; username?: string; conversationId?: string; userId?: string }) => void;
+  onNavigate: NavigateFunction;
   initialConversation?: { conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null;
   onInitialConversationOpened?: () => void;
 }
@@ -86,7 +87,6 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     syncedContacts,
     setSyncedContacts,
     chatItems,
-    SYNCED_CONTACTS_KEY
   } = useChatList(userId);
 
   // UI Local State
@@ -134,14 +134,16 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
             .eq('id', recipientId)
             .single();
 
-          const displayName = profile
-            ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
-            : (profile as any)?.phone || 'Usuario';
+          const profileData = profile as { first_name?: string; last_name?: string; phone?: string } | null;
+
+          const displayName = profileData
+            ? `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim()
+            : profileData?.phone || 'Usuario';
 
           setSelectedChat({
             conversationId,
             otherUserName: displayName,
-            otherUserPhone: (profile as any)?.phone || '',
+            otherUserPhone: profileData?.phone || '',
             otherUserId: recipientId,
             isUnknown: false,
             isGroup: false
@@ -192,7 +194,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         otherUserId: chat.otherUserId,
         isUnknown: chat.type === 'unknown',
         isGroup: chat.type === 'group',
-        description: chat.description,
+        groupDescription: chat.description,
         contactId: chat.contactId,
         alias: chat.alias,
         customFirstName: chat.customFirstName,
@@ -229,7 +231,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     }
 
     if (options.length > 1) {
-      Alert.alert('Opciones', `¿Qué deseas hacer con ${item.displayName}?`, options as any);
+      Alert.alert('Opciones', `¿Qué deseas hacer con ${item.displayName}?`, options as AlertButton[]);
     }
   };
 
@@ -257,6 +259,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         <StatusBar style={colors.statusBar} />
         <ChatView
           {...selectedChat}
+          otherUserId={selectedChat.otherUserId || 'unknown'}
           userId={userId}
           currentUser={user}
           onBack={handleBackFromChat}
@@ -272,13 +275,21 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
                 id: contact.id,
                 ownerId: contact.ownerId || userId,
                 contactUserId: contact.contactUserId,
-                phone: contact.phone || '',
+                phone: contact.phone || selectedChat.otherUserPhone || '',
                 alias: contact.alias,
                 customFirstName: contact.customFirstName,
                 customLastName: contact.customLastName,
               });
             }
-            setSelectedChat((prev: SelectedChat | null) => prev ? ({ ...prev, otherUserName: contact.alias || `${contact.customFirstName} ${contact.customLastName}`.trim(), isUnknown: false }) : null);
+            setSelectedChat((prev: SelectedChat | null) => prev ? ({ 
+              ...prev, 
+              otherUserName: contact.alias || `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim(), 
+              isUnknown: false,
+              contactId: contact.id,
+              alias: contact.alias,
+              customFirstName: contact.customFirstName,
+              customLastName: contact.customLastName,
+            }) : null);
             syncFromServer(false);
           }}
           onNavigateCall={(roomName, username, conversationId, passedUserId) => onNavigate('call', { roomName, username, conversationId, userId: passedUserId })}
@@ -414,16 +425,14 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         </View>
       </TouchableOpacity>
 
+      <BottomNavigation currentScreen="chats" onNavigate={onNavigate} />
+
       <AddContactModal
         visible={showAddContactModal}
         onClose={() => { setShowAddContactModal(false); setPrefillData({ phone: '', firstName: '', lastName: '', userId: undefined }); }}
         onContactAdded={(contact) => {
           if (contact && contact.contactUserId) {
-            const newSynced = syncedContacts.filter(s => s.otherUserId !== contact.contactUserId);
-            if (newSynced.length !== syncedContacts.length) {
-              setSyncedContacts(newSynced);
-              AsyncStorage.setItem(SYNCED_CONTACTS_KEY, JSON.stringify(newSynced)).catch(console.error);
-            }
+            setSyncedContacts(prev => prev.filter(s => s.otherUserId !== contact.contactUserId));
           }
           loadChats();
         }}
@@ -433,9 +442,8 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         initialLastName={prefillData.lastName}
         initialContactUserId={prefillData.userId}
         onSyncRequested={() => { setShowAddContactModal(false); setShowSyncBanner(true); handleSyncContacts(); }}
+        onRefreshRequested={() => syncFromServer(true, true)}
       />
-
-      <BottomNavigation currentScreen="chats" onNavigate={onNavigate} />
     </KeyboardSafeView>
   );
 }

@@ -9,6 +9,7 @@
  */
 
 import * as SQLite from 'expo-sqlite';
+import { DeviceEventEmitter } from 'react-native';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -146,6 +147,12 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
                         console.log('🔧 Adding metadata column...');
                         db.execSync(`ALTER TABLE messages ADD COLUMN metadata TEXT`);
                     }
+
+                    // Add sender_name column if missing (for groups)
+                    if (!columnNames.includes('sender_name')) {
+                        console.log('🔧 Adding sender_name column...');
+                        db.execSync(`ALTER TABLE messages ADD COLUMN sender_name TEXT`);
+                    }
                 }
 
                 // Migrate conversations table for groups support
@@ -210,6 +217,7 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
           server_id TEXT,
           conversation_id TEXT NOT NULL,
           sender_id TEXT NOT NULL,
+          sender_name TEXT,
           content TEXT NOT NULL,
           type TEXT DEFAULT 'text',
           status TEXT DEFAULT 'pending',
@@ -265,6 +273,7 @@ export interface LocalMessage {
     serverId?: string;
     conversationId: string;
     senderId: string;
+    senderName?: string;
     content: string;
     type: string;
     status: MessageStatus;
@@ -278,7 +287,7 @@ export interface LocalMessage {
     replyToContent?: string;
     replyToSender?: string;
     // General metadata (audio duration, publicId, etc.)
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 
 /**
@@ -289,6 +298,7 @@ export function saveMessage(msg: {
     serverId?: string;
     conversationId: string;
     senderId: string;
+    senderName?: string;
     content: string;
     type?: string;
     status?: MessageStatus;
@@ -302,7 +312,7 @@ export function saveMessage(msg: {
     replyToContent?: string;
     replyToSender?: string;
     // General metadata
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }) {
     const database = ensureInitialized();
 
@@ -325,7 +335,7 @@ export function saveMessage(msg: {
         );
 
         if (existing && existing.length > 0) {
-            currentStatus = (existing[0] as any).status;
+            currentStatus = (existing[0] as { status: string }).status;
             const currentRank = statusRank[currentStatus as MessageStatus] || 0;
             const newRank = statusRank[msg.status || 'pending'] || 0;
 
@@ -349,13 +359,14 @@ export function saveMessage(msg: {
 
     database.runSync(
         `INSERT OR REPLACE INTO messages 
-     (id, server_id, conversation_id, sender_id, content, type, status, created_at, updated_at, read_at, is_mine, deleted_at, reply_to_id, reply_to_content, reply_to_sender, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, server_id, conversation_id, sender_id, sender_name, content, type, status, created_at, updated_at, read_at, is_mine, deleted_at, reply_to_id, reply_to_content, reply_to_sender, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             msg.id,
             msg.serverId || null,
             msg.conversationId,
             msg.senderId,
+            msg.senderName || null,
             msg.content,
             msg.type || 'text',
             msg.status || 'pending',
@@ -407,24 +418,7 @@ export function markMessageAsRead(messageId: string) {
  */
 export function getMessages(conversationId: string): LocalMessage[] {
     const database = ensureInitialized();
-    const rows = database.getAllSync<{
-        id: string;
-        server_id: string | null;
-        conversation_id: string;
-        sender_id: string;
-        content: string;
-        type: string;
-        status: string;
-        created_at: string;
-        updated_at: string | null;
-        read_at: string | null;
-        is_mine: number;
-        deleted_at: string | null;
-        reply_to_id: string | null;
-        reply_to_content: string | null;
-        reply_to_sender: string | null;
-        metadata: string | null;
-    }>(
+    const rows = database.getAllSync<DatabaseMessage & { sender_name?: string }>(
         `SELECT * FROM messages 
      WHERE conversation_id = ?
      ORDER BY created_at ASC`,
@@ -436,6 +430,7 @@ export function getMessages(conversationId: string): LocalMessage[] {
         serverId: row.server_id || undefined,
         conversationId: row.conversation_id,
         senderId: row.sender_id,
+        senderName: row.sender_name || undefined,
         content: row.content,
         type: row.type,
         status: row.status as MessageStatus,
@@ -468,21 +463,7 @@ export function getLastMessageTimestamp(conversationId: string): string | null {
  */
 export function getPendingMessages(conversationId: string): LocalMessage[] {
     const database = ensureInitialized();
-    const rows = database.getAllSync<{
-        id: string;
-        server_id: string | null;
-        conversation_id: string;
-        sender_id: string;
-        content: string;
-        type: string;
-        status: string;
-        created_at: string;
-        updated_at: string | null;
-        read_at: string | null;
-        is_mine: number;
-        deleted_at: string | null;
-        metadata: string | null;
-    }>(
+    const rows = database.getAllSync<DatabaseMessage & { sender_name?: string }>(
         `SELECT * FROM messages 
      WHERE conversation_id = ? AND status = 'pending'
      ORDER BY created_at ASC`,
@@ -493,6 +474,7 @@ export function getPendingMessages(conversationId: string): LocalMessage[] {
         serverId: row.server_id || undefined,
         conversationId: row.conversation_id,
         senderId: row.sender_id,
+        senderName: row.sender_name || undefined,
         content: row.content,
         type: row.type,
         status: row.status as MessageStatus,
@@ -573,22 +555,7 @@ export function saveConversation(conv: {
  */
 export function getConversations() {
     const database = ensureInitialized();
-    return database.getAllSync<{
-        id: string;
-        other_user_id: string | null; // Can be null for groups
-        other_user_name: string;
-        other_user_avatar: string;
-        other_user_phone: string;
-        last_message: string;
-        last_message_at: string;
-        unread_count: number;
-        updated_at: string;
-        // Group fields
-        type: string | null;
-        title: string | null;
-        image_url: string | null;
-        description: string | null;
-    }>(
+    return database.getAllSync<DatabaseConversation>(
         `SELECT * FROM conversations ORDER BY last_message_at DESC`
     );
 }
@@ -598,21 +565,7 @@ export function getConversations() {
  */
 export function getConversation(id: string) {
     const database = ensureInitialized();
-    const results = database.getAllSync<{
-        id: string;
-        other_user_id: string | null;
-        other_user_name: string;
-        other_user_avatar: string;
-        other_user_phone: string;
-        last_message: string;
-        last_message_at: string;
-        unread_count: number;
-        updated_at: string;
-        type: string | null;
-        title: string | null;
-        image_url: string | null;
-        description: string | null;
-    }>(
+    const results = database.getAllSync<DatabaseConversation>(
         `SELECT * FROM conversations WHERE id = ?`,
         [id]
     );
@@ -627,6 +580,7 @@ export function deleteConversation(id: string): boolean {
     try {
         database.runSync(`DELETE FROM conversations WHERE id = ?`, [id]);
         database.runSync(`DELETE FROM messages WHERE conversation_id = ?`, [id]);
+        DeviceEventEmitter.emit('conversations_updated');
         return true;
     } catch (e) {
         console.error('Error deleting conversation:', e);
@@ -742,16 +696,7 @@ export function saveContact(contact: {
  */
 export function getLocalContacts(ownerId: string) {
     const database = ensureInitialized();
-    return database.getAllSync<{
-        id: string;
-        owner_id: string;
-        contact_user_id: string;
-        phone: string;
-        alias: string;
-        custom_first_name: string;
-        custom_last_name: string;
-        updated_at: string;
-    }>(
+    return database.getAllSync<DatabaseContact>(
         `SELECT * FROM contacts WHERE owner_id = ? ORDER BY custom_first_name ASC`,
         [ownerId]
     );
@@ -763,6 +708,7 @@ export function getLocalContacts(ownerId: string) {
 export function deleteContact(contactId: string) {
     const database = ensureInitialized();
     database.runSync(`DELETE FROM contacts WHERE id = ?`, [contactId]);
+    DeviceEventEmitter.emit('contacts_updated');
 }
 
 // ==================== SYNC UTILITIES ====================

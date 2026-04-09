@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, SafeAreaView, Alert, Image, Dimensions, DeviceEventEmitter } from 'react-native';
 import {
     LiveKitRoom,
@@ -48,17 +48,24 @@ export const CallScreen = ({
     const [token, setToken] = useState<string | null>(null);
     const [url, setUrl] = useState<string | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
+    const hasExitedRef = useRef(false);
+
+    const safeOnBack = useCallback(() => {
+        if (hasExitedRef.current) return;
+        hasExitedRef.current = true;
+        onBack();
+    }, [onBack]);
 
     // Listen for remote call rejections/hang-ups
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('external_call_ended', (data) => {
             if (data.conversationId === conversationId || data.roomName === roomName) {
                 console.log('📱 Remote call end detected, terminating local call...');
-                onBack(); // Exit the screen, unmount LiveKitRoom
+                safeOnBack();
             }
         });
         return () => sub.remove();
-    }, [conversationId, roomName, onBack]);
+    }, [conversationId, roomName, safeOnBack]);
 
     useEffect(() => {
         let isMounted = true;
@@ -113,12 +120,12 @@ export const CallScreen = ({
                 options={{ adaptiveStream: true }}
                 audio={true}
                 video={true}
-                onDisconnected={onBack}
+                onDisconnected={safeOnBack}
             >
                 <RingingSoundManager />
                 <VideoView layoutMode={layoutMode} />
                 <ControlsView
-                    onHangup={onBack}
+                    onHangup={safeOnBack}
                     conversationId={conversationId}
                     userId={userId}
                     roomName={roomName}
@@ -129,7 +136,7 @@ export const CallScreen = ({
                     onRestoreFromPip={onRestoreFromPip}
                     onMinimize={onMinimize}
                 />
-                <RoomEvents onLeave={onBack} />
+                <RoomEvents onLeave={safeOnBack} />
             </LiveKitRoom>
         </View>
     );
@@ -360,7 +367,7 @@ function ControlsView({
                 serverId: tempId,
                 conversationId,
                 senderId: userId,
-                content: '📞 Llamada finalizada',
+                content: 'Llamada finalizada',
                 type: 'call_ended',
                 status: 'pending',
                 createdAt: new Date().toISOString(),
@@ -373,16 +380,16 @@ function ControlsView({
             chatService.sendMessage({
                 conversationId,
                 senderId: userId,
-                content: '📞 Llamada finalizada',
-                type: 'call_ended'
-            }).then(({ message: serverMsg }) => {
+                content: 'Llamada finalizada',
+                    type: 'call_ended'
+                }).then(({ message: serverMsg }) => {
                 deleteMessage(tempId);
                 saveMessage({
                     id: serverMsg.id,
                     serverId: serverMsg.id,
                     conversationId,
                     senderId: userId,
-                    content: '📞 Llamada finalizada',
+                    content: 'Llamada finalizada',
                     type: 'call_ended',
                     status: 'sent',
                     createdAt: (serverMsg as any).createdAt || (serverMsg as any).created_at || new Date().toISOString(),

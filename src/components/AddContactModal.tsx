@@ -11,9 +11,8 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    Modal,
     ActivityIndicator,
-    KeyboardAvoidingView,
+    ScrollView,
     Platform,
     Alert,
 } from 'react-native';
@@ -21,9 +20,11 @@ import * as Contacts from 'expo-contacts';
 import { contactService, Contact } from '../services/contact.service';
 import { addContactModalStyles as styles } from '../styles/AddContactModal.styles';
 import { showAlert } from './common/CustomAlert';
+import KeyboardSafeView from './common/KeyboardSafeView';
 
 import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
 import { SyncIcon } from './icons/NavigationIcons';
+import { syncCacheService } from '../services/sync-cache.service';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface AddContactModalProps {
@@ -36,6 +37,7 @@ interface AddContactModalProps {
     initialLastName?: string;
     initialContactUserId?: string; // New prop to handle sync fixes
     onSyncRequested?: () => void;
+    onRefreshRequested?: () => void;
 }
 
 export function AddContactModal({
@@ -48,6 +50,7 @@ export function AddContactModal({
     initialLastName = '',
     initialContactUserId,
     onSyncRequested,
+    onRefreshRequested,
 }: AddContactModalProps) {
     const { colors, isDark } = useTheme();
     const [phone, setPhone] = useState(initialPhone);
@@ -141,6 +144,11 @@ export function AddContactModal({
             resetForm();
             onContactAdded(response.contact);
 
+            // Clean up synced contacts cache to avoid duplication
+            if (response.contact.contactUserId) {
+                await syncCacheService.removeFromSyncedCache(userId, response.contact.contactUserId);
+            }
+
             // Force save to local DB immediately so ChatView finds it
             try {
                 const { saveContact } = require('../database/chatDatabase'); // Import inline to avoid cycle if any, or just top level
@@ -188,8 +196,12 @@ export function AddContactModal({
                     onContactAdded(undefined);
                 }
 
-                // Force full sync to get the missing contact data
-                if (onSyncRequested) onSyncRequested();
+                // Force full server sync to get the missing contact data
+                if (onRefreshRequested) {
+                    onRefreshRequested();
+                } else if (onSyncRequested) {
+                    onSyncRequested();
+                }
 
                 showAlert({
                     type: 'success',
@@ -238,25 +250,17 @@ export function AddContactModal({
         }
     };
 
-    return (
-        <Modal
-            visible={visible}
-            animationType="slide"
-            transparent
-            onRequestClose={handleClose}
-        >
-            <KeyboardAvoidingView
-                style={styles.overlay}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -50}
-            >
-                <TouchableOpacity
-                    style={styles.backdrop}
-                    activeOpacity={1}
-                    onPress={handleClose}
-                />
+    if (!visible) return null;
 
-                <View style={[styles.container, { backgroundColor: colors.surface }]}>
+    return (
+        <View style={styles.overlay}>
+            <TouchableOpacity
+                style={styles.backdrop}
+                activeOpacity={1}
+                onPress={handleClose}
+            />
+
+            <View style={[styles.container, { backgroundColor: colors.surface }]}>
                     {/* Handle bar */}
                     <View style={styles.handleContainer}>
                         <View style={[styles.handle, { backgroundColor: colors.border }]} />
@@ -278,12 +282,9 @@ export function AddContactModal({
                                 borderRadius: 20
                             }}
                             onPress={() => {
-                                // Close modal and trigger sync (we need to pass this up or expose it)
-                                // Since we can't easily trigger the hook in parent from here without prop event,
-                                // we'll use a new prop 'onSyncRequested' or assuming the user wants to go to logic.
-                                // But wait, AddContactModal is instantiated in ChatsScreen.
-                                // We should add onSyncRequested prop.
-                                if (onSyncRequested) {
+                                if (onRefreshRequested) {
+                                    onRefreshRequested();
+                                } else if (onSyncRequested) {
                                     onSyncRequested();
                                 } else {
                                     Alert.alert('Info', 'Usa el botón de sincronizar en la pantalla principal');
@@ -297,8 +298,13 @@ export function AddContactModal({
                         </TouchableOpacity>
                     </View>
 
-                    {/* Form */}
-                    <View style={styles.form}>
+                    {/* Form - Scrollable */}
+                    <ScrollView 
+                        style={{ flexShrink: 1 }}
+                        contentContainerStyle={styles.form}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                    >
                         {/* Nombre */}
                         <View style={[styles.inputContainer, { backgroundColor: isDark ? colors.inputBg : '#FAFAFA', borderColor: colors.border }]}>
                             <Text style={[styles.floatingLabel, { color: colors.textSecondary }]}>Nombre</Text>
@@ -354,9 +360,9 @@ export function AddContactModal({
                                 />
                             </View>
                         </View>
-                    </View>
+                    </ScrollView>
 
-                    {/* Save Button */}
+                    {/* Save Button - Fixed at bottom */}
                     <TouchableOpacity
                         style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
                         onPress={handleAddContact}
@@ -368,8 +374,7 @@ export function AddContactModal({
                             <Text style={styles.saveButtonText}>Guardar</Text>
                         )}
                     </TouchableOpacity>
-                </View>
-            </KeyboardAvoidingView>
-        </Modal>
+                    </View>
+            </View>
     );
 }

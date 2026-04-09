@@ -96,9 +96,9 @@ export function MessageActionSheet({
     // Preview of message content
     const preview = message.type === 'text'
         ? message.content.slice(0, 60) + (message.content.length > 60 ? '…' : '')
-        : message.type === 'image' ? '📷 Imagen'
-        : message.type === 'audio' ? '🎤 Audio'
-        : message.type === 'video' ? '🎥 Video'
+        : message.type === 'image' ? 'Imagen'
+        : message.type === 'audio' ? 'Audio'
+        : message.type === 'video' ? 'Video'
         : message.content;
 
     return (

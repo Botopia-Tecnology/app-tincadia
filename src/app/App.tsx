@@ -126,7 +126,7 @@ function AppContent() {
   }, []);
 
   // Notifications logic
-  const { incomingCall, setIncomingCall, interpreterInvite, setInterpreterInvite } = useNotifications(
+  const { incomingCall, setIncomingCall, interpreterInvite, setInterpreterInvite, setActiveCall } = useNotifications(
     user,
     (params) => {
       setScreenStack(['chats']);
@@ -137,6 +137,10 @@ function AppContent() {
       setScreenStack(prev => [...prev, 'call']);
     }
   );
+
+  useEffect(() => {
+    setActiveCall(callParams?.conversationId || null);
+  }, [callParams, setActiveCall]);
 
   // Deep linking logic
   useDeepLinking(isAuthenticated, user, isPremium, isSubscriptionLoading, (params) => {
@@ -149,8 +153,10 @@ function AppContent() {
     if (!incomingCall || !user) return;
     if (user.role === 'interpreter') await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
     setCallParams({
-      roomName: incomingCall.conversationId,
-      username: user.firstName || user.email?.split('@')[0] || 'Usuario',
+      roomName: incomingCall.roomName || `conv_${incomingCall.conversationId}`,
+      username: user.role === 'interpreter' 
+        ? `Intérprete: ${user.firstName || user.email?.split('@')[0] || 'Usuario'}`
+        : (user.firstName || user.email?.split('@')[0] || 'Usuario'),
       conversationId: incomingCall.conversationId,
       userId: user.id
     });
@@ -162,7 +168,7 @@ function AppContent() {
     if (incomingCall && user) await chatService.sendMessage({
       conversationId: incomingCall.conversationId,
       senderId: user.id,
-      content: '📞 Llamada rechazada',
+      content: 'Llamada rechazada',
       type: 'call_ended'
     }).catch(() => {});
     setIncomingCall(null);
@@ -173,7 +179,9 @@ function AppContent() {
     if (user.role === 'interpreter') await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
     setCallParams({
       roomName: interpreterInvite.roomName,
-      username: user.firstName || user.email?.split('@')[0] || 'Usuario',
+      username: user.role === 'interpreter'
+        ? `Intérprete: ${user.firstName || user.email?.split('@')[0] || 'Usuario'}`
+        : (user.firstName || user.email?.split('@')[0] || 'Usuario'),
       conversationId: interpreterInvite.roomName,
       userId: user.id
     });

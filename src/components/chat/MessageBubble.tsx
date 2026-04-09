@@ -11,6 +11,20 @@ import { apiClient } from '../../lib/api-client';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
+const SENDER_COLORS = [
+    '#4CAF50', '#E91E63', '#9C27B0', '#FF9800',
+    '#00BCD4', '#3F51B5', '#FF5722', '#009688',
+    '#795548', '#607D8B', '#F44336', '#2196F3',
+];
+
+function getSenderColor(name: string): string {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
+}
+
 interface MessageBubbleProps {
     content: string;
     time: string;
@@ -21,7 +35,7 @@ interface MessageBubbleProps {
     replyToContent?: string;
     replyToSender?: string;
     publicId?: string;
-    duration?: number; // New prop for audio duration in seconds
+    duration?: number;
     senderName?: string;
     updatedAt?: string;
 }
@@ -348,13 +362,15 @@ export function MessageBubble({
         );
     };
 
+    const senderColor = senderName ? getSenderColor(senderName) : '#4CAF50';
+
     // Regular text message
     if (type === 'text' || type === 'call' || type === 'call_ended') {
         return (
             <View style={[styles.container, isMine ? styles.containerMine : styles.containerOther]}>
             <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
                 {senderName && (
-                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#4CAF50', marginBottom: 2 }}>{senderName}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: senderColor, marginBottom: 2 }}>{senderName}</Text>
                 )}
                 {renderReplyQuote()}
                     <Autolink
@@ -399,6 +415,9 @@ export function MessageBubble({
     return (
         <View style={[styles.container, isMine ? styles.containerMine : styles.containerOther]}>
             <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther, { padding: 4 }]}>
+                {senderName && (
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: senderColor, marginBottom: 2, paddingHorizontal: 4, paddingTop: 4 }}>{senderName}</Text>
+                )}
                 {renderReplyQuote()}
                 {renderMedia()}
                 <View style={[styles.footer, { paddingHorizontal: 8, paddingBottom: 4 }]}>

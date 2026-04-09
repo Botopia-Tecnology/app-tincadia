@@ -21,6 +21,7 @@ interface Props {
     dismissOnPress?: boolean;
     useSafeArea?: boolean;
     edges?: Edge[];
+    flex?: number;
 }
 
 /**
@@ -40,7 +41,8 @@ export const KeyboardSafeView = ({
     offset = 0,
     dismissOnPress = true,
     useSafeArea = true,
-    edges = ['top', 'bottom']
+    edges = ['top', 'bottom'],
+    flex = 1,
 }: Props) => {
     // Initial behavior based on platform
     const [behavior, setBehavior] = useState<KeyboardAvoidingViewProps['behavior']>(
@@ -68,7 +70,7 @@ export const KeyboardSafeView = ({
 
     const content = (
         <KeyboardAvoidingView
-            style={[styles.flex, contentContainerStyle]}
+            style={[{ flex }, contentContainerStyle]}
             behavior={Platform.OS === 'ios' ? 'padding' : behavior}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : offset}
         >
@@ -80,7 +82,7 @@ export const KeyboardSafeView = ({
     const wrapperProps = useSafeArea ? { edges } : {};
 
     return (
-        <Wrapper style={[styles.flex, style]} {...wrapperProps}>
+        <Wrapper style={[{ flex }, style]} {...wrapperProps}>
             {dismissOnPress ? (
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
                     {content}
@@ -89,6 +91,8 @@ export const KeyboardSafeView = ({
         </Wrapper>
     );
 };
+
+export default KeyboardSafeView;
 
 const styles = StyleSheet.create({
     flex: {

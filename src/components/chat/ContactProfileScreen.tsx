@@ -24,6 +24,7 @@ import { saveContact, getMediaForConversation, saveMediaUrl, getMediaUrl, delete
 import { contactProfileStyles as styles } from '../../styles/ContactProfile.styles';
 import { BackArrowIcon } from '../icons/NavigationIcons';
 import { mediaService } from '../../services/media.service';
+import { syncCacheService } from '../../services/sync-cache.service';
 import { useTheme } from '../../contexts/ThemeContext';
 
 export interface ContactProfileProps {
@@ -105,9 +106,9 @@ export function ContactProfileScreen({
                     const userData = response?.user || response?.profile;
                     if (userData) {
                         setOriginalProfile({
-                            firstName: (userData as any).firstName || (userData as any).first_name,
-                            lastName: (userData as any).lastName || (userData as any).last_name,
-                            phone: (userData as any).phone as string,
+                            firstName: (userData as Record<string, any>).firstName || (userData as Record<string, any>).first_name,
+                            lastName: (userData as Record<string, any>).lastName || (userData as Record<string, any>).last_name,
+                            phone: (userData as Record<string, any>).phone as string,
                         });
                     }
                 } catch (err) {
@@ -204,7 +205,10 @@ export function ContactProfileScreen({
     };
 
     const handleSave = async () => {
-        if (!contactId) return;
+        if (!contactId) {
+            Alert.alert('Error', 'No se pudo encontrar el ID del contacto para actualizar.');
+            return;
+        }
 
         setIsSaving(true);
         try {
@@ -222,7 +226,7 @@ export function ContactProfileScreen({
                 id: contact.id,
                 ownerId: contact.ownerId || userId,
                 contactUserId: contact.contactUserId,
-                phone: contact.phone,
+                phone: contact.phone || getPhone() || '',
                 alias: contact.alias,
                 customFirstName: contact.customFirstName,
                 customLastName: contact.customLastName,
@@ -234,6 +238,7 @@ export function ContactProfileScreen({
             }
         } catch (err) {
             console.error('Error updating contact:', err);
+            Alert.alert('Error', 'No se pudo guardar los cambios. Inténtalo de nuevo.');
         } finally {
             setIsSaving(false);
         }
@@ -267,6 +272,8 @@ export function ContactProfileScreen({
             if (onContactAdded) {
                 onContactAdded(contact);
             }
+            // Clean up synced contacts cache to avoid duplication
+            await syncCacheService.removeFromSyncedCache(userId, otherUserId);
             onBack();
         } catch (err) {
             console.error('Error adding contact:', err);
@@ -301,10 +308,12 @@ export function ContactProfileScreen({
                             // 2. Local delete (SQLite)
                             deleteLocalContact(contactId);
 
-                            // 2b. Also delete local conversation if we have the ID (matching backend behavior)
                             if (conversationId) {
                                 deleteConversation(conversationId);
                             }
+
+                            // Clean up synced contacts cache to avoid duplication
+                            await syncCacheService.removeFromSyncedCache(userId, otherUserId);
 
                             // 3. Callback to parent to close/navigate
                             if (onDeleteContact) {
@@ -450,9 +459,9 @@ export function ContactProfileScreen({
                         {isEditing || !isContact ? (
                             <TextInput
                                 style={[styles.input, themeStyles.input]}
-                                value={firstName || (originalProfile?.firstName || '')}
+                                value={firstName}
                                 onChangeText={setFirstName}
-                                placeholder="Nombre"
+                                placeholder={originalProfile?.firstName || "Nombre"}
                                 placeholderTextColor={colors.textMuted}
                             />
                         ) : (
@@ -468,9 +477,9 @@ export function ContactProfileScreen({
                         {isEditing || !isContact ? (
                             <TextInput
                                 style={[styles.input, themeStyles.input]}
-                                value={lastName || (originalProfile?.lastName || '')}
+                                value={lastName}
                                 onChangeText={setLastName}
-                                placeholder="Apellido"
+                                placeholder={originalProfile?.lastName || "Apellido"}
                                 placeholderTextColor={colors.textMuted}
                             />
                         ) : (

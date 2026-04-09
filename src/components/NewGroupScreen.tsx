@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -43,8 +43,19 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
 
     const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
     const [isCreating, setIsCreating] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
 
-    // Removed manual useEffect and loadContacts
+    const filteredContacts = useMemo(() => {
+        if (!searchQuery.trim()) return contacts;
+        const q = searchQuery.toLowerCase().trim();
+        return contacts.filter(c => {
+            const fullName = [c.alias, c.customFirstName, c.customLastName, c.phone]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            return fullName.includes(q);
+        });
+    }, [contacts, searchQuery]);
 
 
     const toggleContact = (contactId: string) => {
@@ -202,14 +213,40 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
             <View style={styles.content}>
                 {step === 1 ? (
                     <>
+                        <View style={[styles.searchContainer, { backgroundColor: colors.background }]}>
+                            <View style={[styles.searchBar, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6', borderColor: colors.border }]}>
+                                <Ionicons name="search" size={18} color={colors.textMuted} style={{ marginRight: 8 }} />
+                                <TextInput
+                                    style={[styles.searchInput, { color: colors.text }]}
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                    placeholder="Buscar contacto..."
+                                    placeholderTextColor={colors.textMuted}
+                                    autoCorrect={false}
+                                />
+                                {searchQuery.length > 0 && (
+                                    <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                        <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                            {selectedContactIds.size > 0 && (
+                                <Text style={[styles.selectionBadge, { color: colors.accent }]}>
+                                    {selectedContactIds.size} seleccionado{selectedContactIds.size !== 1 ? 's' : ''}
+                                </Text>
+                            )}
+                        </View>
+
                         {isLoading ? (
                             <ActivityIndicator size="large" color="#10B981" style={{ marginTop: 50 }} />
                         ) : (
                             <FlatList
-                                data={contacts}
+                                data={filteredContacts}
+                                extraData={searchQuery}
                                 keyExtractor={(item) => item.id}
                                 renderItem={renderContactItem}
-                                contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+                                keyboardShouldPersistTaps="handled"
+                                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16, flexGrow: 1 }}
                                 ListEmptyComponent={() => (
                                     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 50 }}>
                                         <Text style={{ fontSize: 48, marginBottom: 16 }}>👥</Text>
@@ -481,5 +518,29 @@ const styles = StyleSheet.create({
         marginTop: 12,
         color: '#6B7280',
         fontSize: 14,
-    }
+    },
+    searchContainer: {
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        paddingBottom: 4,
+    },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        height: 42,
+        borderWidth: 1,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
+        paddingVertical: 0,
+    },
+    selectionBadge: {
+        fontSize: 13,
+        fontWeight: '600',
+        marginTop: 8,
+        textAlign: 'center',
+    },
 });

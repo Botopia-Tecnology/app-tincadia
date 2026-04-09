@@ -44,12 +44,63 @@ export interface Conversation {
 }
 
 export interface UserProfile {
-    user?: User;
+    user?: User & {
+        firstName?: string;
+        lastName?: string;
+        first_name?: string; // Support for backend snake_case
+        last_name?: string;  // Support for backend snake_case
+    };
     profile?: {
         bio?: string;
         location?: string;
         [key: string]: unknown;
     };
+}
+
+export interface DatabaseConversation {
+    id: string;
+    other_user_id: string | null;
+    other_user_name: string;
+    other_user_avatar: string;
+    other_user_phone: string;
+    last_message: string;
+    last_message_at: string;
+    unread_count: number;
+    updated_at: string;
+    type: string | null;
+    title: string | null;
+    image_url: string | null;
+    description: string | null;
+}
+
+export interface DatabaseMessage {
+    id: string;
+    server_id: string | null;
+    conversation_id: string;
+    sender_id: string;
+    content: string;
+    type: string;
+    status: string;
+    created_at: string;
+    updated_at: string | null;
+    read_at: string | null;
+    is_mine: number;
+    deleted_at: string | null;
+    reply_to_id: string | null;
+    reply_to_content: string | null;
+    reply_to_sender: string | null;
+    metadata: string | null;
+}
+
+export interface DatabaseContact {
+    id: string;
+    owner_id: string;
+    contact_user_id: string;
+    phone: string;
+    alias: string;
+    custom_first_name: string;
+    custom_last_name: string;
+    updated_at: string;
 }
 
 export interface GroupParticipant extends User {
@@ -65,3 +116,4 @@ export interface Group {
     adminId: string;
     participants: string[];
 }
+

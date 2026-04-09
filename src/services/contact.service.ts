@@ -33,6 +33,21 @@ export interface UpdateContactDto {
     customLastName?: string;
 }
 
+// Helper to map snake_case to camelCase since backend may return snake_case for individual records
+function mapContactToCamelCase(contact: Record<string, any>): Contact {
+    if (!contact) return contact as any;
+    return {
+        id: contact.id,
+        phone: contact.phone,
+        ownerId: contact.ownerId || contact.owner_id,
+        contactUserId: contact.contactUserId || contact.contact_user_id,
+        alias: contact.alias,
+        customFirstName: contact.customFirstName || contact.custom_first_name,
+        customLastName: contact.customLastName || contact.custom_last_name,
+        createdAt: contact.createdAt || contact.created_at,
+    };
+}
+
 export const contactService = {
     /**
      * Get all contacts for a specific user
@@ -51,20 +66,34 @@ export const contactService = {
      * Add a new contact by phone number
      */
     async addContact(data: AddContactDto): Promise<{ contact: Contact }> {
-        return apiClient(API_ENDPOINTS.ADD_CONTACT, {
+        const response = await apiClient<{ contact: Record<string, any> }>(API_ENDPOINTS.ADD_CONTACT, {
             method: 'POST',
             body: JSON.stringify(data),
         });
+        
+        if (response && response.contact) {
+            return {
+                contact: mapContactToCamelCase(response.contact)
+            };
+        }
+        return response as any;
     },
 
     /**
      * Update a contact (alias, custom names)
      */
     async updateContact(contactId: string, data: UpdateContactDto): Promise<{ contact: Contact }> {
-        return apiClient(API_ENDPOINTS.CONTACT(contactId), {
+        const response = await apiClient<{ contact: Record<string, any> }>(API_ENDPOINTS.CONTACT(contactId), {
             method: 'PUT',
             body: JSON.stringify({ ...data, contactId }),
         });
+        
+        if (response && response.contact) {
+            return {
+                contact: mapContactToCamelCase(response.contact)
+            };
+        }
+        return response as any;
     },
 
     /**

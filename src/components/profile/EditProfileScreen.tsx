@@ -124,7 +124,7 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
         Alert.alert(
             'Foto de Perfil',
             'Selecciona una opción',
-            buttons as any // Alert.alert expects any[] but our structure is correct
+            buttons as AlertButton[]
         );
     };
 

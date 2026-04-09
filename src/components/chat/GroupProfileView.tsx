@@ -20,7 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { chatService } from '../../services/chat.service';
 import { mediaService } from '../../services/media.service';
 import { supabase } from '../../lib/supabase';
-import { getLocalContacts, LocalContact } from '../../database/chatDatabase';
+import { getLocalContacts, LocalContact, saveConversation, getConversation } from '../../database/chatDatabase';
 import { EditStringModal } from '../modals/EditStringModal';
 import { ContactSelectionModal } from '../modals/ContactSelectionModal';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -300,8 +300,29 @@ export function GroupProfileView({
                 updates.description = value.trim();
             }
 
+            // 1. Update on server
             await chatService.updateGroup(updates);
 
+            // 2. Update local database (SQLite)
+            const existing = getConversation(conversationId);
+            if (existing) {
+                saveConversation({
+                    id: existing.id,
+                    otherUserId: existing.other_user_id || undefined,
+                    otherUserName: existing.other_user_name || '',
+                    otherUserAvatar: existing.other_user_avatar || '',
+                    otherUserPhone: existing.other_user_phone || '',
+                    lastMessage: existing.last_message || '',
+                    lastMessageAt: existing.last_message_at || '',
+                    unreadCount: existing.unread_count || 0,
+                    type: existing.type as 'direct' | 'group',
+                    title: updates.title || existing.title || undefined,
+                    imageUrl: existing.image_url || undefined,
+                    description: updates.description !== undefined ? updates.description : (existing.description || undefined),
+                });
+            }
+
+            // 3. Update local state and notify parent
             if (editModalConfig.field === 'title') {
                 if (onUpdate) onUpdate({ title: value.trim() });
             } else {

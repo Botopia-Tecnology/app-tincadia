@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, ViewStyle, TextStyle, ImageStyle } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { PlusIcon } from '../icons/NavigationIcons';
 import { ChatListItem as ChatListItemType } from '../../hooks/useChatList';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -45,31 +46,47 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
     .slice(0, 2)
     .toUpperCase() || '?';
 
-  const renderLastMessage = () => {
-    if (!item.lastMessage) return item.phone;
+  const renderLastMessage = (): React.ReactNode => {
+    if (!item.lastMessage) {
+      return <Text style={[styles.lastMessage, { color: colors.textSecondary }]}>{item.phone}</Text>;
+    }
 
     if (item.lastMessage.includes('📞') || item.lastMessage.toLowerCase().includes('llamada')) {
       const isEnded = item.lastMessage.toLowerCase().match(/(finalizada|rechazada|perdida)/);
-      const displayText = isEnded ? item.lastMessage.replace('📞', '☎️') : '📞 Llamada entrante';
+      const displayText = isEnded
+        ? item.lastMessage.replace(/📞\s?/g, '').replace(/☎️\s?/g, '')
+        : 'Llamada entrante';
+      const iconColor = isEnded ? '#EF4444' : '#3B82F6';
       
       return (
-        <Text style={{ color: isEnded ? '#EF4444' : '#3B82F6', fontWeight: '500' }}>
-          {displayText}
-        </Text>
+        <View style={previewStyles.row}>
+          <Ionicons name={isEnded ? 'call-outline' : 'call'} size={14} color={iconColor} />
+          <Text style={[previewStyles.label, { color: iconColor }]}>{displayText}</Text>
+        </View>
       );
     }
 
-    if ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
-        (item.lastMessage.includes('/chat-media/') || item.lastMessage.match(/\.(jpg|jpeg|png|gif|webp)/i))) {
-      return '📷 Imagen';
+    const isMediaUrl = item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/');
+
+    if (isMediaUrl && (item.lastMessage.includes('/chat-media/') || item.lastMessage.match(/\.(jpg|jpeg|png|gif|webp)/i))) {
+      return (
+        <View style={previewStyles.row}>
+          <Ionicons name="image-outline" size={14} color={colors.textSecondary} />
+          <Text style={[previewStyles.label, { color: colors.textSecondary }]}>Imagen</Text>
+        </View>
+      );
     }
 
-    if ((item.lastMessage.startsWith('http') || item.lastMessage.startsWith('uploads/')) &&
-        item.lastMessage.match(/\.(m4a|mp3|wav|ogg|aac)/i)) {
-      return '🎵 Audio';
+    if (isMediaUrl && item.lastMessage.match(/\.(m4a|mp3|wav|ogg|aac)/i)) {
+      return (
+        <View style={previewStyles.row}>
+          <Ionicons name="mic-outline" size={14} color={colors.textSecondary} />
+          <Text style={[previewStyles.label, { color: colors.textSecondary }]}>Audio</Text>
+        </View>
+      );
     }
 
-    return item.lastMessage;
+    return null;
   };
 
   return (
@@ -105,15 +122,24 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
             </Text>
           </View>
           <View style={styles.messageRow}>
-            <Text
-              style={[
-                styles.lastMessage,
-                { color: (item.unreadCount || 0) > 0 ? colors.text : colors.textSecondary, fontWeight: (item.unreadCount || 0) > 0 ? '600' : 'normal' }
-              ]}
-              numberOfLines={1}
-            >
-              {renderLastMessage()}
-            </Text>
+            {item.type === 'synced' ? (
+              <Text
+                style={[styles.lastMessage, { color: colors.textSecondary, fontWeight: 'normal' }]}
+                numberOfLines={1}
+              >
+                {item.phone}
+              </Text>
+            ) : renderLastMessage() || (
+              <Text
+                style={[
+                  styles.lastMessage,
+                  { color: (item.unreadCount || 0) > 0 ? colors.text : colors.textSecondary, fontWeight: (item.unreadCount || 0) > 0 ? '600' : 'normal' }
+                ]}
+                numberOfLines={1}
+              >
+                {item.lastMessage || item.phone}
+              </Text>
+            )}
             {(item.unreadCount || 0) > 0 && (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadBadgeText}>
@@ -133,3 +159,15 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
     </View>
   );
 };
+
+const previewStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+});

@@ -75,8 +75,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const result = await Promise.race([authCheck(), timeout]);
 
                 if (result) {
+                    // Normalize interpreter role to lowercase to match backend expectation
+                    const rawRole = result.user.role || '';
+                    const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
+                    
+                    // Self-healing: if the role was 'Interpreter' (PascalCase), update backend to lowercase
+                    if (rawRole === 'Interpreter') {
+                        console.log('🩹 Self-healing: Updating role to lowercase in backend');
+                        authService.updateProfile(result.user.id, { role: 'interpreter' } as any).catch(e => {
+                            console.error('Failed to self-heal role casing:', e);
+                        });
+                    }
+
                     setUser({
                         ...result.user,
+                        role: normalizedRole,
                         isProfileComplete: result.isProfileComplete,
                     });
                 } else {
@@ -113,8 +126,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
 
             // Merge isProfileComplete from response level
+            const rawRole = response.user?.role || '';
+            const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
+
+            // Self-healing: if the role was 'Interpreter' (PascalCase), update backend to lowercase
+            if (rawRole === 'Interpreter') {
+                console.log('🩹 Self-healing: Updating role to lowercase in backend (on login)');
+                authService.updateProfile(response.user.id, { role: 'interpreter' } as any).catch(e => {
+                    console.error('Failed to self-heal role casing on login:', e);
+                });
+            }
+
             const mergedUser = {
                 ...response.user,
+                role: normalizedRole,
                 isProfileComplete: response.isProfileComplete ?? response.user.isProfileComplete,
             };
             console.log('🔑 Merged user isProfileComplete:', mergedUser.isProfileComplete);
@@ -134,8 +159,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(true);
         try {
             const response = await authService.register(userData);
+            const rawRole = response.user?.role || '';
+            const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
+            
             setUser({
                 ...response.user,
+                role: normalizedRole,
                 isProfileComplete: response.isProfileComplete ?? response.user.isProfileComplete,
             });
         } catch (err) {
@@ -153,8 +182,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(true);
         try {
             const response = await authService.loginWithOAuth(provider, idToken);
+            const rawRole = response.user?.role || '';
+            const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
+            
             setUser({
                 ...response.user,
+                role: normalizedRole,
                 isProfileComplete: response.isProfileComplete ?? response.user.isProfileComplete,
             });
         } catch (err) {
@@ -207,8 +240,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const { clearChatDatabase } = await import('../database/chatDatabase');
                 clearChatDatabase();
                 console.log('🗑️ Cleared local chat database');
+
+                // Clear contact sync metadata from AsyncStorage to ensure fresh state on next login
+                if (user?.id) {
+                    const keysToClear = [
+                        `tincadia_contacts_last_sync_${user.id}`,
+                        `@synced_contacts_${user.id}`,
+                        `chats_last_sync_${user.id}`, // Generic sync key just in case
+                    ];
+                    import('@react-native-async-storage/async-storage').then(({ default: AsyncStorage }) => {
+                        AsyncStorage.multiRemove(keysToClear).catch(e => console.warn('Could not clear sync keys:', e));
+                    });
+                }
             } catch (e) {
-                console.warn('Could not clear chat database:', e);
+                console.warn('Could not clear chat database or sync metadata:', e);
             }
         } finally {
             setUser(null);
@@ -225,8 +270,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
             const result = await authService.getCurrentUser(true); // force refresh
             if (result) {
+                const rawRole = result.user.role || '';
+                const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
+                
                 setUser({
                     ...result.user,
+                    role: normalizedRole,
                     isProfileComplete: result.isProfileComplete,
                 });
             }

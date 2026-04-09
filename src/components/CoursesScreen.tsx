@@ -25,6 +25,8 @@ interface CoursesScreenProps {
     onCourseSelect?: (courseId: string) => void;
 }
 
+type AccessFilter = 'all' | 'free' | 'premium';
+
 export function CoursesScreen({
     onNavigate,
     onBack,
@@ -35,22 +37,43 @@ export function CoursesScreen({
     const { colors, isDark } = useTheme();
     const [categories, setCategories] = useState<CourseCategory[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
+    const [accessFilter, setAccessFilter] = useState<AccessFilter>('all');
     const { courses, isLoading, isSyncing, refresh } = useCourses();
     const [refreshing, setRefreshing] = useState(false);
     const [loadingId, setLoadingId] = useState<string | null>(null);
 
-    // Filter courses based on search query
+    const categoryNames = useMemo(() => {
+        const names = new Set<string>();
+        courses.forEach(c => names.add(c.category?.name || 'Otros'));
+        return ['Todos', ...Array.from(names).sort()];
+    }, [courses]);
+
     const filteredCourses = useMemo(() => {
-        if (!searchQuery.trim()) return courses;
-        const query = searchQuery.toLowerCase();
-        return courses.filter(course =>
-            course.title.toLowerCase().includes(query) ||
-            (course.instructor && course.instructor.toLowerCase().includes(query))
-        );
-    }, [courses, searchQuery]);
+        let result = courses;
+
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            result = result.filter(course =>
+                course.title.toLowerCase().includes(query) ||
+                (course.instructor && course.instructor.toLowerCase().includes(query))
+            );
+        }
+
+        if (selectedCategory !== 'Todos') {
+            result = result.filter(course => (course.category?.name || 'Otros') === selectedCategory);
+        }
+
+        if (accessFilter === 'free') {
+            result = result.filter(course => !course.isPaid);
+        } else if (accessFilter === 'premium') {
+            result = result.filter(course => course.isPaid);
+        }
+
+        return result;
+    }, [courses, searchQuery, selectedCategory, accessFilter]);
 
     useEffect(() => {
-        // Group by category
         const groups: Record<string, Course[]> = {};
         filteredCourses.forEach((course: Course) => {
             const catName = course.category?.name || 'Otros';
@@ -58,7 +81,6 @@ export function CoursesScreen({
             groups[catName].push(course);
         });
 
-        // Transform to array
         const result = Object.entries(groups).map(([title, courses]) => ({
             title,
             courses
@@ -162,6 +184,70 @@ export function CoursesScreen({
                         placeholderTextColor={colors.textMuted}
                     />
                 </View>
+
+                {/* Category Filter Chips */}
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ paddingTop: 12, paddingBottom: 4, gap: 8 }}
+                >
+                    {categoryNames.map(name => {
+                        const isActive = selectedCategory === name;
+                        return (
+                            <TouchableOpacity
+                                key={name}
+                                onPress={() => setSelectedCategory(name)}
+                                style={{
+                                    paddingHorizontal: 16,
+                                    paddingVertical: 8,
+                                    borderRadius: 20,
+                                    backgroundColor: isActive ? '#4CAF50' : (isDark ? colors.surface : '#F1F5F9'),
+                                    borderWidth: isActive ? 0 : 1,
+                                    borderColor: isDark ? colors.border : '#E2E8F0',
+                                }}
+                            >
+                                <Text style={{
+                                    fontSize: 13,
+                                    fontWeight: isActive ? '700' : '500',
+                                    color: isActive ? '#FFFFFF' : colors.textSecondary,
+                                }}>
+                                    {name}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+
+                {/* Access Type Filter */}
+                <View style={{ flexDirection: 'row', gap: 8, paddingTop: 8 }}>
+                    {([['all', 'Todos'], ['free', 'Gratis'], ['premium', 'Premium']] as [AccessFilter, string][]).map(([key, label]) => {
+                        const isActive = accessFilter === key;
+                        return (
+                            <TouchableOpacity
+                                key={key}
+                                onPress={() => setAccessFilter(key)}
+                                style={{
+                                    paddingHorizontal: 14,
+                                    paddingVertical: 6,
+                                    borderRadius: 16,
+                                    backgroundColor: isActive
+                                        ? (key === 'premium' ? '#f59e0b' : key === 'free' ? '#10B981' : (isDark ? colors.surface : '#F1F5F9'))
+                                        : (isDark ? colors.surface : '#F1F5F9'),
+                                    borderWidth: isActive ? 0 : 1,
+                                    borderColor: isDark ? colors.border : '#E2E8F0',
+                                }}
+                            >
+                                <Text style={{
+                                    fontSize: 12,
+                                    fontWeight: isActive ? '700' : '500',
+                                    color: isActive && key !== 'all' ? '#FFFFFF' : (isActive ? colors.text : colors.textSecondary),
+                                }}>
+                                    {label}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
             </View>
 
             {/* Content */}
@@ -179,8 +265,21 @@ export function CoursesScreen({
                     }
                 >
                     {categories.length === 0 ? (
-                        <View style={{ padding: 20, alignItems: 'center', marginTop: 100 }}>
-                            <Text style={{ color: '#666', fontSize: 16 }}>No hay cursos disponibles por el momento.</Text>
+                        <View style={{ padding: 20, alignItems: 'center', marginTop: 80 }}>
+                            <Text style={{ fontSize: 48, marginBottom: 12 }}>🔍</Text>
+                            <Text style={{ color: colors.textSecondary, fontSize: 16, textAlign: 'center' }}>
+                                {searchQuery.trim() || selectedCategory !== 'Todos' || accessFilter !== 'all'
+                                    ? 'No se encontraron cursos con esos filtros.'
+                                    : 'No hay cursos disponibles por el momento.'}
+                            </Text>
+                            {(searchQuery.trim() || selectedCategory !== 'Todos' || accessFilter !== 'all') && (
+                                <TouchableOpacity
+                                    onPress={() => { setSearchQuery(''); setSelectedCategory('Todos'); setAccessFilter('all'); }}
+                                    style={{ marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#4CAF50', borderRadius: 20 }}
+                                >
+                                    <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Limpiar filtros</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     ) : (
                         categories.map((category, index) => (

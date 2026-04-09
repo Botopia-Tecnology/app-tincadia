@@ -23,6 +23,7 @@ export interface Conversation {
     type?: 'direct' | 'group';
     title?: string;
     imageUrl?: string;
+    description?: string;
 }
 
 interface UseConversationsReturn {
@@ -50,6 +51,7 @@ export function useConversations(userId: string): UseConversationsReturn {
         type?: string | null;
         title?: string | null;
         image_url?: string | null;
+        description?: string | null;
     }): Conversation => {
         const normalizeUrl = (url?: string | null) => {
             if (!url) return '';
@@ -68,6 +70,7 @@ export function useConversations(userId: string): UseConversationsReturn {
             type: (c.type as 'direct' | 'group') || 'direct',
             title: c.title || undefined,
             imageUrl: normalizeUrl(c.image_url),
+            description: c.description || undefined,
         };
     };
 
@@ -108,6 +111,7 @@ export function useConversations(userId: string): UseConversationsReturn {
                     type: conv.type as 'direct' | 'group' || 'direct',
                     title: conv.title,
                     imageUrl: conv.imageUrl,
+                    description: conv.description,
                 });
             });
 

@@ -300,7 +300,8 @@ export function SOSScreen({
             return;
         }
 
-        const username = user?.firstName || user?.email || 'Usuario';
+        const rawUsername = user?.firstName || user?.email || 'Usuario';
+        const username = user?.role === 'interpreter' ? `Intérprete: ${rawUsername}` : rawUsername;
         const roomName = `sos-${userId}-${Date.now()}`;
 
         setIsRequestingInterpreter(true);

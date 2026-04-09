@@ -45,7 +45,7 @@ export const useDeepLinking = (
         const parsedUrl = Linking.parse(urlToProcess);
 
         // Handle path: /interpreter
-        if (parsedUrl.path === 'interpreter' || urlToProcess.includes('tincadia://interpreter')) {
+        if (parsedUrl.path?.toLowerCase() === 'interpreter' || urlToProcess.toLowerCase().includes('tincadia://interpreter')) {
           if (!isPremium) {
             Alert.alert('Acceso Denegado', 'Necesitas una suscripción premium para llamar a un intérprete.');
             return;
