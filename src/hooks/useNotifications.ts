@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { authService } from '../services/auth.service';
 import { chatService } from '../services/chat.service';
+import { supabase } from '../lib/supabase';
 import { getLocalContacts, getConversation, LocalContact } from '../database/chatDatabase';
 import { User } from '../types/auth.types';
 import { NavigationParams } from '../types/navigation.types';
@@ -41,6 +42,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
   const activeCallRef = useRef<string | null>(null);
+  const endedCallsRef = useRef<Set<string>>(new Set());
 
   /**
    * Resolves the best caller name, photo and participants from local DB.
@@ -100,7 +102,9 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   ): boolean => {
     if (String(data.senderId) === user?.id) return true;
     if (!isCallNotificationFresh(notification)) return true;
-    if (activeCallRef.current) return true;
+    const convId = String(data.conversationId || '');
+    if (convId && endedCallsRef.current.has(convId)) return true;
+    // Allow incoming calls even if already in a call — the modal will overlay
     return false;
   };
 
@@ -253,11 +257,19 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       }
 
       if (data?.type === 'call_ended' || data?.type === 'call_rejected') {
+        const endedConvId = String(data?.conversationId || '');
+        if (endedConvId) endedCallsRef.current.add(endedConvId);
+
         setIncomingCall(null);
+        Notifications.dismissAllNotificationsAsync().catch(() => {});
+
         DeviceEventEmitter.emit('external_call_ended', { 
-            conversationId: String(data?.conversationId || ''),
+            conversationId: endedConvId,
             roomName: String(data?.roomName || data?.conversationId || '')
         });
+
+        // Clean up after 60s so the Set doesn't grow indefinitely
+        setTimeout(() => { endedCallsRef.current.delete(endedConvId); }, 60_000);
       }
     });
 
@@ -269,11 +281,24 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     responseListener.current = Notifications.addNotificationResponseReceivedListener(async response => {
       const data = response.notification.request.content.data;
 
+      // Always dismiss the tapped notification immediately
+      Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
+
       if (data?.type === 'call' && data?.conversationId && data?.senderId) {
         if (shouldIgnoreCallNotification(data as Record<string, unknown>, response.notification)) {
           console.log('📞 Ignoring call notification from tap (stale/self/active)');
+          Notifications.dismissAllNotificationsAsync().catch(() => {});
           return;
         }
+
+        // Extra safety: if a call_ended was already received for this conversation, block entry
+        const tappedConvId = String(data.conversationId);
+        if (endedCallsRef.current.has(tappedConvId)) {
+          console.log('📞 Blocking ghost call — call already ended for', tappedConvId);
+          Notifications.dismissAllNotificationsAsync().catch(() => {});
+          return;
+        }
+
         const { callerName, callerPhoto, participants } = await resolveCallerInfo(
           String(data.senderName || 'Usuario Tincadia'),
           String(data.senderId),
@@ -288,6 +313,10 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           participants,
           roomName: data.roomName ? String(data.roomName) : undefined,
         });
+      } else if (data?.type === 'call_ended' || data?.type === 'call_rejected') {
+        // User tapped a call_ended notification — just clean up, don't navigate
+        setIncomingCall(null);
+        Notifications.dismissAllNotificationsAsync().catch(() => {});
       } else if (data?.type === 'call_invite' && data?.roomName) {
         setInterpreterInvite(null);
         onNavigateToCall({
@@ -306,9 +335,36 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       }
     });
 
+    // Global user channel — receives real-time broadcasts for:
+    // - call_ended: dismiss incoming call modal instantly (faster than push)
+    // - call_invite_taken: dismiss interpreter invite when another accepts
+    const userChannel = supabase
+      .channel(`user:${user.id}`)
+      .on('broadcast', { event: 'call_ended' }, (payload) => {
+        const convId = String(payload.payload?.conversationId || '');
+        console.log('🔴 Broadcast [call_ended] received for', convId);
+
+        if (convId) endedCallsRef.current.add(convId);
+        setIncomingCall(null);
+        Notifications.dismissAllNotificationsAsync().catch(() => {});
+
+        DeviceEventEmitter.emit('external_call_ended', {
+          conversationId: convId,
+          roomName: convId,
+        });
+
+        setTimeout(() => { endedCallsRef.current.delete(convId); }, 60_000);
+      })
+      .on('broadcast', { event: 'call_invite_taken' }, () => {
+        setInterpreterInvite(null);
+        Notifications.dismissAllNotificationsAsync().catch(() => {});
+      })
+      .subscribe();
+
     return () => {
       if (notificationListener.current) notificationListener.current.remove();
       if (responseListener.current) responseListener.current.remove();
+      supabase.removeChannel(userChannel);
     };
   }, [user, resolveCallerInfo]);
 

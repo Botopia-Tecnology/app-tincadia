@@ -3,8 +3,8 @@ import { View, Text, TouchableOpacity, ScrollView, Linking, ActivityIndicator, A
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
+import * as Clipboard from 'expo-clipboard';
 import { emergencyService } from '../services/emergency.service';
-import { emergencyContactsStorage, EmergencyContact } from '../services/emergencyContacts.storage';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
@@ -38,6 +38,8 @@ interface EmergencyType {
     icon: React.ElementType;
     color: string;
     label: string;
+    /** Línea telefónica de emergencia (Colombia) */
+    phone: string;
 }
 
 interface SOSScreenProps {
@@ -63,10 +65,10 @@ export function SOSScreen({
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
     const emergencyTypes: EmergencyType[] = [
-        { id: '1', icon: Flame, color: '#EF4444', label: 'BOMBEROS' },
-        { id: '2', icon: Ambulance, color: '#3B82F6', label: 'AMBULANCIA' },
-        { id: '3', icon: Siren, color: '#10B981', label: 'POLICÍA' },
-        { id: '4', icon: AlertTriangle, color: '#F59E0B', label: 'OTRA' },
+        { id: 'policia', icon: Siren, color: '#10B981', label: 'POLICÍA NACIONAL', phone: '112' },
+        { id: 'bomberos', icon: Flame, color: '#EF4444', label: 'BOMBEROS', phone: '119' },
+        { id: 'ambulancia', icon: Ambulance, color: '#3B82F6', label: 'AMBULANCIA', phone: '125' },
+        { id: 'otra', icon: AlertTriangle, color: '#F59E0B', label: 'OTRA', phone: '123' },
     ];
 
     const [activeEmergency, setActiveEmergency] = useState<EmergencyType | null>(null);
@@ -75,19 +77,9 @@ export function SOSScreen({
     const [location, setLocation] = useState<Location.LocationObject | null>(null);
     const [address, setAddress] = useState<string | null>(null);
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
-    const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
     const [isRequestingInterpreter, setIsRequestingInterpreter] = useState(false);
 
     const pulseAnim = useRef(new Animated.Value(1)).current;
-
-    // Load emergency contacts on mount
-    useEffect(() => {
-        const loadContacts = async () => {
-            const contacts = await emergencyContactsStorage.getContacts();
-            setEmergencyContacts(contacts);
-        };
-        loadContacts();
-    }, []);
 
     // Configure audio mode on mount
     useEffect(() => {
@@ -193,7 +185,7 @@ export function SOSScreen({
             setIsPlaying(false);
         }
 
-        const emergencyNumber = process.env.EXPO_PUBLIC_EMERGENCY_NUMBER || '123';
+        const emergencyNumber = type.phone;
 
         // Build emergency message with location
         const lat = location?.coords.latitude.toFixed(6) || 'Desconocida';
@@ -243,22 +235,13 @@ export function SOSScreen({
         switch (label) {
             case 'BOMBEROS': return 'incendio o rescate';
             case 'AMBULANCIA': return 'asistencia médica urgente';
+            case 'POLICÍA NACIONAL':
             case 'POLICÍA': return 'seguridad policial';
             default: return 'emergencia general';
         }
     };
 
-    const sendWhatsAppEmergency = async () => {
-        // Check if user has stored emergency contacts
-        if (emergencyContacts.length === 0) {
-            Alert.alert(
-                'Sin contactos de emergencia',
-                'Agrega contactos de emergencia en tu perfil para enviar alertas por WhatsApp.',
-                [{ text: 'OK' }]
-            );
-            return;
-        }
-
+    const buildEmergencyWhatsAppMessage = (): string => {
         const lat = location?.coords.latitude.toFixed(6) || 'Desconocida';
         const lon = location?.coords.longitude.toFixed(6) || 'Desconocida';
         const locationText = address || `Lat: ${lat}, Lon: ${lon}`;
@@ -266,27 +249,61 @@ export function SOSScreen({
             ? `https://maps.google.com/?q=${location.coords.latitude},${location.coords.longitude}`
             : '';
 
-        const emergencyType = activeEmergency ? typeToText(activeEmergency.label).toUpperCase() : 'GENERAL';
+        const typeLine = activeEmergency
+            ? typeToText(activeEmergency.label).toUpperCase()
+            : 'EMERGENCIA GENERAL';
 
-        const message = `🆘 *EMERGENCIA - SOY PERSONA SORDA*\n\n*Tipo:* ${emergencyType}\n*Ubicación:* ${locationText}\n${googleMapsLink ? `*Mapa:* ${googleMapsLink}` : ''}\n\nNecesito ayuda urgente. No puedo hablar por teléfono.`;
+        return [
+            '*EMERGENCIA – PERSONA SORDA*',
+            '',
+            'Solicito ayuda *urgente*. No puedo hablar por teléfono.',
+            '',
+            `*Tipo:* ${typeLine}`,
+            `*Ubicación:* ${locationText}`,
+            googleMapsLink ? `*Mapa:* ${googleMapsLink}` : '',
+            '',
+            '_Mensaje generado desde la app Tincadia._',
+        ]
+            .filter(Boolean)
+            .join('\n');
+    };
 
-        // Send to all emergency contacts
-        for (const contact of emergencyContacts) {
-            const formattedNumber = contact.phone.replace(/[^\d+]/g, '');
-            const whatsappUrl = `whatsapp://send?phone=${formattedNumber}&text=${encodeURIComponent(message)}`;
+    /**
+     * Abre WhatsApp *sin* fijar un número: el usuario elige el contacto o grupo.
+     * WhatsApp no permite elegir varios destinatarios en un solo paso; el texto se
+     * copia al portapapeles para poder pegarlo en otros chats después de enviar.
+     */
+    const sendWhatsAppEmergency = async () => {
+        const message = buildEmergencyWhatsAppMessage();
+        const encoded = encodeURIComponent(message);
 
-            try {
-                const canOpen = await Linking.canOpenURL(whatsappUrl);
-                if (canOpen) {
-                    await Linking.openURL(whatsappUrl);
-                    return; // Open one at a time, user can tap button again for next contact
-                }
-            } catch (error) {
-                console.error('Error opening WhatsApp for', contact.name, error);
-            }
+        try {
+            await Clipboard.setStringAsync(message);
+        } catch (e) {
+            console.warn('Clipboard copy failed', e);
         }
 
-        Alert.alert('WhatsApp no disponible', 'Por favor instala WhatsApp para usar esta función.');
+        const waApp = `whatsapp://send?text=${encoded}`;
+        const waWeb = `https://api.whatsapp.com/send?text=${encoded}`;
+
+        try {
+            const canOpenApp = await Linking.canOpenURL(waApp);
+            if (canOpenApp) {
+                await Linking.openURL(waApp);
+                return;
+            }
+        } catch {
+            /* app scheme not available */
+        }
+
+        try {
+            await Linking.openURL(waWeb);
+        } catch {
+            Alert.alert(
+                'WhatsApp no disponible',
+                'El mensaje quedó copiado en tu portapapeles. Abre WhatsApp y pégalo en los chats que necesites.'
+            );
+        }
     };
 
     const handleInterpreterEmergencyCall = async () => {
@@ -370,7 +387,7 @@ export function SOSScreen({
                         <Text style={[styles.statusTitle, { color: isDark ? '#93C5FD' : '#1E40AF' }]}>¿Cómo funciona?</Text>
                     </View>
                     <Text style={[styles.statusText, { color: isDark ? '#93C5FD' : '#3B82F6' }]}>
-                        1. Presiona una opción para llamar al 123.
+                        1. Elige el tipo: cada botón marca su línea (Policía 112, Bomberos 119, Ambulancia 125, otras 123).
                     </Text>
                     <Text style={[styles.statusText, { color: isDark ? '#93C5FD' : '#3B82F6' }]}>
                         2. Activa el altavoz de tu teléfono.
@@ -421,9 +438,12 @@ export function SOSScreen({
                                     >
                                         <MessageCircle size={24} color="white" />
                                         <Text style={styles.playButtonText}>
-                                            ENVIAR WHATSAPP
+                                            WHATSAPP
                                         </Text>
                                     </TouchableOpacity>
+                                    <Text style={[styles.activeHint, { color: colors.textMuted, marginTop: 10, fontSize: 12, lineHeight: 17 }]}>
+                                        Se abre WhatsApp para que elijas el contacto o grupo. El mensaje también se copia: después de enviar, puedes pegarlo en otros chats.
+                                    </Text>
                                 </>
                             )}
                         </View>
@@ -451,6 +471,7 @@ export function SOSScreen({
                                 <item.icon size={32} color={item.color} />
                             </View>
                             <Text style={[styles.gridLabel, { color: colors.text }]}>{item.label}</Text>
+                            <Text style={[styles.gridPhone, { color: colors.textMuted }]}>Línea {item.phone}</Text>
                         </TouchableOpacity>
                     ))}
                 </View>

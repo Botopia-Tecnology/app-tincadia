@@ -327,14 +327,14 @@ export function AddContactModal({
                             />
                         </View>
 
-                        {/* Alias */}
+                        {/* Apodo (nombre con el que aparecerá en chats) */}
                         <View style={[styles.inputContainer, { backgroundColor: isDark ? colors.inputBg : '#FAFAFA', borderColor: colors.border }]}>
-                            <Text style={[styles.floatingLabel, { color: colors.textSecondary }]}>Alias</Text>
+                            <Text style={[styles.floatingLabel, { color: colors.textSecondary }]}>Apodo</Text>
                             <TextInput
                                 style={[styles.input, { color: colors.text }]}
                                 value={alias}
                                 onChangeText={setAlias}
-                                placeholder="Ej: Trabajo, Familia..."
+                                placeholder="Ej. mamá, papá, hermano…"
                                 placeholderTextColor={colors.textMuted}
                             />
                         </View>

@@ -131,7 +131,11 @@ export const MessageList = ({
             isRead={item.status === 'read' && readReceiptsEnabled !== false}
             type={(item.type as "image" | "video" | "call_ended" | "call" | "text" | "audio") || 'text'}
             replyToContent={item.replyToContent}
-            replyToSender={item.replyToSender}
+            replyToSender={
+              item.replyToSender
+                ? ((item.metadata?.replyToSenderId as string) === userId ? 'Tú' : item.replyToSender)
+                : undefined
+            }
             publicId={item.metadata?.publicId}
             duration={item.metadata?.duration}
             senderName={isGroup && !isMe ? item.senderName : undefined}

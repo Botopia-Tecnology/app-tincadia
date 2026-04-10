@@ -152,16 +152,32 @@ function AppContent() {
   const handleAcceptCall = async () => {
     if (!incomingCall || !user) return;
     if (user.role === 'interpreter') await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
-    setCallParams({
+
+    const newParams = {
       roomName: incomingCall.roomName || `conv_${incomingCall.conversationId}`,
       username: user.role === 'interpreter' 
         ? `Intérprete: ${user.firstName || user.email?.split('@')[0] || 'Usuario'}`
         : (user.firstName || user.email?.split('@')[0] || 'Usuario'),
       conversationId: incomingCall.conversationId,
       userId: user.id
-    });
-    setIncomingCall(null);
-    setScreenStack(prev => [...prev, 'call']);
+    };
+
+    // If already in a call, unmount the current CallScreen first so LiveKit
+    // disconnects cleanly before connecting to the new room.
+    if (callParams) {
+      setCallParams(null);
+      setIncomingCall(null);
+      setTimeout(() => {
+        setCallParams(newParams);
+        setScreenStack(prev =>
+          prev[prev.length - 1] === 'call' ? prev : [...prev, 'call']
+        );
+      }, 300);
+    } else {
+      setCallParams(newParams);
+      setIncomingCall(null);
+      setScreenStack(prev => [...prev, 'call']);
+    }
   };
 
   const handleDeclineCall = async () => {

@@ -39,7 +39,7 @@
     "android": {
       "package": "com.tincadia.app",
       "usesCleartextTraffic": true,
-      "versionCode": 8,
+      "versionCode": 9,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

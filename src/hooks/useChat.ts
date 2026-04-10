@@ -330,10 +330,19 @@ export function useChat(
                         syncFromServer();
                     } else if (payload.eventType === 'UPDATE') {
                         const msg = payload.new as { read_at?: string; sender_id: string; id: string };
-
-                        // If it's a message edit (content or updated_at changed)
                         const updatedMsg = payload.new as any;
-                        if (updatedMsg.content || updatedMsg.updated_at) {
+
+                        // Skip own edits/deletes — already handled optimistically
+                        if (msg.sender_id === userId) {
+                            if (updatedMsg.read_at) {
+                                // read receipt from the other side, still update locally
+                                const existing = getLocalMessages(conversationId).find(m => m.id === msg.id || m.serverId === msg.id);
+                                if (existing && existing.status !== 'read') {
+                                    saveMessage({ ...existing, readAt: updatedMsg.read_at, status: 'read' as MessageStatus });
+                                    loadLocalMessages();
+                                }
+                            }
+                        } else if (updatedMsg.content || updatedMsg.updated_at) {
                             console.log(`✏️ Message ${updatedMsg.id} updated via DB, updating UI`);
                             const existing = getLocalMessages(conversationId).find(m => m.id === updatedMsg.id || m.serverId === updatedMsg.id);
                             if (existing) {
@@ -344,12 +353,9 @@ export function useChat(
                                     status: (updatedMsg.read_at) ? 'read' : (existing.status as MessageStatus),
                                 });
                                 loadLocalMessages();
+                            } else {
+                                syncFromServer();
                             }
-                        }
-
-                        // Also sync as safety if needed
-                        if (msg.sender_id !== userId && !updatedMsg.content) {
-                            syncFromServer();
                         }
                     } else if (payload.eventType === 'DELETE') {
                         console.log('🗑️ Message deleted, removing local copy');
@@ -432,6 +438,47 @@ export function useChat(
                         if (changed) {
                             loadLocalMessages();
                         }
+                    }
+                }
+            )
+            .on(
+                'broadcast',
+                { event: 'message_deleted' },
+                (payload) => {
+                    const { messageId, deletedAt } = payload.payload as { messageId: string; deletedAt: string };
+                    if (!messageId) return;
+                    console.log('🗑️ Broadcast [message_deleted] received:', messageId);
+
+                    const rows = getLocalMessages(conversationId);
+                    const target = rows.find(m => m.id === messageId || m.serverId === messageId);
+                    if (target) {
+                        saveMessage({
+                            ...target,
+                            content: 'Mensaje eliminado',
+                            updatedAt: deletedAt || new Date().toISOString(),
+                            deletedAt: deletedAt || new Date().toISOString(),
+                        });
+                        loadLocalMessages();
+                    }
+                }
+            )
+            .on(
+                'broadcast',
+                { event: 'message_updated' },
+                (payload) => {
+                    const { messageId, content, updatedAt } = payload.payload as { messageId: string; content: string; updatedAt: string };
+                    if (!messageId) return;
+                    console.log('✏️ Broadcast [message_updated] received:', messageId);
+
+                    const rows = getLocalMessages(conversationId);
+                    const target = rows.find(m => m.id === messageId || m.serverId === messageId);
+                    if (target) {
+                        saveMessage({
+                            ...target,
+                            content: content || target.content,
+                            updatedAt: updatedAt || new Date().toISOString(),
+                        });
+                        loadLocalMessages();
                     }
                 }
             )
@@ -620,38 +667,49 @@ export function useChat(
         const existingMsg = messages.find(m => m.id === messageId || m.serverId === messageId);
         if (!existingMsg) return;
 
-        // Optimistic UI Update: Update current state
+        const originalContent = existingMsg.content;
         const localNow = new Date().toISOString();
+
+        // Optimistic: update React state AND SQLite immediately
         setMessages(prev => prev.map(m => 
             (m.id === messageId || m.serverId === messageId) ? { ...m, content, updatedAt: localNow } : m
         ));
+        saveMessage({
+            ...existingMsg,
+            content,
+            updatedAt: localNow,
+            status: existingMsg.status as MessageStatus,
+        });
 
         try {
             const { message: serverMsg } = await chatService.editMessage(existingMsg.serverId || messageId, content, userId);
+            const sm = serverMsg as ServerMessage;
 
-                const sm = serverMsg as ServerMessage;
-                saveMessage({
-                    ...existingMsg,
-                    content: serverMsg.content,
-                    updatedAt: sm.updated_at || sm.updatedAt || localNow,
-                    serverId: serverMsg.id,
+            saveMessage({
+                ...existingMsg,
+                content: serverMsg.content,
+                updatedAt: sm.updated_at || sm.updatedAt || localNow,
+                serverId: serverMsg.id,
+                status: existingMsg.status as MessageStatus,
+            });
+            loadLocalMessages();
+
+            if (channelRef.current && channelRef.current.state === 'joined') {
+                channelRef.current.send({
+                    type: 'broadcast',
+                    event: 'message_updated',
+                    payload: { messageId: serverMsg.id, content: serverMsg.content, updatedAt: sm.updated_at }
                 });
-
-                // Reload to ensure final consistency
-                loadLocalMessages();
-
-                // BroadCast fast path (optional, if we want real-time edits for others)
-                if (channelRef.current && channelRef.current.state === 'joined') {
-                    channelRef.current.send({
-                        type: 'broadcast',
-                        event: 'message_updated', // We can handle this in our realtime listener
-                        payload: { messageId: serverMsg.id, content: serverMsg.content, updatedAt: sm.updated_at }
-                    });
-                }
+            }
         } catch (err) {
             console.error('Error editing message:', err);
             setError('Error al editar mensaje');
-            // If failed, reload local messages to revert UI
+            // Revert optimistic change
+            saveMessage({
+                ...existingMsg,
+                content: originalContent,
+                status: existingMsg.status as MessageStatus,
+            });
             loadLocalMessages();
         }
     }, [messages, loadLocalMessages, userId]);
@@ -662,22 +720,54 @@ export function useChat(
 
         if (!existingMsg) return;
 
-        try {
-            // Soft delete locally first (optimistic)
-            softDeleteMessage(messageId);
-            loadLocalMessages();
+        const originalContent = existingMsg.content;
+        const localNow = new Date().toISOString();
 
-            // Delete on server
+        // Optimistic: update React state immediately (zero delay UI)
+        setMessages(prev => prev.map(m =>
+            (m.id === messageId || m.serverId === messageId)
+                ? { ...m, content: 'Mensaje eliminado', updatedAt: localNow, deletedAt: localNow }
+                : m
+        ));
+
+        // Persist to SQLite in parallel (non-blocking for UI)
+        saveMessage({
+            ...existingMsg,
+            content: 'Mensaje eliminado',
+            updatedAt: localNow,
+            deletedAt: localNow,
+            status: existingMsg.status as MessageStatus,
+        });
+
+        try {
             if (existingMsg.serverId) {
                 await chatService.deleteMessage(existingMsg.serverId, userId);
+
+                if (channelRef.current && channelRef.current.state === 'joined') {
+                    channelRef.current.send({
+                        type: 'broadcast',
+                        event: 'message_deleted',
+                        payload: { messageId: existingMsg.serverId, deletedAt: localNow },
+                    });
+                }
             }
         } catch (err) {
             console.error('Error deleting message:', err);
             setError('Error al eliminar mensaje');
-            // Reload to undo soft delete
-            loadLocalMessages();
+            // Revert optimistic change
+            setMessages(prev => prev.map(m =>
+                (m.id === messageId || m.serverId === messageId)
+                    ? { ...m, content: originalContent, deletedAt: undefined }
+                    : m
+            ));
+            saveMessage({
+                ...existingMsg,
+                content: originalContent,
+                deletedAt: undefined,
+                status: existingMsg.status as MessageStatus,
+            });
         }
-    }, [messages, loadLocalMessages]);
+    }, [messages, userId]);
 
     return {
         messages,

@@ -74,7 +74,7 @@ export function ChatView(props: ChatViewProps) {
   
   // Chat Logic Hook
   const { 
-    messages, sendMessage, editMessage, markMessagesAsRead
+    messages, sendMessage, editMessage, deleteMessage, markMessagesAsRead
   } = useChat(conversationId, userId, { 
     readReceiptsEnabled: currentUser?.readReceiptsEnabled ?? true,
     isGroup,
@@ -127,10 +127,14 @@ export function ChatView(props: ChatViewProps) {
     }
 
     const textToSend = messageText;
+    const myDisplayName = currentUser?.firstName || 'Tú';
     const metadata = replyMessage ? {
       replyToId: replyMessage.id,
       replyToContent: replyMessage.content,
-      replyToSender: replyMessage.senderId === userId ? 'Tú' : otherUserName
+      replyToSender: replyMessage.senderId === userId
+        ? myDisplayName
+        : (isGroup ? replyMessage.senderName || otherUserName : otherUserName),
+      replyToSenderId: replyMessage.senderId,
     } : undefined;
 
     setMessageText('');
@@ -251,12 +255,8 @@ export function ChatView(props: ChatViewProps) {
         {
           text: 'Eliminar',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await chatService.deleteMessage(msg.id, userId);
-            } catch {
-              Alert.alert('Error', 'No se pudo eliminar el mensaje');
-            }
+          onPress: () => {
+            deleteMessage(msg.serverId || msg.id);
           },
         },
       ],

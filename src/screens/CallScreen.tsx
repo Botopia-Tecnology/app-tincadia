@@ -230,29 +230,68 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
     const interpreterTracks = tracks.filter(t => isInterpreter(t.participant.identity));
     const otherTracks = tracks.filter(t => !isInterpreter(t.participant.identity));
 
+    const renderParticipant = (track: typeof tracks[number], width: number, height: number) => (
+        <View key={track.participant.identity} style={[styles.participant, { width, height }]}>
+            {track.publication.isMuted ? (
+                <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
+                    <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
+                </View>
+            ) : (
+                <VideoTrack trackRef={track} style={styles.video} mirror={true} />
+            )}
+            <View style={styles.participantLabel}>
+                <Text style={styles.participantName} numberOfLines={1}>
+                    {track.participant.identity}
+                </Text>
+            </View>
+        </View>
+    );
+
     if (layoutMode === 'grid' || interpreterTracks.length === 0) {
+        const count = tracks.length;
+
+        if (count <= 1) {
+            return (
+                <View style={styles.videoGrid}>
+                    {tracks.map(t => renderParticipant(t, screenWidth, screenHeight))}
+                </View>
+            );
+        }
+
+        if (count === 2) {
+            const halfH = screenHeight / 2;
+            return (
+                <View style={styles.videoGrid}>
+                    {tracks.map(t => renderParticipant(t, screenWidth, halfH))}
+                </View>
+            );
+        }
+
+        if (count === 3) {
+            const halfW = screenWidth / 2;
+            const halfH = screenHeight / 2;
+            return (
+                <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', height: halfH }}>
+                        {renderParticipant(tracks[0], halfW, halfH)}
+                        {renderParticipant(tracks[1], halfW, halfH)}
+                    </View>
+                    <View style={{ height: halfH }}>
+                        {renderParticipant(tracks[2], screenWidth, halfH)}
+                    </View>
+                </View>
+            );
+        }
+
+        // 4+ participants: 2-column grid
+        const cols = 2;
+        const rows = Math.ceil(count / cols);
+        const tileW = screenWidth / cols;
+        const tileH = screenHeight / rows;
+
         return (
             <View style={styles.videoGrid}>
-                {tracks.map((track) => (
-                    <View key={track.participant.identity} style={styles.participant}>
-                        {track.publication.isMuted ? (
-                            <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
-                                <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
-                            </View>
-                        ) : (
-                            <VideoTrack
-                                trackRef={track}
-                                style={styles.video}
-                                mirror={true}
-                            />
-                        )}
-                        <View style={styles.participantLabel}>
-                            <Text style={styles.participantName} numberOfLines={1}>
-                                {track.participant.identity}
-                            </Text>
-                        </View>
-                    </View>
-                ))}
+                {tracks.map(t => renderParticipant(t, tileW, tileH))}
             </View>
         );
     }
@@ -527,10 +566,12 @@ const styles = StyleSheet.create({
     },
     videoGrid: {
         flex: 1,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
     },
     participant: {
-        flex: 1,
         position: 'relative',
+        overflow: 'hidden',
     },
     video: {
         width: '100%',

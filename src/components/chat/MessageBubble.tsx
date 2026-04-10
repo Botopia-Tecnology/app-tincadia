@@ -225,7 +225,7 @@ export function MessageBubble({
         );
     };
 
-    const isDeleted = content === '🚫 Mensaje eliminado' || updatedAt?.includes('deleted'); // Fallback check
+    const isDeleted = content === 'Mensaje eliminado' || content === '🚫 Mensaje eliminado' || updatedAt?.includes('deleted');
     const isEdited = !isDeleted && updatedAt && new Date(updatedAt).getTime() > new Date(time).getTime() + 1000; // 1s buffer
 
     const renderMedia = () => {
@@ -329,9 +329,9 @@ export function MessageBubble({
         </Modal>
     );
 
-    // Render reply quote if present
+    // Render reply quote if present (hide for deleted messages)
     const renderReplyQuote = () => {
-        if (!replyToContent || !replyToSender) return null;
+        if (!replyToContent || !replyToSender || isDeleted) return null;
         return (
             <View style={{
                 backgroundColor: isMine ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.08)',
@@ -373,27 +373,38 @@ export function MessageBubble({
                     <Text style={{ fontSize: 12, fontWeight: 'bold', color: senderColor, marginBottom: 2 }}>{senderName}</Text>
                 )}
                 {renderReplyQuote()}
-                    <Autolink
-                        text={content}
-                        email={!isDeleted}
-                        url={!isDeleted}
-                        stripPrefix={false}
-                        selectable={!isDeleted}
-                        linkStyle={{ textDecorationLine: 'underline', color: isMine ? 'white' : '#4F46E5', fontWeight: 'bold' }}
-                        style={[
-                            styles.content, 
-                            isMine ? styles.contentMine : styles.contentOther,
-                            isDeleted && { fontStyle: 'italic', opacity: 0.6 }
-                        ]}
-                    />
+                    {isDeleted ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Ionicons name="close-circle-outline" size={15} color={isMine ? 'rgba(255,255,255,0.5)' : '#999'} />
+                            <Text style={[
+                                styles.content,
+                                isMine ? styles.contentMine : styles.contentOther,
+                                { fontStyle: 'italic', opacity: 0.6 }
+                            ]}>
+                                Mensaje eliminado
+                            </Text>
+                        </View>
+                    ) : (
+                        <Autolink
+                            text={content}
+                            email
+                            url
+                            stripPrefix={false}
+                            selectable
+                            linkStyle={{ textDecorationLine: 'underline', color: isMine ? 'white' : '#4F46E5', fontWeight: 'bold' }}
+                            style={[styles.content, isMine ? styles.contentMine : styles.contentOther]}
+                        />
+                    )}
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                        <TouchableOpacity 
-                            onPress={handleSpeak} 
-                            style={[{ padding: 4 }, (isSpeaking || isDeleted) && { opacity: 0.3 }]}
-                            disabled={isSpeaking || isDeleted}
-                        >
-                            <Ionicons name={isSpeaking ? "volume-high" : "volume-medium-outline"} size={16} color={isMine ? 'rgba(255,255,255,0.7)' : '#4F46E5'} />
-                        </TouchableOpacity>
+                        {!isDeleted ? (
+                            <TouchableOpacity 
+                                onPress={handleSpeak} 
+                                style={[{ padding: 4 }, isSpeaking && { opacity: 0.3 }]}
+                                disabled={isSpeaking}
+                            >
+                                <Ionicons name={isSpeaking ? "volume-high" : "volume-medium-outline"} size={16} color={isMine ? 'rgba(255,255,255,0.7)' : '#4F46E5'} />
+                            </TouchableOpacity>
+                        ) : <View />}
                         <View style={styles.footer}>
                             {isEdited && (
                                 <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther, { marginRight: 4, fontStyle: 'italic' }]}>

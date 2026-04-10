@@ -435,20 +435,20 @@ export function ContactProfileScreen({
                         </View>
                     </View>
 
-                    {/* Alias */}
+                    {/* Apodo */}
                     <View style={[styles.field, { borderBottomColor: colors.border }]}>
-                        <Text style={styles.fieldLabel}>Alias / Apodo</Text>
+                        <Text style={styles.fieldLabel}>Apodo</Text>
                         {isEditing || !isContact ? (
                             <TextInput
                                 style={[styles.input, themeStyles.input]}
                                 value={alias}
                                 onChangeText={setAlias}
-                                placeholder="Ej: Mamá, Trabajo, etc."
+                                placeholder="Ej. mamá, papá, hermano…"
                                 placeholderTextColor={colors.textMuted}
                             />
                         ) : (
                             <Text style={[alias ? styles.fieldValue : styles.fieldValueEmpty, themeStyles.text]}>
-                                {alias || 'Sin alias'}
+                                {alias || 'Sin apodo'}
                             </Text>
                         )}
                     </View>

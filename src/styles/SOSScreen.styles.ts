@@ -115,6 +115,13 @@ export const sosScreenStyles = StyleSheet.create({
         color: '#374151',
         textAlign: 'center',
     },
+    gridPhone: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#6B7280',
+        textAlign: 'center',
+        marginTop: 4,
+    },
     activeStateCard: {
         backgroundColor: '#FFFFFF',
         borderRadius: 20,
