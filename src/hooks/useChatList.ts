@@ -20,6 +20,27 @@ import {
   deleteConversation as localDeleteConversation,
 } from '../database/chatDatabase';
 
+/** Realtime/API payloads may use snake_case or camelCase; UUIDs may differ in casing. */
+function isSameUserId(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (a == null || b == null) return false;
+  return String(a).toLowerCase() === String(b).toLowerCase();
+}
+
+function parseMessageRowMetadata(row: Record<string, unknown>): Record<string, unknown> | null {
+  const raw = row.metadata;
+  if (raw == null) return null;
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export interface ChatListItem {
   id: string;
   type: 'contact' | 'unknown' | 'synced' | 'group';
@@ -55,6 +76,9 @@ export const useChatList = (userId: string) => {
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   const SYNCED_CONTACTS_KEY = `@synced_contacts_${userId}`; // Only used for cleanup of legacy storage
+
+  // Deduplication for real-time messages
+  const recentMessageIdsRef = useRef<Set<string>>(new Set());
 
   // Transform helper
   const transformToItems = useCallback((
@@ -412,18 +436,37 @@ export const useChatList = (userId: string) => {
       .channel('messages-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          const newMsg = payload.new as { sender_id: string; conversation_id: string; type: string; created_at: string };
-          const isMine = newMsg.sender_id === userId;
-          const isCallRelated = newMsg.type === 'call' || newMsg.type === 'call_ended' || newMsg.type === 'call_rejected';
+          const row = payload.new as Record<string, unknown>;
+          const msgId = row.id as string;
+          const senderRaw = row.sender_id ?? row.senderId;
+          const convId = row.conversation_id ?? row.conversationId;
+          const msgType = String(row.type ?? '');
+          const createdAt = String(row.created_at ?? row.createdAt ?? '');
+          const isMine = isSameUserId(senderRaw != null ? String(senderRaw) : undefined, userId);
+          const isCallRelated =
+            msgType === 'call' || msgType === 'call_ended' || msgType === 'call_rejected';
 
-          if (newMsg.conversation_id && (!isMine || isCallRelated)) {
-            const previewContent = getMessagePreview(newMsg.type);
-            const updated = updateConversationPreview(newMsg.conversation_id, previewContent, newMsg.created_at, !isMine);
-            if (updated) {
-              loadFromLocalCache();
-            } else {
-              // Conversation not in local DB yet (first message) — need a server sync
-              syncFromServer(false);
+          if (typeof convId === 'string' && convId) {
+            // Deduplication: if we already processed this message via broadcast or previous event, skip
+            if (msgId && recentMessageIdsRef.current.has(msgId)) {
+                return;
+            }
+            if (msgId) {
+                recentMessageIdsRef.current.add(msgId);
+                setTimeout(() => recentMessageIdsRef.current.delete(msgId), 10000);
+            }
+
+            if (!isMine || isCallRelated) {
+                const meta = parseMessageRowMetadata(row);
+                const previewContent =
+                  meta?.isSystem === true ? 'Actividad en el grupo' : getMessagePreview(msgType);
+                const incrementUnread = !isMine && meta?.isSystem !== true;
+                const updated = updateConversationPreview(convId, previewContent, createdAt, incrementUnread);
+                if (updated) {
+                  loadFromLocalCache();
+                } else {
+                  syncFromServer(false);
+                }
             }
           }
         } else if (payload.eventType === 'UPDATE') {
@@ -448,15 +491,29 @@ export const useChatList = (userId: string) => {
 
     const userChannel = supabase.channel(`user:${userId}`)
       .on('broadcast', { event: 'new_message' }, (payload) => {
-        const newMsg = payload.payload as { conversationId: string; content: string; createdAt: string; senderId?: string; sender_id?: string };
-        if (newMsg) {
-          const msgSenderId = newMsg.senderId || newMsg.sender_id;
-          const isMine = msgSenderId === userId;
-          const updated = updateConversationPreview(newMsg.conversationId, newMsg.content, newMsg.createdAt, !isMine);
-          if (updated) {
-            loadFromLocalCache();
-          } else {
-            syncFromServer(false);
+        const sm = payload.payload as { id?: string; conversationId: string; content: string; createdAt: string; senderId?: string; sender_id?: string; type?: string };
+        if (sm) {
+          const msgId = sm.id;
+          const msgSenderId = sm.senderId ?? sm.sender_id;
+          const isMine = isSameUserId(msgSenderId, userId);
+
+          // Deduplication
+          if (msgId && recentMessageIdsRef.current.has(msgId)) {
+              return;
+          }
+          if (msgId) {
+              recentMessageIdsRef.current.add(msgId);
+              setTimeout(() => recentMessageIdsRef.current.delete(msgId), 10000);
+          }
+
+          if (!isMine) {
+              const previewContent = getMessagePreview(sm.type || 'text');
+              const updated = updateConversationPreview(sm.conversationId, previewContent, sm.createdAt, true);
+              if (updated) {
+                loadFromLocalCache();
+              } else {
+                syncFromServer(false);
+              }
           }
         }
       })

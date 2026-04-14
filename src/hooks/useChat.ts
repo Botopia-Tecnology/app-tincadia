@@ -27,6 +27,12 @@ import { MessageMetadata } from '../types/chat.types';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
+/** Realtime/API payloads may use snake_case or camelCase; UUIDs may differ in casing. */
+function isSameUserId(a: string | null | undefined, b: string | null | undefined): boolean {
+    if (a == null || b == null) return false;
+    return String(a).toLowerCase() === String(b).toLowerCase();
+}
+
 export interface Message {
     id: string;
     serverId?: string;
@@ -190,7 +196,7 @@ export function useChat(
                 const msgUpdatedAt = m.updatedAt || m.updated_at;
                 const msgReadAt = m.readAt || m.read_at;
                 const msgDeletedAt = m.deletedAt || m.deleted_at;
-                const isMine = msgSenderId === userId;
+                const isMine = isSameUserId(msgSenderId, userId);
 
                 // Determine status based on server data
                 let status: MessageStatus = 'sent';
@@ -331,10 +337,11 @@ export function useChat(
                         const rawMsg = payload.new as Record<string, unknown>;
                         const msgId = rawMsg.id as string;
                         const msgSenderId = rawMsg.sender_id as string;
+                        const isMine = isSameUserId(msgSenderId, userId);
 
                         // Si el sender soy yo, el optimistic update ya lo manejó correctamente.
                         // No guardar como isMine:false por ningún motivo.
-                        if (msgSenderId === userId) {
+                        if (isMine) {
                             // Solo limpiar el broadcast ref si existía
                             recentBroadcastIdsRef.current.delete(msgId);
                             return;
