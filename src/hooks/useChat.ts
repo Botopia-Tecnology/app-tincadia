@@ -236,9 +236,9 @@ export function useChat(
                       readAt: msgReadAt,
                       deletedAt: msgDeletedAt,
                       isMine: resolvedIsMine,
-                      replyToId: m.replyToId || m.reply_to_id || msg.metadata?.replyToId,
-                      replyToContent: m.replyToContent || m.reply_to_content || msg.metadata?.replyToContent,
-                      replyToSender: m.replyToSender || m.reply_to_sender || msg.metadata?.replyToSender,
+                      replyToId: (m.replyToId || m.reply_to_id || msg.metadata?.replyToId) as string | undefined,
+                      replyToContent: (m.replyToContent || m.reply_to_content || msg.metadata?.replyToContent) as string | undefined,
+                      replyToSender: (m.replyToSender || m.reply_to_sender || msg.metadata?.replyToSender) as string | undefined,
                       metadata: metaForSave,
                   });
                 }
