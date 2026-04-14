@@ -418,12 +418,17 @@ export const useChatList = (userId: string) => {
 
           if (newMsg.conversation_id && (!isMine || isCallRelated)) {
             const previewContent = getMessagePreview(newMsg.type);
-            updateConversationPreview(newMsg.conversation_id, previewContent, newMsg.created_at, !isMine);
-            loadFromLocalCache();
+            const updated = updateConversationPreview(newMsg.conversation_id, previewContent, newMsg.created_at, !isMine);
+            if (updated) {
+              loadFromLocalCache();
+            } else {
+              // Conversation not in local DB yet (first message) — need a server sync
+              syncFromServer(false);
+            }
           }
-          syncFromServer(false, true);
         } else if (payload.eventType === 'UPDATE') {
-          syncFromServer(false, true);
+          // Reload local cache to pick up read receipts / status changes
+          loadFromLocalCache();
         }
       })
       .subscribe();
@@ -443,11 +448,16 @@ export const useChatList = (userId: string) => {
 
     const userChannel = supabase.channel(`user:${userId}`)
       .on('broadcast', { event: 'new_message' }, (payload) => {
-        const newMsg = payload.payload as { conversationId: string; content: string; createdAt: string };
+        const newMsg = payload.payload as { conversationId: string; content: string; createdAt: string; senderId?: string; sender_id?: string };
         if (newMsg) {
-          updateConversationPreview(newMsg.conversationId, newMsg.content, newMsg.createdAt, true);
-          loadFromLocalCache();
-          syncFromServer(false, true);
+          const msgSenderId = newMsg.senderId || newMsg.sender_id;
+          const isMine = msgSenderId === userId;
+          const updated = updateConversationPreview(newMsg.conversationId, newMsg.content, newMsg.createdAt, !isMine);
+          if (updated) {
+            loadFromLocalCache();
+          } else {
+            syncFromServer(false);
+          }
         }
       })
       .subscribe();

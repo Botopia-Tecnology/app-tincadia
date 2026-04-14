@@ -107,30 +107,64 @@ export function SOSScreen({
             let { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') return;
 
-            let loc = await Location.getCurrentPositionAsync({});
+            let loc = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Highest,
+            });
             setLocation(loc);
 
+            const lat = loc.coords.latitude;
+            const lon = loc.coords.longitude;
+
+            // 1. Intentar con Expo (nativo)
+            let resolved = false;
             try {
-                let reverseGeocode = await Location.reverseGeocodeAsync({
-                    latitude: loc.coords.latitude,
-                    longitude: loc.coords.longitude
-                });
+                let reverseGeocode = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
                 if (reverseGeocode.length > 0) {
                     const addr = reverseGeocode[0];
-                    // Construir dirección con múltiples fallbacks para cubrir
-                    // casos donde street/streetNumber son null (común en Colombia)
                     const parts = [
                         addr.street
                             ? `${addr.street}${addr.streetNumber ? ' ' + addr.streetNumber : ''}`
                             : (addr.district || addr.name || null),
                         addr.city || addr.subregion || addr.region || null,
                     ].filter(Boolean);
-                    if (parts.length > 0) {
+                    if (parts.length > 0 && parts.some(p => (p as string).trim().length > 0)) {
                         setAddress(parts.join(', '));
+                        resolved = true;
                     }
                 }
             } catch (e) {
-                console.log("Reverse geocode failed", e);
+                console.log("Expo reverse geocode failed", e);
+            }
+
+            // 2. Fallback: Nominatim (OpenStreetMap) — gratis, sin API key
+            if (!resolved) {
+                try {
+                    const resp = await fetch(
+                        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1&accept-language=es`,
+                        { headers: { 'User-Agent': 'TincadiaApp/1.0' } }
+                    );
+                    const data = await resp.json();
+                    if (data?.address) {
+                        const a = data.address;
+                        const parts = [
+                            a.road || a.pedestrian || a.neighbourhood || null,
+                            a.house_number || null,
+                            a.suburb || a.city_district || null,
+                            a.city || a.town || a.village || a.state || null,
+                        ].filter(Boolean);
+                        if (parts.length > 0) {
+                            setAddress(parts.join(', '));
+                            resolved = true;
+                        }
+                    }
+                } catch (e) {
+                    console.log("Nominatim reverse geocode failed", e);
+                }
+            }
+
+            // 3. Último fallback: coordenadas legibles
+            if (!resolved) {
+                setAddress(`${lat.toFixed(5)}, ${lon.toFixed(5)}`);
             }
         })();
     }, []);
