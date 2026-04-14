@@ -106,21 +106,6 @@
             font-size: 14px;
         }
 
-        .progress-bar {
-            height: 4px;
-            background: rgba(255, 255, 255, 0.2);
-            margin-top: 10px;
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: #22C55E;
-            width: 0%;
-            transition: width 0.1s linear;
-        }
-
         #error-msg {
             color: #EF4444;
             text-align: center;
@@ -147,9 +132,6 @@
         <div id="prediction-container" class="prediction-box" style="display: none;">
             <div class="word" id="prediction-word"></div>
             <div class="confidence" id="prediction-conf"></div>
-            <div class="progress-bar">
-                <div class="progress-fill" id="prediction-timer"></div>
-            </div>
         </div>
     </div>
 
@@ -160,17 +142,13 @@
         const predictionContainer = document.getElementById('prediction-container');
         const predictionWord = document.getElementById('prediction-word');
         const predictionConf = document.getElementById('prediction-conf');
-        const predictionTimer = document.getElementById('prediction-timer');
         const errorMsg = document.getElementById('error-msg');
 
         let socket;
         let holistic;
         let camera;
         let lastPrediction = null;
-        let timerInterval;
-        let autoConfirmTimeout;
-        const AUTO_CONFIRM_DELAY = 1500; // 1.5 seconds for faster response
-        let isConfirming = false;
+        let isConfirmed = false;
 
         // --- Communication with React Native ---
         function sendToRN(type, payload) {
@@ -227,74 +205,44 @@
         }
 
         // --- Prediction Handling ---
-        // --- Prediction Handling ---
         function handlePrediction(data) {
             // Debug output
             const debugEl = document.getElementById('debug-info');
             if (debugEl) debugEl.innerText = `Last: ${JSON.stringify(data)}`;
 
             // data: { word: string | null, confidence: number, status: string }
-            // Lowered threshold to 0.5 for easier testing
             if (data.word && data.confidence > 0.4) {
+                // If we already confirmed a word, don't show new ones until reset
+                if (isConfirmed) return;
+
                 // Determine display word
                 const displayWord = data.word.replace('Letra_', '');
 
                 // Show UI
                 predictionContainer.style.display = 'block';
                 predictionWord.innerText = displayWord;
-                predictionConf.innerText = `${Math.round(data.confidence * 100)}% de confianza`;
-
-                // Only start timer if it's a new steady word or we aren't already confirming
-                if (lastPrediction !== displayWord && !isConfirming) {
-                    startAutoConfirmTimer(displayWord);
-                }
-
+                predictionConf.innerText = `${Math.round(data.confidence * 100)}% de confianza (Toca para confirmar)`;
+                
                 lastPrediction = displayWord;
             } else {
-                // If confidence drops or word is null
-                // Only hide if we are NOT currently in the middle of a confirming countdown
-                // This prevents flickering if one frame is bad
-                if (!isConfirming) {
-                    // predictionContainer.style.display = 'none'; // Optional: keep last prediction visible for a bit?
-                }
+                // Keep the box visible if we have a lastPrediction, so the user can click it
+                // but maybe lower the opacity or show it's "fading" if needed.
+                // For now, let's keep it simple.
             }
         }
 
-        function startAutoConfirmTimer(word) {
-            clearTimer();
-            isConfirming = true;
-            predictionContainer.classList.add('active');
-
-            let progress = 0;
-            const step = 100 / (AUTO_CONFIRM_DELAY / 100);
-
-            timerInterval = setInterval(() => {
-                progress += step;
-                predictionTimer.style.width = `${Math.min(progress, 100)}%`;
-
-                if (progress >= 100) {
-                    confirmWord(word);
-                }
-            }, 100);
-        }
-
-        function clearTimer() {
-            clearInterval(timerInterval);
-            predictionTimer.style.width = '0%';
-            predictionContainer.classList.remove('active');
-            isConfirming = false;
-        }
-
         function confirmWord(word) {
-            clearTimer();
+            if (isConfirmed) return;
+            isConfirmed = true;
+
             sendToRN('confirmed', word);
 
             // Visual feedback
+            predictionContainer.classList.add('active');
             predictionWord.innerText = `✅ ${word}`;
+            predictionConf.innerText = 'Confirmado';
 
             // Send confirmation to backend
-            // Use API_URL (variable injected or from params) directly since socket connects to root
-            // Ensure no double slashes
             const urlParams = new URLSearchParams(window.location.search);
             const apiUrl = urlParams.get('apiUrl') || 'http://localhost:3001';
 
@@ -307,10 +255,12 @@
                 })
             }).catch(console.error);
 
-            // Reset after delay
+            // Reset after delay to allow next word
             setTimeout(() => {
                 predictionContainer.style.display = 'none';
+                predictionContainer.classList.remove('active');
                 lastPrediction = null;
+                isConfirmed = false;
                 // Tell backend to reset buffer
                 if (socket) socket.emit('reset');
             }, 1500);
@@ -318,7 +268,7 @@
 
         // Manual click confirmation
         predictionContainer.addEventListener('click', () => {
-            if (lastPrediction) {
+            if (lastPrediction && !isConfirmed) {
                 confirmWord(lastPrediction);
             }
         });
