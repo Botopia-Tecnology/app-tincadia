@@ -117,7 +117,17 @@ export function SOSScreen({
                 });
                 if (reverseGeocode.length > 0) {
                     const addr = reverseGeocode[0];
-                    setAddress(`${addr.street || ''} ${addr.streetNumber || ''}, ${addr.city || ''}`);
+                    // Construir dirección con múltiples fallbacks para cubrir
+                    // casos donde street/streetNumber son null (común en Colombia)
+                    const parts = [
+                        addr.street
+                            ? `${addr.street}${addr.streetNumber ? ' ' + addr.streetNumber : ''}`
+                            : (addr.district || addr.name || null),
+                        addr.city || addr.subregion || addr.region || null,
+                    ].filter(Boolean);
+                    if (parts.length > 0) {
+                        setAddress(parts.join(', '));
+                    }
                 }
             } catch (e) {
                 console.log("Reverse geocode failed", e);

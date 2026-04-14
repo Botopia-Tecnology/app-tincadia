@@ -100,6 +100,7 @@ export function useChat(
     const isSyncingRef = useRef(false);
     const channelRef = useRef<RealtimeChannel | null>(null);
     const senderNameMapRef = useRef<Map<string, string>>(new Map());
+    const recentBroadcastIdsRef = useRef<Set<string>>(new Set());
 
     // Transform LocalMessage to UI Message
     const transformMessage = useCallback((m: LocalMessage): Message => ({
@@ -202,6 +203,25 @@ export function useChat(
 
                 // Save to local DB
                 if (msgConversationId && msgSenderId) {
+                  const existing = getLocalMessages(conversationId).find(
+                      (row) => row.id === msg.id || row.serverId === msg.id
+                  );
+                  // Server often bumps updated_at when only read_at changes (DB trigger).
+                  // Same body → keep local updatedAt so "(editado)" does not show falsely.
+                  let updatedAtForSave = msgUpdatedAt;
+                  if (existing && existing.content === msg.content) {
+                      updatedAtForSave = existing.updatedAt || msgCreatedAt || msgUpdatedAt;
+                  }
+
+                  let metaForSave = (msg.metadata || existing?.metadata) as MessageMetadata | undefined;
+                  if (existing && existing.content !== msg.content) {
+                      metaForSave = { ...(metaForSave || {}), wasEdited: true };
+                  }
+
+                  // Si el mensaje ya existe localmente como propio, preservar isMine:true
+                  // para evitar el race-condition donde el sync lo sobrescribe como ajeno
+                  const resolvedIsMine = existing?.isMine === true ? true : isMine;
+
                   saveMessage({
                       id: msg.id,
                       serverId: msg.id,
@@ -212,16 +232,14 @@ export function useChat(
                       type: msg.type || 'text',
                       status,
                       createdAt: msgCreatedAt || new Date().toISOString(),
-                      updatedAt: msgUpdatedAt,
+                      updatedAt: updatedAtForSave,
                       readAt: msgReadAt,
                       deletedAt: msgDeletedAt,
-                      isMine,
-                      // Reply metadata from server
+                      isMine: resolvedIsMine,
                       replyToId: m.replyToId || m.reply_to_id || msg.metadata?.replyToId,
                       replyToContent: m.replyToContent || m.reply_to_content || msg.metadata?.replyToContent,
                       replyToSender: m.replyToSender || m.reply_to_sender || msg.metadata?.replyToSender,
-                      // Metadata (duration, publicId, etc.)
-                      metadata: msg.metadata as MessageMetadata,
+                      metadata: metaForSave,
                   });
                 }
             });
@@ -261,38 +279,26 @@ export function useChat(
         return () => sub.remove();
     }, [conversationId, loadLocalMessages]);
 
-    // Mark messages as read when user enters the chat
+    // Mark messages as read: local + broadcast instant, API call direct
     const markMessagesAsRead = useCallback(async () => {
-        // ✅ UPDATE LOCAL CACHE IMMEDIATELY (OPTIMISTIC)
-        // This ensures the badge disappears even if user exits before API completes
+        // 1. Local cache: badge disappears immediately
         markConversationAsRead(conversationId);
-        console.log('✓ Local conversation cache updated (unreadCount = 0) - OPTIMISTIC');
+        DeviceEventEmitter.emit('conversations_updated');
 
-        if (options?.readReceiptsEnabled === false) {
-            console.log('🚫 Read receipts disabled, skipping network sync');
-            return;
+        if (options?.readReceiptsEnabled === false) return;
+
+        // 2. Broadcast: sender sees blue ticks instantly
+        if (channelRef.current && channelRef.current.state === 'joined') {
+            channelRef.current.send({
+                type: 'broadcast',
+                event: 'message_read',
+                payload: { conversationId, readerId: userId, timestamp: new Date().toISOString() },
+            }).catch(() => {});
         }
 
-        // --- 1. BROADCAST FAST PATH (Optimistic) ---
-        // We send this BEFORE the API call for zero-latency feedback to the sender.
-        if (channelRef.current) {
-            const state = channelRef.current.state;
-            if (state === 'joined') {
-                channelRef.current.send({
-                    type: 'broadcast',
-                    event: 'message_read',
-                    payload: { conversationId, readerId: userId, timestamp: new Date().toISOString() },
-                }).then((resp) => {
-                    console.log('🚀 Optimistic ACK Sent Status:', resp);
-                });
-            } else {
-                console.warn('⚠️ Channel not joined, skipping optimistic ACK');
-            }
-        }
-
+        // 3. API call: sync server state
         try {
             await chatService.markAsRead(conversationId, userId);
-            console.log('✓ Messages marked as read (API confirmed)');
         } catch (err) {
             console.error('Error marking messages as read:', err);
         }
@@ -322,12 +328,44 @@ export function useChat(
                     console.log(`⚡ Real-time event [${payload.eventType}] for msg: ${newId || oldId}`);
 
                     if (payload.eventType === 'INSERT') {
-                        const msg = payload.new as { sender_id: string };
-                        if (msg.sender_id !== userId) {
-                            console.log('📥 Incoming message via DB insert, syncing for decryption...');
+                        const rawMsg = payload.new as Record<string, unknown>;
+                        const msgId = rawMsg.id as string;
+                        const msgSenderId = rawMsg.sender_id as string;
+
+                        // Si el sender soy yo, el optimistic update ya lo manejó correctamente.
+                        // No guardar como isMine:false por ningún motivo.
+                        if (msgSenderId === userId) {
+                            // Solo limpiar el broadcast ref si existía
+                            recentBroadcastIdsRef.current.delete(msgId);
+                            return;
                         }
-                        // Sync to get decrypted content (and any status updates)
-                        syncFromServer();
+
+                        // If broadcast already handled this message, skip entirely
+                        if (recentBroadcastIdsRef.current.has(msgId)) {
+                            recentBroadcastIdsRef.current.delete(msgId);
+                        } else {
+                            // Save directly from postgres_changes payload for instant UI
+                            const meta = rawMsg.metadata as Record<string, unknown> | undefined;
+                            saveMessage({
+                                id: msgId,
+                                serverId: msgId,
+                                conversationId: (rawMsg.conversation_id as string) || conversationId,
+                                senderId: msgSenderId,
+                                senderName: resolveSenderName(msgSenderId),
+                                content: rawMsg.content as string,
+                                type: (rawMsg.type as string) || 'text',
+                                status: 'delivered',
+                                createdAt: (rawMsg.created_at as string) || new Date().toISOString(),
+                                updatedAt: rawMsg.updated_at as string | undefined,
+                                isMine: false,
+                                replyToId: (rawMsg.reply_to_id || meta?.replyToId) as string | undefined,
+                                replyToContent: (rawMsg.reply_to_content || meta?.replyToContent) as string | undefined,
+                                replyToSender: (rawMsg.reply_to_sender || meta?.replyToSender) as string | undefined,
+                                metadata: meta as MessageMetadata | undefined,
+                            });
+                            loadLocalMessages();
+                            markMessagesAsRead();
+                        }
                     } else if (payload.eventType === 'UPDATE') {
                         const msg = payload.new as { read_at?: string; sender_id: string; id: string };
                         const updatedMsg = payload.new as any;
@@ -346,11 +384,16 @@ export function useChat(
                             console.log(`✏️ Message ${updatedMsg.id} updated via DB, updating UI`);
                             const existing = getLocalMessages(conversationId).find(m => m.id === updatedMsg.id || m.serverId === updatedMsg.id);
                             if (existing) {
+                                const newContent = updatedMsg.content || existing.content;
+                                const contentChanged = newContent !== existing.content;
                                 saveMessage({
                                     ...existing,
-                                    content: updatedMsg.content || existing.content,
+                                    content: newContent,
                                     updatedAt: updatedMsg.updated_at || existing.updatedAt,
                                     status: (updatedMsg.read_at) ? 'read' : (existing.status as MessageStatus),
+                                    metadata: contentChanged
+                                        ? { ...(existing.metadata || {}), wasEdited: true }
+                                        : existing.metadata,
                                 });
                                 loadLocalMessages();
                             } else {
@@ -380,6 +423,10 @@ export function useChat(
                     const msgCreatedAt = sm?.createdAt || sm?.created_at;
 
                     if (sm && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId) {
+                        // Track this ID so the postgres_changes INSERT handler skips redundant work
+                        recentBroadcastIdsRef.current.add(sm.id);
+                        setTimeout(() => { recentBroadcastIdsRef.current.delete(sm.id); }, 10_000);
+
                         // 1. Save locally for instant rendering
                         saveMessage({
                             id: sm.id,
@@ -395,10 +442,8 @@ export function useChat(
                         });
                         loadLocalMessages();
 
-                        // NOTE: We DON'T auto-mark as read here!
-                        // Messages are only marked as read when the user is ACTIVELY in this chat.
-                        // The markMessagesAsRead happens in the main useEffect when user enters.
-                        console.log('✅ Message received via broadcast, NOT auto-marking as read');
+                        // 2. Mark as read — user is actively viewing this chat
+                        markMessagesAsRead();
                     }
                 }
             )
@@ -406,38 +451,18 @@ export function useChat(
                 'broadcast',
                 { event: 'message_read' },
                 (payload) => {
-                    console.log('🚀 Broadcast [message_read] received:', payload);
-
-                    // IF WE ARE THE SENDER of the messages being read
                     const readerId = (payload.payload as { readerId: string })?.readerId;
                     if (readerId && readerId !== userId) {
-                        console.log('✅ Instant UI Update: Marking messages as read');
+                        // 1. Update SQLite FIRST (synchronous)
+                        const rows = getLocalMessages(conversationId);
+                        rows.forEach(m => {
+                            if (m.isMine && m.status !== 'read') {
+                                updateMessageStatus(m.id, 'read');
+                            }
+                        });
 
-                        // OPTIMISTIC UI UPDATE: Update React state IMMEDIATELY
-                        let changed = false;
-                        setMessages(prevMessages =>
-                            prevMessages.map(msg => {
-                                if (msg.isMine && msg.status !== 'read') {
-                                    changed = true; // Mark that a change occurred
-                                    return { ...msg, status: 'read' as MessageStatus };
-                                }
-                                return msg;
-                            })
-                        );
-
-                        // Then update DB in background (async, non-blocking)
-                        setTimeout(() => {
-                            const rows = getLocalMessages(conversationId);
-                            rows.forEach(m => {
-                                if (m.isMine && m.status !== 'read') {
-                                    updateMessageStatus(m.id, 'read');
-                                }
-                            });
-                        }, 0);
-
-                        if (changed) {
-                            loadLocalMessages();
-                        }
+                        // 2. Reload from SQLite so React state matches
+                        loadLocalMessages();
                     }
                 }
             )
@@ -477,6 +502,7 @@ export function useChat(
                             ...target,
                             content: content || target.content,
                             updatedAt: updatedAt || new Date().toISOString(),
+                            metadata: { ...(target.metadata || {}), wasEdited: true },
                         });
                         loadLocalMessages();
                     }
@@ -511,10 +537,10 @@ export function useChat(
         };
         init();
 
-        // 4. Poll for new messages every 30 seconds as fail-safe
+        // 4. Poll as fail-safe in case Realtime misses events (rare)
         pollingIntervalRef.current = setInterval(() => {
             syncFromServer();
-        }, 30000);
+        }, 120_000);
 
         return () => {
             if (pollingIntervalRef.current) {
@@ -669,16 +695,20 @@ export function useChat(
 
         const originalContent = existingMsg.content;
         const localNow = new Date().toISOString();
+        const editedMeta = { ...(existingMsg.metadata || {}), wasEdited: true };
 
         // Optimistic: update React state AND SQLite immediately
-        setMessages(prev => prev.map(m => 
-            (m.id === messageId || m.serverId === messageId) ? { ...m, content, updatedAt: localNow } : m
+        setMessages(prev => prev.map(m =>
+            (m.id === messageId || m.serverId === messageId)
+                ? { ...m, content, updatedAt: localNow, metadata: editedMeta }
+                : m
         ));
         saveMessage({
             ...existingMsg,
             content,
             updatedAt: localNow,
             status: existingMsg.status as MessageStatus,
+            metadata: editedMeta,
         });
 
         try {
@@ -691,6 +721,7 @@ export function useChat(
                 updatedAt: sm.updated_at || sm.updatedAt || localNow,
                 serverId: serverMsg.id,
                 status: existingMsg.status as MessageStatus,
+                metadata: editedMeta,
             });
             loadLocalMessages();
 
