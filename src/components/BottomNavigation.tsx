@@ -13,7 +13,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { chatService } from '../services/chat.service';
 import { useSubscription } from '../hooks/useSubscription';
-import { UpgradeModal } from './UpgradeModal';
 import { Video, QrCode } from 'lucide-react-native';
 import { NavigateFunction } from '../types/navigation.types';
 
@@ -29,7 +28,6 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
     const { isPremium } = useSubscription(user?.id);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isRequestingInterpreter, setIsRequestingInterpreter] = useState(false);
-    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const insets = useSafeAreaInsets();
 
     const toggleMenu = () => {
@@ -47,11 +45,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
         }
 
         // Only premium users can request interpreters
-        if (!isPremium) {
-            closeMenu();
-            setShowUpgradeModal(true);
-            return;
-        }
+        if (!isPremium) return;
 
         const username = user?.firstName || user?.email || 'Usuario';
         const userId = user.id;
@@ -109,22 +103,24 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                                     </View>
                                 </TouchableOpacity>
 
-                                <TouchableOpacity
-                                    style={styles.floatingMenuItem}
-                                    onPress={handleInterpreterCall}
-                                    disabled={isRequestingInterpreter}
-                                >
-                                    <View style={[styles.floatingLabelContainer, { backgroundColor: colors.card }]}>
-                                        <Text style={[styles.floatingLabel, { color: colors.text }]}>Intérprete</Text>
-                                    </View>
-                                    <View style={[styles.floatingButton, { backgroundColor: '#4A90E2' }]}>
-                                        {isRequestingInterpreter ? (
-                                            <ActivityIndicator color="white" size="small" />
-                                        ) : (
-                                            <Video size={24} color="white" />
-                                        )}
-                                    </View>
-                                </TouchableOpacity>
+                                {isPremium && (
+                                    <TouchableOpacity
+                                        style={styles.floatingMenuItem}
+                                        onPress={handleInterpreterCall}
+                                        disabled={isRequestingInterpreter}
+                                    >
+                                        <View style={[styles.floatingLabelContainer, { backgroundColor: colors.card }]}>
+                                            <Text style={[styles.floatingLabel, { color: colors.text }]}>Intérprete</Text>
+                                        </View>
+                                        <View style={[styles.floatingButton, { backgroundColor: '#4A90E2' }]}>
+                                            {isRequestingInterpreter ? (
+                                                <ActivityIndicator color="white" size="small" />
+                                            ) : (
+                                                <Video size={24} color="white" />
+                                            )}
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
 
                             </View>
                         </TouchableWithoutFeedback>
@@ -183,15 +179,6 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                     </TouchableOpacity>
                 </View>
             </View>
-            <UpgradeModal
-                visible={showUpgradeModal}
-                onClose={() => setShowUpgradeModal(false)}
-                feature="interpreter"
-                onUpgradePress={() => {
-                    setShowUpgradeModal(false);
-                    onNavigate('profile', { openManagePlan: true });
-                }}
-            />
         </>
     );
 }

@@ -9,6 +9,7 @@ import { View, Alert, Animated, Easing, Keyboard, Vibration } from 'react-native
 import { Swipeable } from 'react-native-gesture-handler';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useChat } from '../../hooks/useChat';
+import { NavigateFunction } from '../../types/navigation.types';
 import { mediaService } from '../../services/media.service';
 import { chatService } from '../../services/chat.service';
 import { chatViewStyles } from '../../styles/ChatsScreen.styles';
@@ -25,7 +26,6 @@ import { AddContactModal } from '../AddContactModal';
 import { ContactProfileScreen } from './ContactProfileScreen';
 import { GroupProfileView } from './GroupProfileView';
 import { useSubscription } from '../../hooks/useSubscription';
-import { UpgradeModal } from '../UpgradeModal';
 import { Contact } from '../../services/contact.service';
 import { Message } from '../../hooks/useChat';
 import { User } from '../../types/auth.types';
@@ -50,7 +50,7 @@ interface ChatViewProps {
   groupDescription?: string;
   onContactUpdate?: (contact: Contact) => void;
   onNavigateCall: (roomName: string, username: string, conversationId: string, userId: string) => void;
-  onNavigate: (screen: string, params?: any) => void;
+  onNavigate: NavigateFunction;
   currentUser?: User | null;
 }
 
@@ -100,12 +100,10 @@ export function ChatView(props: ChatViewProps) {
   const [isRecordingMode, setIsRecordingMode] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showAddContactModal, setShowAddContactModal] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [ttsSound, setTtsSound] = useState<Audio.Sound | null>(null);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-  const [upgradeFeature, setUpgradeFeature] = useState<'transcription' | 'transcription_blocked' | 'lsc' | 'correction' | 'correction_blocked' | 'tts' | 'interpreter'>('correction');
   
   // Animations
   const correctionOpacity = useRef(new Animated.Value(0)).current;
@@ -154,9 +152,8 @@ export function ChatView(props: ChatViewProps) {
     if (!messageText.trim() || isCorrecting) return;
 
     if (!canUseCorrection()) {
-        setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'correction_blocked' : 'correction');
-        setShowUpgradeModal(true);
-        return;
+      Alert.alert('Función no disponible', 'Has alcanzado el límite de uso para esta herramienta por el momento.');
+      return;
     }
     
     setIsCorrecting(true);
@@ -275,9 +272,8 @@ export function ChatView(props: ChatViewProps) {
     if (!messageText.trim()) return;
 
     if (!canUseTTS) {
-        setUpgradeFeature('tts');
-        setShowUpgradeModal(true);
-        return;
+      Alert.alert('Función no disponible', 'Esta herramienta no está disponible en tu versión actual.');
+      return;
     }
 
     // Stop if already speaking
@@ -321,18 +317,16 @@ export function ChatView(props: ChatViewProps) {
 
   const handleAudioRecorderMode = () => {
     if (!canUseTranscription()) {
-        setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'transcription_blocked' : 'transcription');
-        setShowUpgradeModal(true);
-        return;
+      Alert.alert('Función no disponible', 'Has alcanzado el límite de transcripciones por el momento.');
+      return;
     }
     setIsRecordingMode(true);
   };
 
   const handleVideoTranslatorPress = () => {
     if (!canUseLSC) {
-        setUpgradeFeature('lsc');
-        setShowUpgradeModal(true);
-        return;
+      Alert.alert('Función no disponible', 'Esta herramienta no está disponible en tu versión actual.');
+      return;
     }
     setShowVideoTranslator(true);
   };
@@ -433,6 +427,10 @@ export function ChatView(props: ChatViewProps) {
           setInputAreaHeight={setInputAreaHeight}
           colors={colors}
           isDark={isDark}
+          canUseCorrection={canUseCorrection()}
+          canUseLSC={canUseLSC}
+          canUseTTS={canUseTTS}
+          canUseTranscription={canUseTranscription()}
         />
       )}
 
@@ -471,15 +469,6 @@ export function ChatView(props: ChatViewProps) {
         onDelete={handleDeleteMessage}
       />
 
-      <UpgradeModal
-        visible={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        feature={upgradeFeature}
-        onUpgradePress={() => {
-          setShowUpgradeModal(false);
-          onNavigate('profile', { openManagePlan: true });
-        }}
-      />
     </View>
   );
 }

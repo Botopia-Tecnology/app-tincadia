@@ -15,8 +15,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useConversations } from '../hooks/useConversations';
-import { ChatListItem, ChatListItem as ChatListItemType } from '../components/chat/ChatListItem';
+import { useConversations, Conversation as ConversationType } from '../hooks/useConversations';
+import { ChatListItem } from '../components/chat/ChatListItem';
 import { initChatDatabase } from '../database/chatDatabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -36,7 +36,7 @@ export function ChatListScreen({ onSelectConversation, onNavigate }: ChatListScr
         initChatDatabase();
     }, []);
 
-    const handleSelectConversation = (item: ChatListItemType | string) => {
+    const handleSelectConversation = (item: any) => {
         const conversationId = typeof item === 'string' ? item : item.id;
         const conversation = conversations.find(c => c.id === conversationId);
         onSelectConversation(conversationId, conversation?.otherUserName || 'Chat');

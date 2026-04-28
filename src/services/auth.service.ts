@@ -386,7 +386,7 @@ export const authService = {
             // The result.user contains the Firebase user.
             // We usually want to link this to our backend user or return it.
             // For now, we return the firebase user or handle backend syncing if needed.
-            return result.user;
+            return result?.user || null;
         } catch (error) {
             console.error('Invalid code', error);
             throw error;

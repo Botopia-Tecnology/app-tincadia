@@ -21,7 +21,6 @@ import { chatService } from '../services/chat.service';
 import { useAuth } from '../contexts/AuthContext';
 import { saveMessage, deleteMessage } from '../database/chatDatabase';
 import { useSubscription } from '../hooks/useSubscription';
-import { UpgradeModal } from '../components/UpgradeModal';
 
 type LayoutMode = 'grid' | 'interpreter';
 
@@ -574,7 +573,6 @@ function ControlsView({
     const { isMicrophoneEnabled, isCameraEnabled, localParticipant, cameraTrack } = useLocalParticipant();
     const room = useRoomContext();
     const { canUseInterpreter } = useSubscription(userId);
-    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const insets = useSafeAreaInsets();
 
     const toggleMic = async () => {
@@ -660,10 +658,7 @@ function ControlsView({
     const handleInviteInterpreters = async () => {
         if (!userId) return;
 
-        if (!canUseInterpreter) {
-            setShowUpgradeModal(true);
-            return;
-        }
+        if (!canUseInterpreter) return;
 
         try {
             Alert.alert(
@@ -721,16 +716,18 @@ function ControlsView({
                     <MicrophoneIcon size={24} color={isMicrophoneEnabled ? '#000' : '#fff'} />
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                    style={[styles.button, { backgroundColor: '#fff' }]}
-                    onPress={handleInviteInterpreters}
-                >
-                    <Image
-                        source={require('../../assets/icon.png')}
-                        style={{ width: 32, height: 32, borderRadius: 16 }}
-                        resizeMode="cover"
-                    />
-                </TouchableOpacity>
+                {canUseInterpreter && (
+                    <TouchableOpacity
+                        style={[styles.button, { backgroundColor: '#fff' }]}
+                        onPress={handleInviteInterpreters}
+                    >
+                        <Image
+                            source={require('../../assets/icon.png')}
+                            style={{ width: 32, height: 32, borderRadius: 16 }}
+                            resizeMode="cover"
+                        />
+                    </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                     style={[styles.button, styles.hangupButton]}
@@ -755,16 +752,6 @@ function ControlsView({
             </View>
 
             {/* Imported Modal Component for feature lock */}
-            <UpgradeModal
-                visible={showUpgradeModal}
-                onClose={() => setShowUpgradeModal(false)}
-                feature="interpreter"
-                onUpgradePress={() => {
-                    setShowUpgradeModal(false);
-                    onBack();
-                    onNavigate?.('profile', { openManagePlan: true });
-                }}
-            />
         </>
     );
 }

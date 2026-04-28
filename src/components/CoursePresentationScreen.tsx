@@ -75,16 +75,6 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
         }
     }
 
-    const handleUnlock = async () => {
-        // Redirection to web for unlock as requested
-        const url = `https://tincadia.com/cursos`;
-        const supported = await Linking.canOpenURL(url);
-        if (supported) {
-            await Linking.openURL(url);
-        } else {
-            Alert.alert('Desbloquear', 'Visita tincadia.com/cursos para desbloquear este curso.');
-        }
-    };
 
     if (loading) {
         return (
@@ -135,11 +125,6 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
                     <Text style={[styles.instructor, { color: colors.textSecondary }]}>Por {course.instructor || 'Tincadia'}</Text>
 
                     <View style={styles.badgeContainer}>
-                        <View style={[styles.badge, course.isPaid ? { backgroundColor: isDark ? '#451a03' : '#fef3c7' } : { backgroundColor: isDark ? '#064e3b' : '#d1fae5' }]}>
-                            <Text style={[styles.badgeText, course.isPaid ? { color: isDark ? '#fbbf24' : '#d97706' } : { color: isDark ? '#34d399' : '#059669' }]}>
-                                {course.isPaid ? 'Exclusivo' : 'Gratuito'}
-                            </Text>
-                        </View>
                         <View style={[styles.badge, { backgroundColor: isDark ? colors.surface : '#f3f4f6' }]}>
                             <Text style={[styles.badgeText, { color: colors.textSecondary }]}>{course.modules?.length || 0} Módulos</Text>
                         </View>
@@ -157,10 +142,10 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
                                 <Text style={[styles.moduleTitle, { color: colors.text }]}>{module.title}</Text>
                                 <Text style={[styles.moduleLessons, { color: colors.textSecondary }]}>{module.lessons?.length || 0} lecciones</Text>
                             </View>
-                            {/* Lock Icon Logic */}
-                            <View style={[styles.lockIconContainer, { backgroundColor: canAccess ? (isDark ? '#064e3b' : '#d1fae5') : (isDark ? colors.surface : '#e2e8f0') }]}>
-                                <Text style={{ fontSize: 12, color: canAccess ? (isDark ? '#34d399' : '#059669') : (isDark ? colors.textMuted : '#64748b') }}>
-                                    {canAccess ? 'Abierto' : 'Bloqueado'}
+                            {/* Lock Icon Logic for Apple Approval: no "Locked" text, just "Unavailable" if needed, but we use a more neutral approach */}
+                            <View style={[styles.lockIconContainer, { backgroundColor: isDark ? (canAccess ? '#064e3b' : colors.surface) : (canAccess ? '#d1fae5' : '#f3f4f6') }]}>
+                                <Text style={{ fontSize: 12, color: isDark ? (canAccess ? '#34d399' : colors.textMuted) : (canAccess ? '#059669' : '#6b7280') }}>
+                                    {canAccess ? 'Disponible' : 'No disponible'}
                                 </Text>
                             </View>
                         </View>
@@ -174,24 +159,21 @@ export function CoursePresentationScreen({ courseId, onBack, onNavigate, userId 
             {/* Bottom Action Bar */}
             <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
                 <View style={styles.priceInfo}>
-                    <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>{canAccess ? 'Acceso disponible' : 'Contenido exclusivo'}</Text>
-                    <Text style={[styles.priceValue, { color: colors.text }, canAccess && { color: colors.success }]}>
-                        {canAccess ? 'Desbloqueado' : 'Bloqueado'}
+                    <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>Estado del curso</Text>
+                    <Text style={[styles.priceValue, { color: canAccess ? colors.success : colors.textMuted }]}>
+                        {canAccess ? 'Acceso concedido' : 'No disponible'}
                     </Text>
                 </View>
 
-                {canAccess ? (
-                    <TouchableOpacity
-                        style={[styles.buyButton, { backgroundColor: '#2563eb' }]}
-                        onPress={() => onNavigate('course_player', { courseId: course.id })}
-                    >
-                        <Text style={styles.buyButtonText}>Ir al Curso ▶</Text>
-                    </TouchableOpacity>
-                ) : (
-                    <TouchableOpacity style={[styles.buyButton, { backgroundColor: '#dc2626' }]} onPress={handleUnlock}>
-                        <Text style={styles.buyButtonText}>Desbloquear en la web</Text>
-                    </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                    style={[styles.buyButton, { backgroundColor: canAccess ? '#2563eb' : colors.border }]}
+                    onPress={() => canAccess ? onNavigate('course_player', { courseId: course.id }) : null}
+                    disabled={!canAccess}
+                >
+                    <Text style={[styles.buyButtonText, !canAccess && { color: colors.textMuted }]}>
+                        {canAccess ? 'Ir al Curso' : 'Bloqueado'}
+                    </Text>
+                </TouchableOpacity>
             </View>
         </SafeAreaView>
     );

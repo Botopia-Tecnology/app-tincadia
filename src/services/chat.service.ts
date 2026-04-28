@@ -6,9 +6,9 @@
 
 import { apiClient } from '../lib/api-client';
 import { API_ENDPOINTS, API_URL } from '../config/api.config';
-import { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata } from '../types/chat.types';
+import { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata, Group } from '../types/chat.types';
 
-export type { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata };
+export type { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata, Group };
 
 interface SendMessageDto {
     conversationId: string;

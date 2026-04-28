@@ -33,6 +33,10 @@ interface ChatInputProps {
   setInputAreaHeight?: (h: number) => void;
   colors?: ThemeColors;
   isDark?: boolean;
+  canUseCorrection?: boolean;
+  canUseLSC?: boolean;
+  canUseTTS?: boolean;
+  canUseTranscription?: boolean;
 }
 
 export interface ChatInputHandle {
@@ -60,6 +64,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     setInputAreaHeight = () => {},
     colors,
     isDark: isDarkProp,
+    canUseCorrection = false,
+    canUseLSC = false,
+    canUseTTS = false,
+    canUseTranscription = false,
   } = props;
 
   const { colors: themeColors, isDark: themeIsDark } = useTheme();
@@ -151,7 +159,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             value={messageText}
             onChangeText={setMessageText}
           />
-          <TouchableOpacity style={[chatViewStyles.pencilButton, { opacity: isCorrecting ? 0.5 : 1 }]} onPress={onCorrection} disabled={isCorrecting}>
+          <TouchableOpacity 
+            style={[chatViewStyles.pencilButton, { opacity: (isCorrecting || !canUseCorrection) ? 0.5 : 1 }]} 
+            onPress={onCorrection} 
+            disabled={isCorrecting}
+          >
             <MagicPencilIcon size={24} />
           </TouchableOpacity>
         </Animated.View>
@@ -161,15 +173,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             <TouchableOpacity style={[chatViewStyles.mediaButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6' }]} onPress={onMediaPick}>
               <PlusIcon size={24} color={finalColors.icon} />
             </TouchableOpacity>
-            <TouchableOpacity style={[chatViewStyles.mediaButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6' }]} onPress={onVideoTranslatorPress}>
-              <Ionicons name="videocam" size={22} color="#4F46E5" />
+            <TouchableOpacity 
+              style={[chatViewStyles.mediaButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6', opacity: canUseLSC ? 1 : 0.5 }]} 
+              onPress={onVideoTranslatorPress}
+            >
+              <Ionicons name="videocam" size={22} color={canUseLSC ? "#4F46E5" : finalColors.textMuted} />
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[chatViewStyles.mediaButton, { backgroundColor: isSpeaking ? (isDark ? '#4F46E5' : '#EEF2FF') : (isDark ? finalColors.inputBg : '#F3F4F6') }]} 
+              style={[
+                chatViewStyles.mediaButton, 
+                { backgroundColor: isSpeaking ? (isDark ? '#4F46E5' : '#EEF2FF') : (isDark ? finalColors.inputBg : '#F3F4F6'), opacity: canUseTTS ? 1 : 0.5 }
+              ]} 
               onPress={onTextToSpeech}
               disabled={isSpeaking}
             >
-              <Ionicons name={isSpeaking ? 'volume-high' : 'volume-medium-outline'} size={22} color={isSpeaking ? '#4F46E5' : finalColors.icon} />
+              <Ionicons name={isSpeaking ? 'volume-high' : 'volume-medium-outline'} size={22} color={canUseTTS ? (isSpeaking ? '#4F46E5' : finalColors.icon) : finalColors.textMuted} />
             </TouchableOpacity>
           </View>
 
@@ -178,8 +196,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               <SendIcon size={20} color="#FFFFFF" />
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={[chatViewStyles.micButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6' }]} onPress={onAudioRecorderMode}>
-              <MicrophoneIcon size={24} color={finalColors.icon} />
+            <TouchableOpacity 
+              style={[chatViewStyles.micButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6', opacity: canUseTranscription ? 1 : 0.5 }]} 
+              onPress={onAudioRecorderMode}
+            >
+              <MicrophoneIcon size={24} color={canUseTranscription ? finalColors.icon : finalColors.textMuted} />
             </TouchableOpacity>
           )}
         </View>

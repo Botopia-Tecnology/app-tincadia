@@ -20,7 +20,6 @@ import {
     CameraIcon,
     EmergencyContactIcon,
 } from './icons/NavigationIcons';
-import { ManagePlanModal } from './ManagePlanModal';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
 import { NavigateFunction } from '../types/navigation.types';
@@ -35,7 +34,6 @@ interface ProfileScreenProps {
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
-    openManagePlan?: boolean;
 }
 
 export function ProfileScreen({
@@ -43,7 +41,6 @@ export function ProfileScreen({
     onBack,
     userId,
     onShowNotifications,
-    openManagePlan,
 }: ProfileScreenProps) {
     const { user, logout, isLoading, refreshProfile } = useAuth();
     const { subscriptionStatus, isPremium, isBasico, refreshSubscription, isLoading: isSubscriptionLoading } = useSubscription(userId);
@@ -52,13 +49,7 @@ export function ProfileScreen({
     // Local state to manage sub-screen navigation
     const [subScreen, setSubScreen] = useState<'none' | 'editProfile' | 'privacy' | 'emergencyContacts'>('none');
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [isManagePlanVisible, setIsManagePlanVisible] = useState(openManagePlan || false);
 
-    useEffect(() => {
-        if (openManagePlan) {
-            setIsManagePlanVisible(true);
-        }
-    }, [openManagePlan]);
 
     const getPlanLabel = () => {
         if (isSubscriptionLoading && !subscriptionStatus) return '';
@@ -187,45 +178,11 @@ export function ProfileScreen({
                         {user?.email && (
                             <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, textAlign: 'center' }}>{user.email}</Text>
                         )}
-                        {/* Plan Badge and Days Remaining */}
-                        <TouchableOpacity 
-                            onPress={() => setIsManagePlanVisible(true)}
-                            activeOpacity={0.7}
-                            style={{
-                                marginTop: 12,
-                                alignSelf: 'center',
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 8,
-                            }}
-                        >
-                            <View style={{
-                                paddingHorizontal: 16,
-                                paddingVertical: 6,
-                                backgroundColor: isPremium ? '#FFD700' : ((isSubscriptionLoading && !subscriptionStatus) ? colors.surface : '#E5E7EB'),
-                                borderRadius: 16,
-                            }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                    <Text style={{
-                                        color: isPremium ? '#000' : '#4B5563',
-                                        fontSize: 13,
-                                        fontWeight: '700',
-                                    }}>
-                                        {planLabel}
-                                    </Text>
-                                    <ChevronRightIcon size={14} color={isPremium ? '#000' : '#4B5563'} />
-                                </View>
-                            </View>
-                            {daysRemaining !== null && (
-                                <Text style={{
-                                    color: colors.textSecondary,
-                                    fontSize: 13,
-                                    fontWeight: '500',
-                                }}>
-                                    • Quedan {daysRemaining} {daysRemaining === 1 ? 'día' : 'días'}
-                                </Text>
-                            )}
-                        </TouchableOpacity>
+                        <View style={[styles.planBadge, { backgroundColor: colors.surface, marginTop: 12, paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1, borderColor: colors.border }]}>
+                            <Text style={[styles.planText, { color: colors.textSecondary, fontSize: 13 }]}>
+                                Próximamente planes en la app
+                            </Text>
+                        </View>
                     </View>
                 </View>
 
@@ -392,10 +349,6 @@ export function ProfileScreen({
             </ScrollView>
 
             <BottomNavigation currentScreen="profile" onNavigate={onNavigate} />
-            <ManagePlanModal 
-                visible={isManagePlanVisible} 
-                onClose={() => setIsManagePlanVisible(false)} 
-            />
         </KeyboardSafeView>
     );
 }

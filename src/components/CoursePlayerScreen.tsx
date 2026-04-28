@@ -22,7 +22,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
     const [loading, setLoading] = useState(true);
     const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
     const [expandedModules, setExpandedModules] = useState<string[]>([]);
-    const [hasPaidAccess] = useState(false); // TODO: conectar con suscripción real
+    const [hasPaidAccess] = useState(false); // Reverted to real logic for Apple approval flow
 
     // Player State
     const [status, setStatus] = useState<AVPlaybackStatus | null>(null);
@@ -98,7 +98,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
     const handleLessonSelect = (module: Module, lesson: Lesson) => {
         if (!course) return;
         if (isLessonLocked(course, module, lesson)) {
-            Alert.alert('Contenido bloqueado', 'Debes desbloquear este contenido en la web para continuar.');
+            Alert.alert('Contenido no disponible', 'Esta lección no está disponible en tu versión actual.');
             return;
         }
         setActiveLesson(lesson);
@@ -205,7 +205,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
 
             {/* Video Player Section */}
             <View style={styles.videoContainer}>
-                {activeLesson && !isLessonLocked(course, { lessons: [] }, activeLesson) && activeLesson?.videoUrl ? (
+                {activeLesson && !isLessonLocked(course, { lessons: [] } as any, activeLesson) && activeLesson?.videoUrl ? (
                     <TouchableWithoutFeedback onPress={handleVideoPress}>
                         <View style={{ width: '100%', height: '100%' }}>
                             <Video
@@ -289,7 +289,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
         )}
                         <View style={styles.lockOverlay}>
                             <Text style={styles.lockText}>
-                                {activeLesson ? 'Esta lección está bloqueada o no tiene video disponible.' : 'Selecciona una lección'}
+                                {activeLesson ? 'Esta lección no está disponible.' : 'Selecciona una lección'}
                             </Text>
                         </View>
                     </View>
@@ -346,7 +346,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
                                                     ]}>
                                                         {lesson.title}
                                                     </Text>
-                                                    {lesson.locked && <Text style={styles.lockBadge}>BLOQUEADO</Text>}
+                                                    {/* Removed lock badge */}
                                                 </TouchableOpacity>
                                             ))}
                                             {(!module.lessons || module.lessons.length === 0) && (

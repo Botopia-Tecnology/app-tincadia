@@ -27,6 +27,11 @@ function resolveChatMediaKey(publicId: string | undefined, content: string, apiB
     return content;
 }
 
+const normalizeUrl = (url: string) => {
+    if (url.startsWith('http')) return url;
+    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 const SENDER_COLORS = [
     '#4CAF50', '#E91E63', '#9C27B0', '#FF9800',
     '#00BCD4', '#3F51B5', '#FF5722', '#009688',
@@ -93,11 +98,6 @@ export function MessageBubble({
 
                 setIsLoading(true);
                 try {
-                    const normalizeUrl = (url: string) => {
-                        if (url.startsWith('http')) return url;
-                        return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-                    };
-
                     const resolvedKey = resolveChatMediaKey(publicId, content, API_URL);
                     const localUri = await mediaService.downloadMedia(resolvedKey, type as 'image' | 'video' | 'audio');
 

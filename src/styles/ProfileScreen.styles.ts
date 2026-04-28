@@ -109,6 +109,16 @@ export const profileScreenStyles = StyleSheet.create({
         color: '#000000',
         marginBottom: 4,
     },
+    planBadge: {
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 12,
+        alignSelf: 'center',
+    },
+    planText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+    },
     menuGroup: {
         backgroundColor: '#FFFFFF',
         borderRadius: 20,

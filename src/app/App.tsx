@@ -105,7 +105,7 @@ function AppContent() {
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null>(null);
   
-  const { isPremium, isLoading: isSubscriptionLoading } = useSubscription(user?.id);
+  const { isPremium, isLoading: isSubscriptionLoading } = useSubscription();
 
   const currentScreen = useMemo(() => screenStack[screenStack.length - 1] ?? 'chats', [screenStack]);
 
@@ -284,12 +284,6 @@ function AppContent() {
         ) : underlyingScreen === 'qr_scanner' ? (
           <QRScannerScreen onClose={goBack} onScan={async (data) => {
             if (data.includes('interpreter') || data.includes('INTERPRETE')) {
-              if (!isPremium) {
-                Alert.alert('Acceso Premium Requerido', 'Para conectar con un intérprete vía QR necesitas un plan activo.');
-                goBack();
-                return;
-              }
-
               const userName = user?.firstName || user?.email || 'Usuario';
               const uId = user?.id || '';
               const rName = `qr-interpreter-${uId}-${Date.now()}`;

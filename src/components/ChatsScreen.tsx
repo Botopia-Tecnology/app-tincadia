@@ -15,6 +15,7 @@ import {
   BackHandler,
   Platform,
   Alert,
+  AlertButton,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -51,6 +52,7 @@ interface SelectedChat {
   otherUserId?: string;
   isUnknown?: boolean;
   isGroup?: boolean;
+  groupDescription?: string;
   description?: string;
   contactId?: string;
   alias?: string;
@@ -140,7 +142,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
 
           const displayName = profileData
             ? `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim()
-            : profileData?.phone || 'Usuario';
+            : (profileData as any)?.phone || 'Usuario';
 
           setSelectedChat({
             conversationId,

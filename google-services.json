@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "432950882488",
+    "project_id": "tincadia-e934f",
+    "storage_bucket": "tincadia-e934f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:432950882488:android:48059729ffac53fbe6844d",
+        "android_client_info": {
+          "package_name": "com.tincadia.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "432950882488-80s791qdafaslmilmos19mndc9427n60.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAvWc8QTaUbv6-pSi5tGDuPxLZfgtUG-3Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "432950882488-80s791qdafaslmilmos19mndc9427n60.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "432950882488-3i05sq8v8tfdrpq1l2tdplt364qco4e7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.tincadia.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

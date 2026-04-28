@@ -2,11 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { paymentsService, SubscriptionStatus } from '../services/payments.service';
 import { useAuth } from './AuthContext';
-import Purchases from 'react-native-purchases';
 import { 
-    getRevenueCatApiKey, 
-    REVENUECAT_ENTITLEMENT_PREMIUM, 
-    REVENUECAT_ENTITLEMENT_BASICO,
     APP_TIERS,
     BACKEND_PLAN_TYPES,
     FEATURE_KEYS
@@ -130,26 +126,6 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         try {
             const status = await paymentsService.getSubscriptionStatus(userId);
             
-            // Sync with RevenueCat
-            try {
-                const customerInfo = await Purchases.getCustomerInfo();
-                const isPremiumInRC = typeof customerInfo.entitlements.active[REVENUECAT_ENTITLEMENT_PREMIUM] !== "undefined";
-                const isBasicoInRC = typeof customerInfo.entitlements.active[REVENUECAT_ENTITLEMENT_BASICO] !== "undefined";
-                
-                // If RevenueCat says premium but our backend doesn't, RC is the source of truth for mobile
-                if (isPremiumInRC) {
-                    status.hasSubscription = true;
-                    status.status = 'active';
-                    status.planType = BACKEND_PLAN_TYPES.PERSONAL_PREMIUM;
-                } else if (isBasicoInRC) {
-                    status.hasSubscription = true;
-                    status.status = 'active';
-                    status.planType = BACKEND_PLAN_TYPES.PERSONAL_BASICO;
-                }
-            } catch (rcError) {
-                console.warn('⚠️ [SubscriptionContext] RevenueCat check failed:', rcError);
-            }
-
             setSubscriptionStatus(status);
             lastFetchTime.current = Date.now();
             await AsyncStorage.setItem(`${SUBSCRIPTION_CACHE_KEY}_${userId}`, JSON.stringify({
@@ -166,25 +142,6 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         }
     }, [userId, fetchInBackground]);
 
-    useEffect(() => {
-        // Initialize RevenueCat
-        const initRevenueCat = async () => {
-            try {
-                const apiKey = getRevenueCatApiKey();
-                if (apiKey) {
-                    if (userId) {
-                        await Purchases.configure({ apiKey, appUserID: userId });
-                    } else {
-                        await Purchases.configure({ apiKey });
-                    }
-                    console.log('✅ [SubscriptionContext] RevenueCat configured successfully');
-                }
-            } catch (error) {
-                console.error('❌ [SubscriptionContext] RevenueCat config error:', error);
-            }
-        };
-        initRevenueCat();
-    }, [userId]);
 
     useEffect(() => {
         if (userId) {
@@ -267,7 +224,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }, [transcriptionUsesToday]);
 
     const canUseCorrection = useCallback(() => {
-        const limit = getLimit('correction_limit', 1);
+        const limit = getLimit('CORRECTION_LIMIT', 1);
         if (limit === -1) return true;
         if (limit === 0) return false;
         return correctionUsesToday < limit;
@@ -301,9 +258,11 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         isLoading,
         refreshSubscription: fetchStatus,
     }), [
-        planTier, isPremium, isBasico, isGratis, canUseLSC, canUseInterpreter, canUseSubtitles,
-        canUseTranscription, recordTranscriptionUse, canUseCorrection,
-        recordCorrectionUse, subscriptionStatus, isLoading, fetchStatus
+        planTier, isPremium, isBasico, isGratis,
+        canUseLSC, canUseInterpreter, canUseSubtitles, canUseTTS,
+        canUseTranscription, recordTranscriptionUse,
+        canUseCorrection, recordCorrectionUse,
+        subscriptionStatus, isLoading, fetchStatus
     ]);
 
     return (

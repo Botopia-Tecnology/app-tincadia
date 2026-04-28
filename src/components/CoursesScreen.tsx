@@ -10,6 +10,7 @@ import { contentService, Course } from '../services/content.service';
 import { paymentsService } from '../services/payments.service';
 import { useCourses } from '../hooks/useCourses';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { NavigateFunction } from '../types/navigation.types';
 
 interface CourseCategory {
@@ -35,6 +36,7 @@ export function CoursesScreen({
     onCourseSelect,
 }: CoursesScreenProps) {
     const { colors, isDark } = useTheme();
+    const { isPremium } = useSubscription();
     const [categories, setCategories] = useState<CourseCategory[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
@@ -66,9 +68,10 @@ export function CoursesScreen({
 
         if (accessFilter === 'free') {
             result = result.filter(course => !course.isPaid);
-        } else if (accessFilter === 'premium') {
-            result = result.filter(course => course.isPaid);
         }
+
+        // Show all courses, access will be handled in CoursePresentationScreen
+        // to avoid mentioning "Free/Premium" filters for Apple approval.
 
         return result;
     }, [courses, searchQuery, selectedCategory, accessFilter]);
@@ -146,9 +149,6 @@ export function CoursesScreen({
                     <Text style={[styles.moduleText, { color: colors.textSecondary }]}>
                         {course.modules?.length || 0} Módulos
                     </Text>
-                    {course.isPaid && (
-                        <Text style={{ marginLeft: 'auto', fontSize: 12, color: '#f59e0b', fontWeight: 'bold' }}>Premium</Text>
-                    )}
                 </View>
             </View>
         </TouchableOpacity>
@@ -218,36 +218,7 @@ export function CoursesScreen({
                     })}
                 </ScrollView>
 
-                {/* Access Type Filter */}
-                <View style={{ flexDirection: 'row', gap: 8, paddingTop: 8 }}>
-                    {([['all', 'Todos'], ['free', 'Gratis'], ['premium', 'Premium']] as [AccessFilter, string][]).map(([key, label]) => {
-                        const isActive = accessFilter === key;
-                        return (
-                            <TouchableOpacity
-                                key={key}
-                                onPress={() => setAccessFilter(key)}
-                                style={{
-                                    paddingHorizontal: 14,
-                                    paddingVertical: 6,
-                                    borderRadius: 16,
-                                    backgroundColor: isActive
-                                        ? (key === 'premium' ? '#f59e0b' : key === 'free' ? '#10B981' : (isDark ? colors.surface : '#F1F5F9'))
-                                        : (isDark ? colors.surface : '#F1F5F9'),
-                                    borderWidth: isActive ? 0 : 1,
-                                    borderColor: isDark ? colors.border : '#E2E8F0',
-                                }}
-                            >
-                                <Text style={{
-                                    fontSize: 12,
-                                    fontWeight: isActive ? '700' : '500',
-                                    color: isActive && key !== 'all' ? '#FFFFFF' : (isActive ? colors.text : colors.textSecondary),
-                                }}>
-                                    {label}
-                                </Text>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </View>
+                {/* Removed Access Type Filter for Apple Approval */}
             </View>
 
             {/* Content */}

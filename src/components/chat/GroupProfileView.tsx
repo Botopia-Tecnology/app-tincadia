@@ -86,7 +86,7 @@ export function GroupProfileView({
     const fetchParticipants = async () => {
         setIsLoading(true);
         try {
-            const data = await chatService.getGroupParticipants(conversationId);
+            const data = await chatService.getGroupParticipants(conversationId) as Participant[];
             setParticipants(data);
 
             // Set current user role

@@ -13,7 +13,6 @@ import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useSubscription } from '../hooks/useSubscription';
-import { UpgradeModal } from './UpgradeModal';
 import { chatService } from '../services/chat.service';
 import {
     Siren,
@@ -62,7 +61,6 @@ export function SOSScreen({
     const { colors, isDark } = useTheme();
     const { canUseInterpreter } = useSubscription(userId);
 
-    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
     const emergencyTypes: EmergencyType[] = [
         { id: 'policia', icon: Siren, color: '#10B981', label: 'POLICÍA NACIONAL', phone: '112' },
@@ -107,26 +105,52 @@ export function SOSScreen({
             let { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') return;
 
-            let loc = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Highest,
-            });
+            // 1. Get last known position immediately for speed
+            const lastKnown = await Location.getLastKnownPositionAsync();
+            if (lastKnown) {
+                setLocation(lastKnown);
+                // We don't resolve address for lastKnown if we're about to get current, 
+                // but it's a good baseline.
+            }
+
+            // 2. Get current position with High (not Highest) accuracy for speed
+            let loc: Location.LocationObject;
+            try {
+                loc = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.High,
+                });
+            } catch (e) {
+                console.warn("getCurrentPositionAsync failed, using lastKnown if available", e);
+                if (lastKnown) loc = lastKnown;
+                else return;
+            }
+            
             setLocation(loc);
 
             const lat = loc.coords.latitude;
             const lon = loc.coords.longitude;
 
-            // 1. Intentar con Expo (nativo)
+            // 3. Reverse Geocoding Logic
             let resolved = false;
+            
+            // Priority 1: Expo (Google/Apple Maps Native)
             try {
                 let reverseGeocode = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
                 if (reverseGeocode.length > 0) {
                     const addr = reverseGeocode[0];
+                    
+                    // Prioritize street address
+                    const street = addr.street ? `${addr.street}${addr.streetNumber ? ' ' + addr.streetNumber : ''}` : null;
+                    // Secondary: Name or District (Communes, neighborhoods)
+                    const secondary = addr.name || addr.district || addr.subregion || null;
+                    // City info
+                    const city = addr.city || addr.region || null;
+
                     const parts = [
-                        addr.street
-                            ? `${addr.street}${addr.streetNumber ? ' ' + addr.streetNumber : ''}`
-                            : (addr.district || addr.name || null),
-                        addr.city || addr.subregion || addr.region || null,
+                        street || secondary, // Prioritize street, then name/district
+                        city
                     ].filter(Boolean);
+
                     if (parts.length > 0 && parts.some(p => (p as string).trim().length > 0)) {
                         setAddress(parts.join(', '));
                         resolved = true;
@@ -136,7 +160,7 @@ export function SOSScreen({
                 console.log("Expo reverse geocode failed", e);
             }
 
-            // 2. Fallback: Nominatim (OpenStreetMap) — gratis, sin API key
+            // Priority 2: Nominatim (OpenStreetMap)
             if (!resolved) {
                 try {
                     const resp = await fetch(
@@ -146,12 +170,16 @@ export function SOSScreen({
                     const data = await resp.json();
                     if (data?.address) {
                         const a = data.address;
+                        const street = a.road || a.pedestrian || null;
+                        const number = a.house_number || null;
+                        const neighborhood = a.neighbourhood || a.suburb || a.city_district || null;
+                        const city = a.city || a.town || a.village || a.state || null;
+
                         const parts = [
-                            a.road || a.pedestrian || a.neighbourhood || null,
-                            a.house_number || null,
-                            a.suburb || a.city_district || null,
-                            a.city || a.town || a.village || a.state || null,
+                            street ? `${street}${number ? ' ' + number : ''}` : neighborhood,
+                            city
                         ].filter(Boolean);
+
                         if (parts.length > 0) {
                             setAddress(parts.join(', '));
                             resolved = true;
@@ -162,7 +190,7 @@ export function SOSScreen({
                 }
             }
 
-            // 3. Último fallback: coordenadas legibles
+            // Fallback: Coordinates
             if (!resolved) {
                 setAddress(`${lat.toFixed(5)}, ${lon.toFixed(5)}`);
             }
@@ -356,10 +384,7 @@ export function SOSScreen({
             return;
         }
 
-        if (!canUseInterpreter) {
-            setShowUpgradeModal(true);
-            return;
-        }
+        if (!canUseInterpreter) return;
 
         const rawUsername = user?.firstName || user?.email || 'Usuario';
         const username = user?.role === 'interpreter' ? `Intérprete: ${rawUsername}` : rawUsername;
@@ -521,31 +546,33 @@ export function SOSScreen({
                 </View>
 
                 {/* Interpreter urgent call */}
-                <View style={[styles.interpreterCard, {
-                    backgroundColor: isDark ? '#1A1F3A' : '#EEF2FF',
-                    borderColor: isDark ? '#2D3566' : '#C7D2FE',
-                }]}>
-                    <View style={styles.interpreterHeader}>
-                        <Video size={24} color={isDark ? '#818CF8' : '#1E3A8A'} />
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.interpreterTitle, { color: isDark ? '#818CF8' : '#1E3A8A' }]}>Videollamada urgente con intérprete</Text>
-                            <Text style={[styles.interpreterSubtitle, { color: isDark ? '#818CF8' : '#1E3A8A' }]}>
-                                Conecta ya con un intérprete para comunicarte con emergencias.
-                            </Text>
+                {canUseInterpreter && (
+                    <View style={[styles.interpreterCard, {
+                        backgroundColor: isDark ? '#1A1F3A' : '#EEF2FF',
+                        borderColor: isDark ? '#2D3566' : '#C7D2FE',
+                    }]}>
+                        <View style={styles.interpreterHeader}>
+                            <Video size={24} color={isDark ? '#818CF8' : '#1E3A8A'} />
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.interpreterTitle, { color: isDark ? '#818CF8' : '#1E3A8A' }]}>Videollamada urgente con intérprete</Text>
+                                <Text style={[styles.interpreterSubtitle, { color: isDark ? '#818CF8' : '#1E3A8A' }]}>
+                                    Conecta ya con un intérprete para comunicarte con emergencias.
+                                </Text>
+                            </View>
                         </View>
+                        <TouchableOpacity
+                            style={[styles.interpreterButton, { backgroundColor: isDark ? '#4F46E5' : '#1E40AF' }]}
+                            onPress={handleInterpreterEmergencyCall}
+                            disabled={isRequestingInterpreter}
+                        >
+                            {isRequestingInterpreter ? (
+                                <ActivityIndicator color="white" />
+                            ) : (
+                                <Text style={styles.interpreterButtonText}>Llamar a intérprete</Text>
+                            )}
+                        </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                        style={[styles.interpreterButton, { backgroundColor: isDark ? '#4F46E5' : '#1E40AF' }]}
-                        onPress={handleInterpreterEmergencyCall}
-                        disabled={isRequestingInterpreter}
-                    >
-                        {isRequestingInterpreter ? (
-                            <ActivityIndicator color="white" />
-                        ) : (
-                            <Text style={styles.interpreterButtonText}>Llamar a intérprete</Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
+                )}
 
                 {/* Location Footer */}
                 <View style={styles.locationFooter}>
@@ -563,15 +590,6 @@ export function SOSScreen({
 
             </ScrollView>
 
-            <UpgradeModal
-                visible={showUpgradeModal}
-                onClose={() => setShowUpgradeModal(false)}
-                feature="interpreter"
-                onUpgradePress={() => {
-                    setShowUpgradeModal(false);
-                    onNavigate('profile', { openManagePlan: true });
-                }}
-            />
 
             <BottomNavigation currentScreen="sos" onNavigate={onNavigate} />
         </KeyboardSafeView>
