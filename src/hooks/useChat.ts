@@ -435,6 +435,7 @@ export function useChat(
                         setTimeout(() => { recentBroadcastIdsRef.current.delete(sm.id); }, 10_000);
 
                         // 1. Save locally for instant rendering
+                        const bMeta = sm.metadata as MessageMetadata | undefined;
                         saveMessage({
                             id: sm.id,
                             serverId: sm.id,
@@ -446,6 +447,7 @@ export function useChat(
                             status: 'delivered',
                             createdAt: msgCreatedAt as string,
                             isMine: false,
+                            metadata: bMeta ? (bMeta as Record<string, unknown>) : undefined,
                         });
                         loadLocalMessages();
 
@@ -460,6 +462,14 @@ export function useChat(
                 (payload) => {
                     const readerId = (payload.payload as { readerId: string })?.readerId;
                     if (readerId && readerId !== userId) {
+                        // 🚀 FAST-TRACK BLUE TICKS (ONLY FOR DIRECT CHATS)
+                        // In group chats, one person reading doesn't mean all read.
+                        // We wait for the backend to signal 'read_at' via postgres_changes.
+                        if (options?.isGroup) {
+                            console.log('👥 Group read receipt received, skipping fast-track');
+                            return;
+                        }
+
                         // 1. Update SQLite FIRST (synchronous)
                         const rows = getLocalMessages(conversationId);
                         rows.forEach(m => {
@@ -578,6 +588,7 @@ export function useChat(
             replyToId: metadata?.replyToId as string | undefined,
             replyToContent: metadata?.replyToContent as string | undefined,
             replyToSender: metadata?.replyToSender as string | undefined,
+            metadata: metadata as Record<string, unknown> | undefined,
         };
 
         saveMessage(localMessage);
@@ -603,6 +614,12 @@ export function useChat(
             const serverMsgSenderId = sm.senderId || sm.sender_id || userId;
             const serverMsgCreatedAt = sm.createdAt || sm.created_at || now;
 
+            const mergedMetadata: Record<string, unknown> = {
+                ...(metadata as Record<string, unknown>),
+                ...((sm.metadata || {}) as Record<string, unknown>),
+            };
+            const hasMetaKeys = Object.keys(mergedMetadata).length > 0;
+
             saveMessage({
                 id: serverMsg.id,
                 serverId: serverMsg.id,
@@ -619,6 +636,7 @@ export function useChat(
                 replyToId: (sm.replyToId || sm.reply_to_id || metadata?.replyToId) as string | undefined,
                 replyToContent: (sm.replyToContent || sm.reply_to_content || metadata?.replyToContent) as string | undefined,
                 replyToSender: (sm.replyToSender || sm.reply_to_sender || metadata?.replyToSender) as string | undefined,
+                metadata: hasMetaKeys ? mergedMetadata : undefined,
             });
 
             // --- BROADCAST FAST PATH (Send) ---
@@ -637,7 +655,8 @@ export function useChat(
                         conversation_id: serverMsgConvId, // Redundant but helpful if receiver uses snake_case payload
                         sender_id: serverMsgSenderId,
                         created_at: serverMsgCreatedAt,
-                        isMine: false
+                        isMine: false,
+                        metadata: hasMetaKeys ? mergedMetadata : undefined,
                     },
                 });
             }

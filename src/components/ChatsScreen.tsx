@@ -16,6 +16,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
@@ -94,6 +95,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showFabMenu, setShowFabMenu] = useState(false);
+  const insets = useSafeAreaInsets();
   
   // Prefill state for modal
   const [prefillData, setPrefillData] = useState({
@@ -263,6 +265,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
           userId={userId}
           currentUser={user}
           onBack={handleBackFromChat}
+          onNavigate={onNavigate}
           onAddContact={() => {
             if (selectedChat.otherUserPhone) {
               setPrefillData({ phone: selectedChat.otherUserPhone, firstName: '', lastName: '', userId: undefined });

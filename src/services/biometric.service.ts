@@ -4,10 +4,12 @@ import { Platform } from 'react-native';
 
 const KEY_EMAIL = 'biometric_email';
 const KEY_PASSWORD = 'biometric_password';
+const KEY_PROVIDER = 'biometric_provider';
 
 export interface BiometricCredentials {
     email: string;
-    password: string;
+    password?: string;
+    provider: 'email' | 'google' | 'apple';
 }
 
 export const biometricService = {
@@ -67,7 +69,12 @@ export const biometricService = {
     async saveCredentials(credentials: BiometricCredentials): Promise<void> {
         try {
             await SecureStore.setItemAsync(KEY_EMAIL, credentials.email);
-            await SecureStore.setItemAsync(KEY_PASSWORD, credentials.password);
+            if (credentials.password) {
+                await SecureStore.setItemAsync(KEY_PASSWORD, credentials.password);
+            } else {
+                await SecureStore.deleteItemAsync(KEY_PASSWORD);
+            }
+            await SecureStore.setItemAsync(KEY_PROVIDER, credentials.provider);
         } catch (error) {
             console.error('Failed to save credentials', error);
             throw error;
@@ -81,9 +88,14 @@ export const biometricService = {
         try {
             const email = await SecureStore.getItemAsync(KEY_EMAIL);
             const password = await SecureStore.getItemAsync(KEY_PASSWORD);
+            const provider = await SecureStore.getItemAsync(KEY_PROVIDER) as 'email' | 'google' | 'apple' | null;
 
-            if (email && password) {
-                return { email, password };
+            if (email && provider) {
+                return { 
+                    email, 
+                    password: password || undefined, 
+                    provider 
+                };
             }
             return null;
         } catch (error) {
@@ -99,6 +111,7 @@ export const biometricService = {
         try {
             await SecureStore.deleteItemAsync(KEY_EMAIL);
             await SecureStore.deleteItemAsync(KEY_PASSWORD);
+            await SecureStore.deleteItemAsync(KEY_PROVIDER);
         } catch (error) {
             console.error('Failed to clear credentials', error);
         }

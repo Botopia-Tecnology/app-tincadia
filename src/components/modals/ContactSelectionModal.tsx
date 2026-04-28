@@ -8,22 +8,22 @@ import {
     FlatList,
     TextInput,
     ActivityIndicator,
-    TouchableWithoutFeedback,
-    Image
+    Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getLocalContacts } from '../../database/chatDatabase';
 import { useTheme } from '../../contexts/ThemeContext';
+import { chatService } from '../../services/chat.service';
 
 interface Contact {
-    id: string; // our local DB id
-    owner_id: string;
+    id: string;
+    owner_id?: string;
     contact_user_id: string;
     phone: string;
-    alias: string;
-    custom_first_name: string;
-    custom_last_name: string;
-    updated_at: string;
+    alias?: string;
+    custom_first_name?: string;
+    custom_last_name?: string;
+    is_global?: boolean; // flag to indicate it's from global search
 }
 
 interface ContactSelectionModalProps {
@@ -46,11 +46,14 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
     const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(false);
+    const [searchingGlobal, setSearchingGlobal] = useState(false);
+    const [globalResults, setGlobalResults] = useState<Contact[]>([]);
 
     useEffect(() => {
         if (visible) {
             loadContacts();
             setSearchQuery('');
+            setGlobalResults([]);
         }
     }, [visible]);
 
@@ -69,10 +72,48 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
         }
     };
 
+    const searchGlobal = async () => {
+        if (!searchQuery || searchQuery.length < 3) {
+            Alert.alert('Búsqueda global', 'Por favor ingresa al menos 3 caracteres (número o nombre).');
+            return;
+        }
+        
+        setSearchingGlobal(true);
+        try {
+            const response = await chatService.searchGlobalUsers(searchQuery);
+            if (response.users && response.users.length > 0) {
+                const mapped: Contact[] = response.users
+                    .filter((u: any) => u.id !== userId && !existingParticipantIds.has(u.id))
+                    .map((u: any) => ({
+                        id: `global-${u.id}`,
+                        contact_user_id: u.id,
+                        phone: u.phone || '',
+                        custom_first_name: u.first_name,
+                        custom_last_name: u.last_name,
+                        is_global: true
+                    }));
+                    
+                setGlobalResults(mapped);
+                
+                // Hide local filtered if we have global matches to make it clear, 
+                // or just append them. We'll replace the view for now if it's a global search explicitly triggered.
+                setFilteredContacts(mapped);
+            } else {
+                Alert.alert('Búsqueda global', 'No se encontraron usuarios en la red con ese dato.');
+                setGlobalResults([]);
+            }
+        } catch (error) {
+            Alert.alert('Error', 'No pudimos conectarnos para buscar en la red global.');
+        } finally {
+            setSearchingGlobal(false);
+        }
+    };
+
     const handleSearch = (text: string) => {
         setSearchQuery(text);
         if (!text.trim()) {
             setFilteredContacts(contacts);
+            setGlobalResults([]);
             return;
         }
 
@@ -84,7 +125,7 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
 
             return name.includes(lowerText) || lastName.includes(lowerText) || phone.includes(lowerText);
         });
-        setFilteredContacts(filtered);
+        setFilteredContacts(filtered.length > 0 ? filtered : globalResults);
     };
 
     const getDisplayName = (c: Contact) => {
@@ -111,7 +152,9 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
                     <Text style={[styles.avatarText, { color: colors.text }]}>{getInitial(displayName)}</Text>
                 </View>
                 <View style={styles.contactInfo}>
-                    <Text style={[styles.contactName, { color: colors.text }]}>{displayName}</Text>
+                    <Text style={[styles.contactName, { color: colors.text }]}>
+                        {displayName} {item.is_global && <Text style={{fontSize: 10, color: colors.primary}}>(Red Global)</Text>}
+                    </Text>
                     {item.phone && <Text style={[styles.contactPhone, { color: colors.textSecondary }]}>{item.phone}</Text>}
                 </View>
                 <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
@@ -141,17 +184,28 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
                     <Ionicons name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
                     <TextInput
                         style={[styles.searchInput, { color: colors.text }]}
-                        placeholder="Buscar contacto..."
+                        placeholder="Buscar en contactos..."
                         value={searchQuery}
                         onChangeText={handleSearch}
                         placeholderTextColor={colors.textMuted}
+                        returnKeyType="search"
+                        onSubmitEditing={searchGlobal}
                     />
+                    {searchQuery.length > 2 && (
+                        <TouchableOpacity onPress={searchGlobal} disabled={searchingGlobal}>
+                            {searchingGlobal ? (
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                                <Ionicons name="globe-outline" size={20} color={colors.primary} style={{marginLeft: 8}} />
+                            )}
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* List */}
                 {loading ? (
                     <View style={styles.centerContainer}>
-                        <ActivityIndicator size="large" color="#10B981" />
+                        <ActivityIndicator size="large" color={colors.primary} />
                     </View>
                 ) : (
                     <FlatList
@@ -162,9 +216,9 @@ export const ContactSelectionModal: React.FC<ContactSelectionModalProps> = ({
                         ListEmptyComponent={
                             <View style={styles.centerContainer}>
                                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                                    {contacts.length === 0
-                                        ? 'No tienes contactos disponibles para añadir.'
-                                        : 'No se encontraron resultados.'}
+                                    {searchQuery.length > 0 
+                                        ? 'No se encontraron contactos locales. Toca el ícono del mundo para buscar en toda la plataforma.' 
+                                        : 'No tienes contactos disponibles para añadir.'}
                                 </Text>
                             </View>
                         }

@@ -188,8 +188,8 @@ class MediaService {
                     Authorization: `Bearer ${token}`,
                 },
                 parameters: {
-                    type: uploadType
-                }
+                    type: uploadType,
+                },
             });
 
             if (response.status !== 201 && response.status !== 200) {

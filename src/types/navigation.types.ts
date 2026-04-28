@@ -11,7 +11,8 @@ export type ScreenName =
     | 'emergency_contacts'
     | 'notifications'
     | 'new_group'
-    | 'sos';
+    | 'sos'
+    | 'qr_scanner';
 
 export interface NavigationParams {
     courseId?: string;

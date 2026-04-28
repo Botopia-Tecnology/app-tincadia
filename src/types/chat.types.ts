@@ -21,6 +21,11 @@ export interface MessageMetadata {
     width?: number;
     height?: number;
     thumbnailUrl?: string;
+    /** True when the user (or remote) actually edited message body */
+    wasEdited?: boolean;
+    /** Mensaje de actividad del grupo (centrado en el hilo) */
+    isSystem?: boolean;
+    systemEvent?: string;
     [key: string]: unknown;
 }
 

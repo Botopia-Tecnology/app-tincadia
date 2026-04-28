@@ -102,6 +102,27 @@ export const MessageList = ({
     }
 
     const isDeleted = msg.deletedAt;
+    const isSystemActivity =
+      msg.type === 'text' &&
+      msg.metadata &&
+      typeof msg.metadata === 'object' &&
+      msg.metadata.isSystem === true;
+
+    if (isSystemActivity) {
+      return (
+        <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center' }]}>
+          <MessageBubble
+            content={item.content}
+            time={item.createdAt}
+            isMine={isMe}
+            isSynced={item.status !== 'pending'}
+            isRead={false}
+            type="text"
+            metadata={item.metadata}
+          />
+        </View>
+      );
+    }
 
     return (
       <Swipeable
@@ -140,6 +161,8 @@ export const MessageList = ({
             duration={item.metadata?.duration}
             senderName={isGroup && !isMe ? item.senderName : undefined}
             updatedAt={item.updatedAt}
+            readAt={item.readAt}
+            metadata={item.metadata}
           />
         </Pressable>
       </Swipeable>
@@ -156,6 +179,7 @@ export const MessageList = ({
       contentContainerStyle={{ paddingVertical: 16 }}
       style={[chatViewStyles.messagesContainer, { backgroundColor: colors.background }]}
       keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
       ListEmptyComponent={
         <View style={chatViewStyles.emptyContainer}>
           <Text style={[chatViewStyles.emptyText, { color: colors.text }]}>No hay mensajes aún</Text>

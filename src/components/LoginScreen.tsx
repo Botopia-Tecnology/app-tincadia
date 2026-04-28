@@ -63,33 +63,50 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       const hasCreds = !!credentials;
       setHasStoredCredentials(hasCreds);
 
-      if (hasCreds) {
+      // Only auto-attempt if it was a password-based account
+      // For Google/Apple, it's better to let the user tap the icon
+      if (hasCreds && credentials?.provider === 'email') {
         attemptBiometricLogin(credentials);
       }
     }
   };
 
-  const attemptBiometricLogin = async (credentials?: { email: string; password: string }) => {
+  const attemptBiometricLogin = async (credentials?: import("../services/biometric.service").BiometricCredentials) => {
     const creds = credentials || await biometricService.getCredentials();
-    if (!creds) return; // Nothing stored
+    if (!creds) return; 
 
+    // Trigger OS biometric prompt
     const success = await biometricService.authenticate();
-    if (success) {
-      // Auto-fill and login
-      setEmail(creds.email);
-      setPassword(creds.password);
-      try {
+    if (!success) return;
+
+    try {
+      if (creds.provider === 'email' && creds.password) {
+        // Auto-fill and login for email/password
+        setEmail(creds.email);
+        setPassword(creds.password);
         await login({ email: creds.email, password: creds.password });
-      } catch (e) {
-        // Login failed (maybe changed password), let user try manually
-        console.log('Biometric auto-login failed:', e);
+      } else if (creds.provider === 'google') {
+        // Trigger Google Login automatically
+        await signInWithGoogle();
+      } else if (creds.provider === 'apple') {
+        // Trigger Apple Login automatically
+        await signInWithApple();
       }
+    } catch (e) {
+      console.log('Biometric auto-login failed:', e);
     }
   };
 
   const handleGoogleLogin = async () => {
     clearError();
-    await signInWithGoogle();
+    try {
+      const user = await signInWithGoogle();
+      if (user?.email) {
+        handleLoginSuccess(user.email, undefined, 'google');
+      }
+    } catch (e) {
+      console.error('Google login error:', e);
+    }
   };
 
   const handleForgotPassword = () => {
@@ -103,39 +120,69 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
     clearError();
     try {
-      await login({ email, password });
-
-      // If login successful and biometrics available, ask to save
-      if (isBiometricAvailable) {
-        const stored = await biometricService.getCredentials();
-        // Only ask if not already saved or if different
-        if (!stored || stored.email !== email) {
-          Alert.alert(
-            `Habilitar ${biometricType}`,
-            `¿Quieres usar ${biometricType} para iniciar sesión más rápido la próxima vez?`,
-            [
-              { text: 'No', style: 'cancel' },
-              {
-                text: 'Sí',
-                onPress: async () => {
-                  await biometricService.saveCredentials({ email, password });
-                }
-              }
-            ]
-          );
-        } else if (stored.email === email && stored.password !== password) {
-          // Update password silently if email matches
-          await biometricService.saveCredentials({ email, password });
-        }
+      const user = await login({ email, password });
+      if (user?.email) {
+        handleLoginSuccess(user.email, password, 'email');
       }
     } catch {
       // Error is handled by AuthContext
     }
   };
 
+  /**
+   * Centralized logic to offer biometric enrollment after any successful login
+   */
+  const handleLoginSuccess = async (userEmail: string, userPassword?: string, provider: 'email' | 'google' | 'apple' = 'email') => {
+    if (!isBiometricAvailable) return;
+
+    const stored = await biometricService.getCredentials();
+    
+    // Only ask if not already saved for this specific email/account
+    if (!stored || stored.email !== userEmail || stored.provider !== provider) {
+      Alert.alert(
+        `Habilitar ${biometricType}`,
+        `¿Quieres usar ${biometricType} para iniciar sesión más rápido la próxima vez?`,
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          {
+            text: 'Sí, activar',
+            onPress: async () => {
+              try {
+                // Ensure the user authenticates once to "authorize" the storage
+                const ok = await biometricService.authenticate();
+                if (ok) {
+                    await biometricService.saveCredentials({ 
+                        email: userEmail, 
+                        password: userPassword, 
+                        provider 
+                    });
+                    setHasStoredCredentials(true);
+                }
+              } catch (e) {
+                console.error('Failed to enroll biometrics:', e);
+              }
+            }
+          }
+        ]
+      );
+    } else if (provider === 'email' && userPassword && stored.password !== userPassword) {
+      // Update password silently if using email login and password changed
+      await biometricService.saveCredentials({ email: userEmail, password: userPassword, provider });
+    }
+  };
+
+  const { user } = useAuth();
+
   const handleAppleLogin = async () => {
     clearError();
-    await signInWithApple();
+    try {
+      const user = await signInWithApple();
+      if (user?.email) {
+        handleLoginSuccess(user.email, undefined, 'apple');
+      }
+    } catch (e) {
+      console.error('Apple login error:', e);
+    }
   };
 
   const handleRegister = () => {

@@ -292,6 +292,16 @@ export const chatService = {
     },
 
     /**
+     * Reclamar una invitación de intérprete de forma atómica
+     */
+    async claimInterpreterInvite(inviteId: string, userId: string): Promise<{ success: boolean; message?: string; roomName?: string }> {
+        return apiClient('/chat/interpreter/claim', {
+            method: 'POST',
+            body: JSON.stringify({ inviteId, userId }),
+        });
+    },
+
+    /**
      * Remove a participant from a group (Admin only)
      */
     async removeParticipant(conversationId: string, adminId: string, userIdToRemove: string): Promise<{ success: boolean }> {
@@ -369,6 +379,15 @@ export const chatService = {
         return apiClient('/model/transcribe/stop', {
             method: 'POST',
             body: JSON.stringify({ room_name: roomName }),
+        });
+    },
+
+    /**
+     * Search all global users by phone or alias/name
+     */
+    async searchGlobalUsers(query: string, limit: number = 20): Promise<{ users: UserProfile[] }> {
+        return apiClient(`/chat/users/search-global?q=${encodeURIComponent(query)}&limit=${limit}`, {
+            method: 'GET',
         });
     },
 };

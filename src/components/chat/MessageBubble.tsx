@@ -7,9 +7,25 @@ import { mediaService } from '../../services/media.service';
 import Autolink from 'react-native-autolink';
 import { API_URL } from '../../config/api.config';
 import { apiClient } from '../../lib/api-client';
+import { MessageMetadata } from '../../types/chat.types';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
+
+/**
+ * Clave para descarga / URL firmada: evita tratar un public_id de Cloudinary como ruta del API
+ * (eso devolvía HTML/JSON y ExoPlayer lanzaba UnrecognizedInputFormatException).
+ */
+function resolveChatMediaKey(publicId: string | undefined, content: string, apiBase: string): string {
+    if (publicId) return publicId;
+    if (!content) return '';
+    if (content.startsWith('file://')) return content;
+    if (content.startsWith('http://') || content.startsWith('https://')) return content;
+    if (content.startsWith('/')) {
+        return `${apiBase}${content}`;
+    }
+    return content;
+}
 
 const SENDER_COLORS = [
     '#4CAF50', '#E91E63', '#9C27B0', '#FF9800',
@@ -38,6 +54,8 @@ interface MessageBubbleProps {
     duration?: number;
     senderName?: string;
     updatedAt?: string;
+    readAt?: string;
+    metadata?: MessageMetadata;
 }
 
 export function MessageBubble({
@@ -52,7 +70,9 @@ export function MessageBubble({
     publicId,
     duration,
     senderName,
-    updatedAt
+    updatedAt,
+    readAt,
+    metadata,
 }: MessageBubbleProps) {
     const [mediaUri, setMediaUri] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -78,25 +98,20 @@ export function MessageBubble({
                         return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
                     };
 
-                    // 2. Try to get media through the caching service
-                    // We prefer publicId for signed URLs, but fall back to content URL
-                    const storageKeyOrUrl = publicId || normalizeUrl(content);
-                    const localUri = await mediaService.downloadMedia(storageKeyOrUrl, type as 'image' | 'video' | 'audio');
-                    
+                    const resolvedKey = resolveChatMediaKey(publicId, content, API_URL);
+                    const localUri = await mediaService.downloadMedia(resolvedKey, type as 'image' | 'video' | 'audio');
+
                     if (localUri) {
                         setMediaUri(localUri);
                     } else {
-                        // Final fallback if caching fails
-                        setMediaUri(normalizeUrl(content));
+                        const playable =
+                            resolvedKey.startsWith('http') || resolvedKey.startsWith('file://');
+                        setMediaUri(playable ? resolvedKey : normalizeUrl(content));
                     }
                 } catch (e) {
                     console.error('Failed to load/cache media:', e);
-                    // Minimal fallback
-                    if (!content.startsWith('http')) {
-                        setMediaUri(`${API_URL}${content.startsWith('/') ? '' : '/'}${content}`);
-                    } else {
-                        setMediaUri(content);
-                    }
+                    const key = resolveChatMediaKey(publicId, content, API_URL);
+                    setMediaUri(key.startsWith('http') || key.startsWith('file://') ? key : normalizeUrl(content));
                 } finally {
                     setIsLoading(false);
                 }
@@ -226,7 +241,18 @@ export function MessageBubble({
     };
 
     const isDeleted = content === 'Mensaje eliminado' || content === '🚫 Mensaje eliminado' || updatedAt?.includes('deleted');
-    const isEdited = !isDeleted && updatedAt && new Date(updatedAt).getTime() > new Date(time).getTime() + 1000; // 1s buffer
+    const isEdited = !isDeleted && (() => {
+        if (metadata?.wasEdited === true) return true;
+        if (!updatedAt || !time) return false;
+        const createdMs = new Date(time).getTime();
+        const updatedMs = new Date(updatedAt).getTime();
+        if (updatedMs <= createdMs + 2000) return false;
+        if (readAt) {
+            const readMs = new Date(readAt).getTime();
+            if (Math.abs(updatedMs - readMs) < 5000) return false;
+        }
+        return true;
+    })();
 
     const renderMedia = () => {
         if (isLoading) {
@@ -363,6 +389,34 @@ export function MessageBubble({
     };
 
     const senderColor = senderName ? getSenderColor(senderName) : '#4CAF50';
+
+    // Actividad de grupo (salida, expulsión, grupo creado, etc.)
+    if (metadata?.isSystem === true && type === 'text') {
+        return (
+            <View style={{ alignSelf: 'center', maxWidth: '92%', marginVertical: 8, paddingHorizontal: 12 }}>
+                <Text
+                    style={{
+                        fontSize: 12,
+                        color: '#8E8E93',
+                        textAlign: 'center',
+                        lineHeight: 17,
+                    }}
+                >
+                    {content}
+                </Text>
+                <Text
+                    style={{
+                        fontSize: 10,
+                        color: '#AEAEB2',
+                        textAlign: 'center',
+                        marginTop: 4,
+                    }}
+                >
+                    {formatTime(time)}
+                </Text>
+            </View>
+        );
+    }
 
     // Regular text message
     if (type === 'text' || type === 'call' || type === 'call_ended') {

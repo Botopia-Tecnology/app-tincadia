@@ -30,6 +30,7 @@ import { Contact } from '../../services/contact.service';
 import { Message } from '../../hooks/useChat';
 import { User } from '../../types/auth.types';
 import { MessageActionSheet } from './MessageActionSheet';
+import { APP_TIERS } from '../../config/revenuecat.config';
 
 interface ChatViewProps {
   conversationId: string;
@@ -49,6 +50,7 @@ interface ChatViewProps {
   groupDescription?: string;
   onContactUpdate?: (contact: Contact) => void;
   onNavigateCall: (roomName: string, username: string, conversationId: string, userId: string) => void;
+  onNavigate: (screen: string, params?: any) => void;
   currentUser?: User | null;
 }
 
@@ -67,7 +69,7 @@ export function ChatView(props: ChatViewProps) {
     conversationId, userId, otherUserName, otherUserId, 
     onBack, onNavigateCall, currentUser, otherUserPhone, isUnknown, otherUserAvatar,
     onContactUpdate, contactId, alias, customFirstName, customLastName,
-    isGroup, groupDescription
+    isGroup, groupDescription, onNavigate
   } = props;
 
   const { colors, isDark } = useTheme();
@@ -140,7 +142,6 @@ export function ChatView(props: ChatViewProps) {
     setMessageText('');
     setReplyMessage(null);
     setInputAreaHeight(48);
-    Keyboard.dismiss();
 
     try {
       await sendMessage(textToSend, 'text', metadata);
@@ -153,7 +154,7 @@ export function ChatView(props: ChatViewProps) {
     if (!messageText.trim() || isCorrecting) return;
 
     if (!canUseCorrection()) {
-        setUpgradeFeature(planTier === 'gratis' ? 'correction_blocked' : 'correction');
+        setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'correction_blocked' : 'correction');
         setShowUpgradeModal(true);
         return;
     }
@@ -228,6 +229,13 @@ export function ChatView(props: ChatViewProps) {
       console.error('Failed to send call notification message:', err);
     });
 
+    onNavigateCall(roomName, username, conversationId, userId);
+  };
+
+  const handleJoinCall = () => {
+    const roomName = `conv_${conversationId}`;
+    const username = currentUser?.firstName || 'Usuario';
+    // Just join the existing room. Do NOT send a 'call' message.
     onNavigateCall(roomName, username, conversationId, userId);
   };
 
@@ -313,7 +321,7 @@ export function ChatView(props: ChatViewProps) {
 
   const handleAudioRecorderMode = () => {
     if (!canUseTranscription()) {
-        setUpgradeFeature(planTier === 'gratis' ? 'transcription_blocked' : 'transcription');
+        setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'transcription_blocked' : 'transcription');
         setShowUpgradeModal(true);
         return;
     }
@@ -395,7 +403,7 @@ export function ChatView(props: ChatViewProps) {
         isGroup={isGroup}
         onLongPress={handleLongPress}
         onSwipeReply={(msg) => setReplyMessage(msg)}
-        onJoinCall={handleCall}
+        onJoinCall={handleJoinCall}
         colors={colors}
         isDark={isDark}
         swipeableRefs={swipeableRefs}
@@ -467,6 +475,10 @@ export function ChatView(props: ChatViewProps) {
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
         feature={upgradeFeature}
+        onUpgradePress={() => {
+          setShowUpgradeModal(false);
+          onNavigate('profile', { openManagePlan: true });
+        }}
       />
     </View>
   );

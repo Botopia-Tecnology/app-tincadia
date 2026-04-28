@@ -15,11 +15,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface UpgradeModalProps {
     visible: boolean;
     onClose: () => void;
     feature: 'transcription' | 'transcription_blocked' | 'lsc' | 'correction' | 'correction_blocked' | 'tts' | 'interpreter';
+    onUpgradePress?: () => void;
 }
 
 const FEATURE_CONFIG = {
@@ -67,8 +69,9 @@ const FEATURE_CONFIG = {
     },
 };
 
-export function UpgradeModal({ visible, onClose, feature }: UpgradeModalProps) {
+export function UpgradeModal({ visible, onClose, feature, onUpgradePress }: UpgradeModalProps) {
     const config = FEATURE_CONFIG[feature] || FEATURE_CONFIG.transcription;
+    const { colors, isDark } = useTheme();
 
     return (
         <Modal
@@ -78,7 +81,7 @@ export function UpgradeModal({ visible, onClose, feature }: UpgradeModalProps) {
             onRequestClose={onClose}
         >
             <View style={styles.overlay}>
-                <View style={styles.container}>
+                <View style={[styles.container, { backgroundColor: colors.background, shadowColor: isDark ? '#000' : '#000' }]}>
                     {/* Premium Badge / Icon */}
                     <LinearGradient
                         colors={config.gradient}
@@ -89,19 +92,24 @@ export function UpgradeModal({ visible, onClose, feature }: UpgradeModalProps) {
                         <Ionicons name={config.icon} size={36} color="#FFF" />
                     </LinearGradient>
 
-                    <Text style={styles.title}>{config.title}</Text>
-                    <Text style={styles.description}>{config.description}</Text>
+                    <Text style={[styles.title, { color: colors.text }]}>{config.title}</Text>
+                    <Text style={[styles.description, { color: colors.textMuted }]}>{config.description}</Text>
 
-                    {/* Simple Dismiss Button instead of CTA */}
-                    <TouchableOpacity onPress={onClose} activeOpacity={0.8} style={{ width: '100%' }}>
+                    {/* Redirect Action CTA */}
+                    <TouchableOpacity onPress={onUpgradePress || onClose} activeOpacity={0.8} style={{ width: '100%', marginBottom: 12 }}>
                         <LinearGradient
                             colors={['#4F46E5', '#7C3AED']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             style={styles.ctaButton}
                         >
-                            <Text style={styles.ctaText}>Entendido</Text>
+                            <Text style={styles.ctaText}>Ir a Gestionar Plan</Text>
                         </LinearGradient>
+                    </TouchableOpacity>
+
+                    {/* Simple Dismiss Button */}
+                    <TouchableOpacity onPress={onClose} activeOpacity={0.6} style={styles.dismissButton}>
+                        <Text style={styles.dismissText}>Quizás más tarde</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -118,7 +126,6 @@ const styles = StyleSheet.create({
         padding: 24,
     },
     container: {
-        backgroundColor: '#FFFFFF',
         borderRadius: 24,
         padding: 32,
         alignItems: 'center',
@@ -207,5 +214,18 @@ const styles = StyleSheet.create({
         color: '#9CA3AF',
         fontSize: 14,
         fontWeight: '500',
+    },
+    secondaryButton: {
+        paddingVertical: 14,
+        paddingHorizontal: 32,
+        borderRadius: 16,
+        width: '100%',
+        backgroundColor: '#F3F4F6',
+        alignItems: 'center',
+    },
+    secondaryButtonText: {
+        color: '#374151',
+        fontSize: 14,
+        fontWeight: '600',
     },
 });

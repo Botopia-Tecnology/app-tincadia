@@ -24,6 +24,11 @@
                 "appleTeamId": "CT344J3KHR"
             }
         },
-        "production": {}
+        "production": {
+            "ios": {
+                "appleTeamId": "CT344J3KHR",
+                "ascAppId": "6756493332"
+            }
+        }
     }
 }

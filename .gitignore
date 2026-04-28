@@ -47,3 +47,5 @@ yarn-error.*
 # Firebase configuration files
 GoogleService-Info.plist
 google-services.json
+
+eas.json

@@ -55,22 +55,44 @@ export const useDeepLinking = (
           const roomName = `sos-${user.id}-${Date.now()}`;
 
           try {
-            const result = await chatService.inviteInterpreters({
-              roomName,
-              userId: user.id,
-              username,
-            });
+            Alert.alert(
+              'Solicitar Intérprete',
+              '¿Desea solicitar un intérprete para unirse a esta llamada?',
+              [
+                { 
+                  text: 'Cancelar', 
+                  style: 'cancel',
+                  onPress: () => {
+                    // No action needed on cancel for deep link
+                  }
+                },
+                {
+                  text: 'Solicitar',
+                  onPress: async () => {
+                    try {
+                      const result = await chatService.inviteInterpreters({
+                        roomName,
+                        userId: user.id,
+                        username,
+                      });
 
-            if (result?.success) {
-              Alert.alert('Solicitud enviada', `Se notificó a ${result.count || 1} intérprete(s).`);
-            } else if (result?.message) {
-              Alert.alert('Aviso', result.message);
-            }
+                      if (result?.success) {
+                        Alert.alert('Solicitud enviada', `Se ha notificado a ${result.count || 1} intérprete(s).`);
+                      } else if (result?.message) {
+                        Alert.alert('Aviso', result.message);
+                      }
 
-            onJoinCall({ roomName, username, userId: user.id });
+                      onJoinCall({ roomName, username, userId: user.id });
+                    } catch (error) {
+                      console.error('Error solicitando intérprete QR:', error);
+                      Alert.alert('Error', 'No pudimos contactar a un intérprete. Intenta de nuevo.');
+                    }
+                  }
+                }
+              ]
+            );
           } catch (error) {
-            console.error('Error solicitando intérprete QR:', error);
-            Alert.alert('Error', 'No pudimos contactar a un intérprete. Intenta de nuevo.');
+            console.error('Error processing deep link interpreter invite:', error);
           }
         }
       } catch (e) {

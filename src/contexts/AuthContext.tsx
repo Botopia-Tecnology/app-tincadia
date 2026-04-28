@@ -30,9 +30,9 @@ interface AuthContextValue {
     isAuthenticated: boolean;
     profileComplete: boolean;
     error: string | null;
-    login: (credentials: LoginDto) => Promise<void>;
-    register: (userData: RegisterDto) => Promise<void>;
-    loginWithOAuth: (provider: string, idToken: string) => Promise<void>;
+    login: (credentials: LoginDto) => Promise<User>;
+    register: (userData: RegisterDto) => Promise<User>;
+    loginWithOAuth: (provider: string, idToken: string) => Promise<User>;
     updateProfile: (data: UpdateProfileDto) => Promise<void>;
     logout: () => Promise<void>;
     clearError: () => void;
@@ -144,6 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             };
             console.log('🔑 Merged user isProfileComplete:', mergedUser.isProfileComplete);
             setUser(mergedUser);
+            return mergedUser;
         } catch (err) {
             Sentry.captureException(err);
             const message = err instanceof Error ? err.message : 'Error al iniciar sesión';
@@ -162,11 +163,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const rawRole = response.user?.role || '';
             const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
             
-            setUser({
+            const newUser = {
                 ...response.user,
                 role: normalizedRole,
                 isProfileComplete: response.isProfileComplete ?? response.user.isProfileComplete,
-            });
+            };
+            setUser(newUser);
+            return newUser;
         } catch (err) {
             Sentry.captureException(err);
             const message = err instanceof Error ? err.message : 'Falla en el registro';
@@ -185,11 +188,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const rawRole = response.user?.role || '';
             const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
             
-            setUser({
+            const newUser = {
                 ...response.user,
                 role: normalizedRole,
                 isProfileComplete: response.isProfileComplete ?? response.user.isProfileComplete,
-            });
+            };
+            setUser(newUser);
+            return newUser;
         } catch (err) {
             Sentry.captureException(err);
             const message = err instanceof Error ? err.message : 'Falla en inicio de sesión con OAuth';

@@ -76,9 +76,10 @@ export function useGoogleAuth() {
                 console.log('✅ Got ID token from Google');
 
                 // Send to backend for Supabase authentication
-                await loginWithOAuth('google', idToken);
+                const user = await loginWithOAuth('google', idToken);
 
                 console.log('✅ Google Sign-In completed successfully');
+                return user;
             } else {
                 // User cancelled the sign-in
                 console.log('Google Sign-In was cancelled');

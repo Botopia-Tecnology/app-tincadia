@@ -46,7 +46,7 @@ export const KeyboardSafeView = ({
 }: Props) => {
     // Initial behavior based on platform
     const [behavior, setBehavior] = useState<KeyboardAvoidingViewProps['behavior']>(
-        Platform.OS === 'ios' ? 'padding' : undefined
+        Platform.OS === 'ios' ? 'padding' : 'height'
     );
 
     useEffect(() => {

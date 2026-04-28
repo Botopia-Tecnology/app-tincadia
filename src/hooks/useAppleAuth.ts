@@ -54,9 +54,10 @@ export function useAppleAuth() {
             // If the backend needs it, it should be extracted here, but typically
             // the backend decodes the ID token or the client sends the name separately.
             // For now, we follow the pattern of sending just the token.
-            await loginWithOAuth('apple', identityToken);
+            const user = await loginWithOAuth('apple', identityToken);
 
             console.log('✅ Apple Backend Auth completed');
+            return user;
 
         } catch (err: unknown) {
             console.error('Apple Sign-In error:', err);

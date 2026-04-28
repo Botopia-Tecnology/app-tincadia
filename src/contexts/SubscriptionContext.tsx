@@ -2,12 +2,21 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { paymentsService, SubscriptionStatus } from '../services/payments.service';
 import { useAuth } from './AuthContext';
+import Purchases from 'react-native-purchases';
+import { 
+    getRevenueCatApiKey, 
+    REVENUECAT_ENTITLEMENT_PREMIUM, 
+    REVENUECAT_ENTITLEMENT_BASICO,
+    APP_TIERS,
+    BACKEND_PLAN_TYPES,
+    FEATURE_KEYS
+} from '../config/revenuecat.config';
 
 const SUBSCRIPTION_CACHE_KEY = 'subscription_status_cache';
 const TRANSCRIPTION_USES_PREFIX = 'transcription_uses_';
 const CORRECTION_USES_PREFIX = 'correction_uses_';
 
-export type PlanTier = 'gratis' | 'basico' | 'premium';
+export type PlanTier = typeof APP_TIERS[keyof typeof APP_TIERS];
 
 interface SubscriptionContextValue {
     planTier: PlanTier;
@@ -35,11 +44,12 @@ function getTodayKey(): string {
 }
 
 function determineTier(status: SubscriptionStatus | null): PlanTier {
-    if (!status?.hasSubscription) return 'gratis';
-    if (status.status !== 'active' && status.status !== 'trialing') return 'gratis';
+    if (!status?.hasSubscription) return APP_TIERS.GRATIS;
+    if (status.status !== 'active' && status.status !== 'trialing') return APP_TIERS.GRATIS;
     const planType = status.planType || '';
-    if (planType === 'personal_premium' || planType === 'empresa_corporate') return 'premium';
-    return 'basico';
+    if (planType === BACKEND_PLAN_TYPES.PERSONAL_PREMIUM || planType === BACKEND_PLAN_TYPES.EMPRESA_CORPORATE) return APP_TIERS.PREMIUM;
+    if (planType === BACKEND_PLAN_TYPES.PERSONAL_BASICO) return APP_TIERS.BASICO;
+    return APP_TIERS.GRATIS;
 }
 
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
@@ -56,9 +66,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     const lastFetchTime = useRef<number>(0);
 
     const planTier = useMemo(() => determineTier(subscriptionStatus), [subscriptionStatus]);
-    const isPremium = planTier === 'premium';
-    const isBasico = planTier === 'basico';
-    const isGratis = planTier === 'gratis';
+    const isPremium = planTier === APP_TIERS.PREMIUM;
+    const isBasico = planTier === APP_TIERS.BASICO;
+    const isGratis = planTier === APP_TIERS.GRATIS;
 
     const fetchInBackground = useCallback(async (uid: string) => {
         if (backgroundFetchInProgress.current || mainFetchInProgress.current) return;
@@ -119,6 +129,27 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
         try {
             const status = await paymentsService.getSubscriptionStatus(userId);
+            
+            // Sync with RevenueCat
+            try {
+                const customerInfo = await Purchases.getCustomerInfo();
+                const isPremiumInRC = typeof customerInfo.entitlements.active[REVENUECAT_ENTITLEMENT_PREMIUM] !== "undefined";
+                const isBasicoInRC = typeof customerInfo.entitlements.active[REVENUECAT_ENTITLEMENT_BASICO] !== "undefined";
+                
+                // If RevenueCat says premium but our backend doesn't, RC is the source of truth for mobile
+                if (isPremiumInRC) {
+                    status.hasSubscription = true;
+                    status.status = 'active';
+                    status.planType = BACKEND_PLAN_TYPES.PERSONAL_PREMIUM;
+                } else if (isBasicoInRC) {
+                    status.hasSubscription = true;
+                    status.status = 'active';
+                    status.planType = BACKEND_PLAN_TYPES.PERSONAL_BASICO;
+                }
+            } catch (rcError) {
+                console.warn('⚠️ [SubscriptionContext] RevenueCat check failed:', rcError);
+            }
+
             setSubscriptionStatus(status);
             lastFetchTime.current = Date.now();
             await AsyncStorage.setItem(`${SUBSCRIPTION_CACHE_KEY}_${userId}`, JSON.stringify({
@@ -134,6 +165,26 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
             mainFetchInProgress.current = false;
         }
     }, [userId, fetchInBackground]);
+
+    useEffect(() => {
+        // Initialize RevenueCat
+        const initRevenueCat = async () => {
+            try {
+                const apiKey = getRevenueCatApiKey();
+                if (apiKey) {
+                    if (userId) {
+                        await Purchases.configure({ apiKey, appUserID: userId });
+                    } else {
+                        await Purchases.configure({ apiKey });
+                    }
+                    console.log('✅ [SubscriptionContext] RevenueCat configured successfully');
+                }
+            } catch (error) {
+                console.error('❌ [SubscriptionContext] RevenueCat config error:', error);
+            }
+        };
+        initRevenueCat();
+    }, [userId]);
 
     useEffect(() => {
         if (userId) {
@@ -161,29 +212,30 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         loadUses();
     }, [loadUses]);
 
-    const getLimit = useCallback((key: 'transcription_limit' | 'correction_limit' | 'subtitles_limit', defaultLimit: number): number => {
+    const getLimit = useCallback((key: keyof typeof FEATURE_KEYS, defaultLimit: number): number => {
         if (!subscriptionStatus) return 0;
         const features = subscriptionStatus.features || {};
-        const limit = features[key];
+        const limit = features[FEATURE_KEYS[key]];
         if (typeof limit === 'number') return limit;
         if (isPremium) return -1;
         if (isBasico) return defaultLimit;
         return 0;
     }, [subscriptionStatus, isPremium, isBasico]);
 
-    const isFeatureEnabled = useCallback((key: 'lsc_enabled' | 'interpreter_enabled' | 'subtitles_enabled') => {
+    const isFeatureEnabled = useCallback((key: keyof typeof FEATURE_KEYS) => {
         if (!subscriptionStatus) return false;
         const features = subscriptionStatus.features || {};
-        if (features[key] !== undefined) return !!features[key];
+        const featureKey = FEATURE_KEYS[key];
+        if (features[featureKey] !== undefined) return !!features[featureKey];
         return isPremium;
     }, [subscriptionStatus, isPremium]);
 
-    const canUseLSC = useMemo(() => isFeatureEnabled('lsc_enabled'), [isFeatureEnabled]);
-    const canUseInterpreter = useMemo(() => isFeatureEnabled('interpreter_enabled'), [isFeatureEnabled]);
+    const canUseLSC = useMemo(() => isFeatureEnabled('LSC_ENABLED'), [isFeatureEnabled]);
+    const canUseInterpreter = useMemo(() => isFeatureEnabled('INTERPRETER_ENABLED'), [isFeatureEnabled]);
     const canUseTTS = useMemo(() => {
         if (!subscriptionStatus) return false;
         const features = subscriptionStatus.features || {};
-        return !!features['tts_enabled']; // strictly admin-controlled
+        return !!features[FEATURE_KEYS.TTS_ENABLED]; // strictly admin-controlled
     }, [subscriptionStatus]);
     
     // Evaluate via getLimit if it's considered unlimitted or via featureEnabled directly as boolean flag based on your backend usage.
@@ -191,13 +243,13 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     // If it's a limit, use getLimit > 0
     // Assuming boolean based on typical patterns or 'subtitles_limit' if numeric. We'll use getLimit if we treat it as limited.
     const canUseSubtitles = useMemo(() => {
-        const limit = getLimit('subtitles_limit', 0);
+        const limit = getLimit('SUBTITLES_LIMIT', 0);
         return limit === -1 || limit > 0;
     }, [getLimit]);
 
 
     const canUseTranscription = useCallback(() => {
-        const limit = getLimit('transcription_limit', 1);
+        const limit = getLimit('TRANSCRIPTION_LIMIT', 1);
         if (limit === -1) return true;
         if (limit === 0) return false;
         return transcriptionUsesToday < limit;

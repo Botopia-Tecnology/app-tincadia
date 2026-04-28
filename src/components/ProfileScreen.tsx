@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share, Switch, RefreshControl } from 'react-native';
 import { Settings, Moon, Sun } from 'lucide-react-native';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
@@ -20,9 +20,11 @@ import {
     CameraIcon,
     EmergencyContactIcon,
 } from './icons/NavigationIcons';
+import { ManagePlanModal } from './ManagePlanModal';
 import { BottomNavigation } from './BottomNavigation';
 import { NotificationBell } from './NotificationBell';
 import { NavigateFunction } from '../types/navigation.types';
+import { APP_TIERS, BACKEND_PLAN_TYPES } from '../config/revenuecat.config';
 
 import { EditProfileScreen } from './profile/EditProfileScreen';
 import { PrivacyScreen } from './profile/PrivacyScreen';
@@ -33,6 +35,7 @@ interface ProfileScreenProps {
     onBack: () => void;
     userId?: string;
     onShowNotifications?: () => void;
+    openManagePlan?: boolean;
 }
 
 export function ProfileScreen({
@@ -40,6 +43,7 @@ export function ProfileScreen({
     onBack,
     userId,
     onShowNotifications,
+    openManagePlan,
 }: ProfileScreenProps) {
     const { user, logout, isLoading, refreshProfile } = useAuth();
     const { subscriptionStatus, isPremium, isBasico, refreshSubscription, isLoading: isSubscriptionLoading } = useSubscription(userId);
@@ -48,18 +52,35 @@ export function ProfileScreen({
     // Local state to manage sub-screen navigation
     const [subScreen, setSubScreen] = useState<'none' | 'editProfile' | 'privacy' | 'emergencyContacts'>('none');
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isManagePlanVisible, setIsManagePlanVisible] = useState(openManagePlan || false);
 
-    // Derive plan display label from subscription status
+    useEffect(() => {
+        if (openManagePlan) {
+            setIsManagePlanVisible(true);
+        }
+    }, [openManagePlan]);
+
     const getPlanLabel = () => {
         if (isSubscriptionLoading && !subscriptionStatus) return '';
         if (!subscriptionStatus?.hasSubscription) return 'Plan Gratis';
-        const planType = typeof subscriptionStatus.planType === 'string' ? subscriptionStatus.planType.toLowerCase() : '';
-        if (planType.includes('premium')) return 'Plan Premium';
-        if (planType.includes('corporate')) return 'Membresía Empresarial';
-        if (planType.includes('free') || planType.includes('basico')) return 'Plan Básico';
+        
+        const planType = subscriptionStatus.planType;
+        if (planType === BACKEND_PLAN_TYPES.PERSONAL_PREMIUM) return 'Plan Premium';
+        if (planType === BACKEND_PLAN_TYPES.EMPRESA_CORPORATE) return 'Membresía Empresarial';
+        if (planType === BACKEND_PLAN_TYPES.PERSONAL_BASICO) return 'Plan Básico';
+        
         return 'Plan Básico';
     };
     const planLabel = getPlanLabel();
+
+    const daysRemaining = (() => {
+        if (!subscriptionStatus?.currentPeriodEnd) return null;
+        const endDate = new Date(subscriptionStatus.currentPeriodEnd);
+        const today = new Date();
+        const diffTime = endDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays >= 0 ? diffDays : 0;
+    })();
 
     // Helper to get full avatar URL
     const getAvatarSource = () => {
@@ -166,25 +187,45 @@ export function ProfileScreen({
                         {user?.email && (
                             <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, textAlign: 'center' }}>{user.email}</Text>
                         )}
-                        {/* Plan Badge - Centered */}
-                        <View style={{
-                            marginTop: 12,
-                            paddingHorizontal: 16,
-                            paddingVertical: 6,
-                            backgroundColor: isPremium ? '#FFD700' : ((isSubscriptionLoading && !subscriptionStatus) ? colors.surface : '#E5E7EB'),
-                            borderRadius: 16,
-                            alignSelf: 'center',
-                            flexDirection: 'row',
-                            alignItems: 'center'
-                        }}>
-                            <Text style={{
-                                color: isPremium ? '#000' : '#4B5563',
-                                fontSize: 13,
-                                fontWeight: '700',
+                        {/* Plan Badge and Days Remaining */}
+                        <TouchableOpacity 
+                            onPress={() => setIsManagePlanVisible(true)}
+                            activeOpacity={0.7}
+                            style={{
+                                marginTop: 12,
+                                alignSelf: 'center',
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 8,
+                            }}
+                        >
+                            <View style={{
+                                paddingHorizontal: 16,
+                                paddingVertical: 6,
+                                backgroundColor: isPremium ? '#FFD700' : ((isSubscriptionLoading && !subscriptionStatus) ? colors.surface : '#E5E7EB'),
+                                borderRadius: 16,
                             }}>
-                                {planLabel}
-                            </Text>
-                        </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                    <Text style={{
+                                        color: isPremium ? '#000' : '#4B5563',
+                                        fontSize: 13,
+                                        fontWeight: '700',
+                                    }}>
+                                        {planLabel}
+                                    </Text>
+                                    <ChevronRightIcon size={14} color={isPremium ? '#000' : '#4B5563'} />
+                                </View>
+                            </View>
+                            {daysRemaining !== null && (
+                                <Text style={{
+                                    color: colors.textSecondary,
+                                    fontSize: 13,
+                                    fontWeight: '500',
+                                }}>
+                                    • Quedan {daysRemaining} {daysRemaining === 1 ? 'día' : 'días'}
+                                </Text>
+                            )}
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -351,6 +392,10 @@ export function ProfileScreen({
             </ScrollView>
 
             <BottomNavigation currentScreen="profile" onNavigate={onNavigate} />
+            <ManagePlanModal 
+                visible={isManagePlanVisible} 
+                onClose={() => setIsManagePlanVisible(false)} 
+            />
         </KeyboardSafeView>
     );
 }

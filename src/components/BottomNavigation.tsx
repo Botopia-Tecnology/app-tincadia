@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, Alert, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomNavigationStyles as styles } from '../styles/BottomNavigation.styles';
 import {
     ChatIcon,
@@ -13,7 +14,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { chatService } from '../services/chat.service';
 import { useSubscription } from '../hooks/useSubscription';
 import { UpgradeModal } from './UpgradeModal';
-import { Video } from 'lucide-react-native';
+import { Video, QrCode } from 'lucide-react-native';
 import { NavigateFunction } from '../types/navigation.types';
 
 interface BottomNavigationProps {
@@ -29,6 +30,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isRequestingInterpreter, setIsRequestingInterpreter] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const insets = useSafeAreaInsets();
 
     const toggleMenu = () => {
         setIsMenuOpen(!isMenuOpen);
@@ -92,6 +94,21 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                     <View style={[styles.menuOverlay, { backgroundColor: colors.overlay }]}>
                         <TouchableWithoutFeedback>
                             <View style={styles.floatingMenuContainer}>
+                                <TouchableOpacity
+                                    style={styles.floatingMenuItem}
+                                    onPress={() => {
+                                        closeMenu();
+                                        onNavigate('qr_scanner');
+                                    }}
+                                >
+                                    <View style={[styles.floatingLabelContainer, { backgroundColor: colors.card }]}>
+                                        <Text style={[styles.floatingLabel, { color: colors.text }]}>Escanear QR</Text>
+                                    </View>
+                                    <View style={[styles.floatingButton, { backgroundColor: '#83A98A' }]}>
+                                        <QrCode size={24} color="white" />
+                                    </View>
+                                </TouchableOpacity>
+
                                 <TouchableOpacity
                                     style={styles.floatingMenuItem}
                                     onPress={handleInterpreterCall}
@@ -170,6 +187,10 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                 visible={showUpgradeModal}
                 onClose={() => setShowUpgradeModal(false)}
                 feature="interpreter"
+                onUpgradePress={() => {
+                    setShowUpgradeModal(false);
+                    onNavigate('profile', { openManagePlan: true });
+                }}
             />
         </>
     );

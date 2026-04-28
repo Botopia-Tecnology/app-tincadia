@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, SafeAreaView, Alert, Image, Dimensions, DeviceEventEmitter } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, Alert, Image, Dimensions, DeviceEventEmitter, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     LiveKitRoom,
     useTracks,
@@ -12,10 +13,10 @@ import {
 
 // Initialize WebRTC
 registerGlobals();
-import { Track } from 'livekit-client';
+import { Track, RoomEvent, ConnectionState, type RemoteParticipant } from 'livekit-client';
 import { Audio } from 'expo-av';
 import { API_URL } from '../config/api.config';
-import { CameraIcon, MicrophoneIcon, PhoneIcon } from '../components/icons/NavigationIcons';
+import { CameraIcon, MicrophoneIcon, PhoneIcon, SyncIcon } from '../components/icons/NavigationIcons';
 import { chatService } from '../services/chat.service';
 import { useAuth } from '../contexts/AuthContext';
 import { saveMessage, deleteMessage } from '../database/chatDatabase';
@@ -23,6 +24,46 @@ import { useSubscription } from '../hooks/useSubscription';
 import { UpgradeModal } from '../components/UpgradeModal';
 
 type LayoutMode = 'grid' | 'interpreter';
+
+type TranscriptCaption = {
+    id: string;
+    speaker: string;
+    text: string;
+};
+
+type PartialCaption = {
+    speaker: string;
+    text: string;
+};
+
+/**
+ * Colores bien diferenciados sobre fondo oscuro (nombre = un color estable por hash).
+ * Tonos saturados para que se note la diferencia entre personas.
+ */
+const SPEAKER_NAME_COLORS = [
+    '#FF6B6B',
+    '#4ECDC4',
+    '#FFE066',
+    '#A78BFA',
+    '#FF8FAB',
+    '#74C0FC',
+    '#8CE99A',
+    '#FFB347',
+    '#E599F7',
+    '#66D9E8',
+    '#FFD43B',
+    '#FF8787',
+];
+
+function colorForSpeakerName(name: string): string {
+    const key = name.trim().toLowerCase() || '_';
+    let h = 2166136261;
+    for (let i = 0; i < key.length; i++) {
+        h ^= key.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return SPEAKER_NAME_COLORS[Math.abs(h) % SPEAKER_NAME_COLORS.length];
+}
 
 export interface CallScreenProps {
     roomName: string;
@@ -33,6 +74,7 @@ export interface CallScreenProps {
     isManualPipMode?: boolean;
     onRestoreFromPip?: () => void;
     onMinimize?: () => void;
+    onNavigate?: (screen: string, params?: any) => void;
 }
 
 export const CallScreen = ({ 
@@ -43,11 +85,13 @@ export const CallScreen = ({
     onBack,
     isManualPipMode = false,
     onRestoreFromPip,
-    onMinimize
+    onMinimize,
+    onNavigate
 }: CallScreenProps) => {
     const [token, setToken] = useState<string | null>(null);
     const [url, setUrl] = useState<string | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
+    const [isFrontCamera, setIsFrontCamera] = useState(true);
     const hasExitedRef = useRef(false);
 
     const safeOnBack = useCallback(() => {
@@ -66,6 +110,13 @@ export const CallScreen = ({
         });
         return () => sub.remove();
     }, [conversationId, roomName, safeOnBack]);
+
+    // Apaga el agente Vosk en Model-ms al salir de la llamada (evita procesos colgados en active_agents).
+    useEffect(() => {
+        return () => {
+            chatService.stopTranscription(roomName).catch(() => undefined);
+        };
+    }, [roomName]);
 
     useEffect(() => {
         let isMounted = true;
@@ -90,7 +141,13 @@ export const CallScreen = ({
 
                 if (data.token && isMounted) {
                     setToken(data.token);
-                    setUrl('wss://tincadia-or0042ea.livekit.cloud');
+                    
+                    if (typeof data.url === 'string' && data.url.startsWith('wss://')) {
+                        setUrl(data.url);
+                    } else {
+                        console.error('❌ Backend did not provide a valid LiveKit URL. Connection failed.');
+                        Alert.alert('Error', 'No se pudo configurar la conexión de video. Contacte a soporte.');
+                    }
                 }
             } catch (e) {
                 console.error('Failed to setup call', e);
@@ -123,7 +180,7 @@ export const CallScreen = ({
                 onDisconnected={safeOnBack}
             >
                 <RingingSoundManager />
-                <VideoView layoutMode={layoutMode} />
+                <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
                 <ControlsView
                     onHangup={safeOnBack}
                     conversationId={conversationId}
@@ -132,6 +189,8 @@ export const CallScreen = ({
                     username={username}
                     layoutMode={layoutMode}
                     onToggleLayout={() => setLayoutMode(m => m === 'grid' ? 'interpreter' : 'grid')}
+                    onToggleCameraFacing={() => setIsFrontCamera(prev => !prev)}
+                    isFrontCamera={isFrontCamera}
                     isManualPipMode={isManualPipMode}
                     onRestoreFromPip={onRestoreFromPip}
                     onMinimize={onMinimize}
@@ -141,6 +200,132 @@ export const CallScreen = ({
         </View>
     );
 };
+
+function payloadToUint8Array(payload: Uint8Array | ArrayBuffer | undefined): Uint8Array | null {
+    if (payload == null) return null;
+    if (payload instanceof Uint8Array) return payload;
+    return new Uint8Array(payload);
+}
+
+function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 30 }: { participantIdentity: string, bottomOffset?: number }) {
+    const room = useRoomContext();
+    const [isLivekitConnected, setIsLivekitConnected] = useState(false);
+    const [finalLines, setFinalLines] = useState<TranscriptCaption[]>([]);
+    const [partialLine, setPartialLine] = useState<PartialCaption | null>(null);
+    const scrollRef = useRef<ScrollView>(null);
+    const captionIdRef = useRef(0);
+
+    // Auto-scroll to bottom when new text arrives
+    useEffect(() => {
+        if (scrollRef.current) {
+            setTimeout(() => {
+                scrollRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+        }
+    }, [finalLines, partialLine]);
+
+    // En React Native suele no existir `window`; hooks como useDataChannel no suscriben el observable y no reciben datos.
+    useEffect(() => {
+        if (!room) return;
+
+        const syncConnected = () => {
+            setIsLivekitConnected(room.state === ConnectionState.Connected);
+        };
+        syncConnected();
+
+        const onDataReceived = (
+            payload: Uint8Array,
+            participant?: RemoteParticipant,
+            _kind?: unknown,
+            _topic?: string,
+        ) => {
+            const bytes = payloadToUint8Array(payload);
+            if (!bytes || bytes.byteLength === 0) return;
+            try {
+                // Decodificación robusta para React Native (UTF-8)
+                const str = decodeURIComponent(
+                    Array.from(bytes)
+                        .map(b => '%' + ('00' + b.toString(16)).slice(-2))
+                        .join('')
+                );
+
+                const data = JSON.parse(str) as {
+                    type?: string;
+                    text?: string;
+                    isFinal?: boolean;
+                    speakerId?: string;
+                };
+                
+                if (data.type !== 'transcription' || typeof data.text !== 'string') return;
+                const trimmed = data.text.trim();
+                if (!trimmed) return;
+
+                const rawSpeaker = data.speakerId || participant?.identity || '';
+                
+                // Only process transcription if it matches this participant
+                if (rawSpeaker !== participantIdentity) return;
+
+                // Clean up identity labels (transcriber-room-identity)
+                const speaker = rawSpeaker
+                    .replace(/^transcriber-[^-]+-?/i, '')
+                    .replace(/^transcriber-/i, '')
+                    .split('-')[0] || 'AI';
+
+                if (data.isFinal === true) {
+                    captionIdRef.current += 1;
+                    const id = `cc-${captionIdRef.current}`;
+                    setFinalLines((prev) => [
+                        ...prev.slice(-8),
+                        { id, speaker, text: trimmed },
+                    ]);
+                    setPartialLine(null);
+                } else {
+                    setPartialLine({ speaker, text: trimmed });
+                }
+            } catch (err) {
+                console.log('Error parsing transcription packet:', err);
+            }
+        };
+
+        room.on(RoomEvent.ConnectionStateChanged, syncConnected);
+        room.on(RoomEvent.DataReceived, onDataReceived);
+
+        return () => {
+            room.off(RoomEvent.ConnectionStateChanged, syncConnected);
+            room.off(RoomEvent.DataReceived, onDataReceived);
+        };
+    }, [room]);
+
+    if (!isLivekitConnected) return null;
+
+    const hasContent = finalLines.length > 0 || !!partialLine;
+    // Sin texto aún: no mostrar caja ni "esperando…" (menos invasivo).
+    if (!hasContent) return null;
+
+    return (
+        <View style={[styles.participantTranscriptionContainer, { bottom: bottomOffset }]} pointerEvents="none">
+            <View style={styles.participantTranscriptionBox}>
+                <ScrollView
+                    ref={scrollRef}
+                    style={styles.transcriptionScroll}
+                    contentContainerStyle={styles.transcriptionScrollContent}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {finalLines.map((line) => (
+                        <Text key={line.id} style={styles.transcriptionLineFinal}>
+                            <Text style={styles.transcriptionUtterance}>{line.text}</Text>
+                        </Text>
+                    ))}
+                    {partialLine ? (
+                        <Text style={styles.transcriptionLinePartial}>
+                            <Text style={styles.transcriptionUtterancePartial}>{partialLine.text}</Text>
+                        </Text>
+                    ) : null}
+                </ScrollView>
+            </View>
+        </View>
+    );
+}
 
 function RoomEvents({ onLeave }: { onLeave: () => void }) {
     const room = useRoomContext();
@@ -218,7 +403,7 @@ function RingingSoundManager() {
     return null;
 }
 
-function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
+function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFrontCamera: boolean }) {
     const tracks = useTracks([Track.Source.Camera]);
     const participants = useParticipants();
     const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -237,13 +422,18 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                     <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
                 </View>
             ) : (
-                <VideoTrack trackRef={track} style={styles.video} mirror={true} />
+                <VideoTrack 
+                    trackRef={track} 
+                    style={styles.video} 
+                    mirror={track.participant.isLocal && isFrontCamera} 
+                />
             )}
             <View style={styles.participantLabel}>
                 <Text style={styles.participantName} numberOfLines={1}>
                     {track.participant.identity}
                 </Text>
             </View>
+            <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={35} />
         </View>
     );
 
@@ -310,12 +500,13 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                                 <VideoTrack
                                     trackRef={track}
                                     style={styles.video}
-                                    mirror={true}
+                                    mirror={track.participant.isLocal && isFrontCamera}
                                 />
                             )}
                             <View style={styles.interpreterMainLabel}>
                                 <Text style={styles.interpreterMainName}>🤟 Intérprete</Text>
                             </View>
+                            <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={130} />
                         </View>
                     ))
                 ) : (
@@ -336,7 +527,7 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                             <VideoTrack
                                 trackRef={track}
                                 style={styles.video}
-                                mirror={true}
+                                mirror={track.participant.isLocal && isFrontCamera}
                             />
                         )}
                         <View style={styles.sidebarLabel}>
@@ -344,6 +535,7 @@ function VideoView({ layoutMode }: { layoutMode: LayoutMode }) {
                                 {track.participant.identity}
                             </Text>
                         </View>
+                        <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={25} />
                     </View>
                 ))}
             </View>
@@ -359,6 +551,8 @@ function ControlsView({
     username, 
     layoutMode, 
     onToggleLayout,
+    onToggleCameraFacing,
+    isFrontCamera,
     isManualPipMode,
     onRestoreFromPip,
     onMinimize
@@ -370,15 +564,18 @@ function ControlsView({
     username: string;
     layoutMode: LayoutMode;
     onToggleLayout: () => void;
+    onToggleCameraFacing: () => void;
+    isFrontCamera: boolean;
     isManualPipMode: boolean;
     onRestoreFromPip?: () => void;
     onMinimize?: () => void;
 }) {
     const { user } = useAuth();
-    const { isMicrophoneEnabled, isCameraEnabled, localParticipant } = useLocalParticipant();
+    const { isMicrophoneEnabled, isCameraEnabled, localParticipant, cameraTrack } = useLocalParticipant();
     const room = useRoomContext();
     const { canUseInterpreter } = useSubscription(userId);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const insets = useSafeAreaInsets();
 
     const toggleMic = async () => {
         const enabled = !isMicrophoneEnabled;
@@ -388,6 +585,21 @@ function ControlsView({
     const toggleCam = async () => {
         const enabled = !isCameraEnabled;
         await localParticipant.setCameraEnabled(enabled);
+    };
+
+    const flipCamera = async () => {
+        try {
+            const track = cameraTrack?.videoTrack as any;
+            if (track && typeof track.restartTrack === 'function') {
+                const newFacingMode = isFrontCamera ? 'environment' : 'user';
+                await track.restartTrack({ facingMode: newFacingMode });
+                onToggleCameraFacing();
+            } else {
+                console.error('No camera track or restartTrack available to switch');
+            }
+        } catch (e) {
+            console.error('Error switching camera:', e);
+        }
     };
 
     const handleDisconnect = () => {
@@ -490,26 +702,18 @@ function ControlsView({
         <>
             {isManualPipMode && (
                 <TouchableOpacity
-                    style={styles.pipRestoreButton}
+                    style={[styles.pipRestoreButton, { top: Math.max(insets.top + 10, 20) }]}
                     onPress={onRestoreFromPip}
                 >
                     <Text style={{ fontSize: 24 }}>↗️</Text>
                 </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-                style={styles.layoutToggleButton}
-                onPress={onToggleLayout}
-            >
-                <Text style={styles.layoutToggleText}>
-                    {layoutMode === 'grid' ? '⬜' : '📱'}
-                </Text>
-                <Text style={styles.layoutToggleLabel}>
-                    {layoutMode === 'grid' ? 'Intérprete' : 'Cuadrícula'}
-                </Text>
-            </TouchableOpacity>
-
-            <View style={[styles.controlsContainer, isManualPipMode && styles.controlsContainerMini]}>
+            <View style={[
+                styles.controlsContainer, 
+                { bottom: 40 + Math.max(insets.bottom, 10) }, 
+                isManualPipMode && styles.controlsContainerMini
+            ]}>
                 <TouchableOpacity
                     style={[styles.button, !isMicrophoneEnabled && styles.buttonDisabled]}
                     onPress={toggleMic}
@@ -541,6 +745,13 @@ function ControlsView({
                 >
                     <CameraIcon size={24} color={isCameraEnabled ? '#000' : '#fff'} />
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.button, !isCameraEnabled && styles.buttonDisabled]}
+                    onPress={flipCamera}
+                >
+                    <SyncIcon size={24} color={isCameraEnabled ? '#000' : '#fff'} />
+                </TouchableOpacity>
             </View>
 
             {/* Imported Modal Component for feature lock */}
@@ -548,6 +759,11 @@ function ControlsView({
                 visible={showUpgradeModal}
                 onClose={() => setShowUpgradeModal(false)}
                 feature="interpreter"
+                onUpgradePress={() => {
+                    setShowUpgradeModal(false);
+                    onBack();
+                    onNavigate?.('profile', { openManagePlan: true });
+                }}
             />
         </>
     );
@@ -746,5 +962,80 @@ const styles = StyleSheet.create({
     controlsContainerMini: {
         bottom: 10,
         transform: [{ scale: 0.8 }],
-    }
+    },
+    participantTranscriptionContainer: {
+        position: 'absolute',
+        left: 8,
+        right: 8,
+        alignItems: 'center',
+        zIndex: 100,
+    },
+    participantTranscriptionBox: {
+        backgroundColor: 'rgba(6, 6, 10, 0.65)',
+        paddingHorizontal: 8,
+        paddingTop: 6,
+        paddingBottom: 6,
+        borderRadius: 8,
+        width: '100%',
+        maxHeight: 70,
+    },
+    ccBadge: {
+        position: 'absolute',
+        top: 4,
+        right: 6,
+        backgroundColor: 'rgba(124, 58, 237, 0.38)',
+        paddingHorizontal: 5,
+        paddingVertical: 1,
+        borderRadius: 4,
+        zIndex: 2,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    ccBadgeText: {
+        color: 'rgba(255, 255, 255, 0.9)',
+        fontSize: 7,
+        fontWeight: '700',
+        letterSpacing: 0.4,
+    },
+    transcriptionScroll: {
+        maxHeight: 58,
+    },
+    transcriptionScrollContent: {
+        flexGrow: 1,
+        justifyContent: 'flex-end',
+        paddingRight: 2,
+    },
+    transcriptionLineFinal: {
+        textAlign: 'left',
+        marginBottom: 5,
+        lineHeight: 15,
+    },
+    transcriptionSpeakerName: {
+        fontSize: 10,
+        fontWeight: '800',
+    },
+    transcriptionSpeakerColon: {
+        color: 'rgba(255, 255, 255, 0.42)',
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    transcriptionUtterance: {
+        color: 'rgba(248, 248, 248, 0.96)',
+        fontSize: 11,
+        fontWeight: '500',
+        textShadowColor: 'rgba(0, 0, 0, 0.45)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
+    },
+    transcriptionLinePartial: {
+        textAlign: 'left',
+        lineHeight: 15,
+        marginTop: 1,
+    },
+    transcriptionUtterancePartial: {
+        color: 'rgba(220, 220, 220, 0.82)',
+        fontSize: 11,
+        fontWeight: '500',
+        fontStyle: 'italic',
+    },
 });

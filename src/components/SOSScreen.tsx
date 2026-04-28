@@ -567,6 +567,10 @@ export function SOSScreen({
                 visible={showUpgradeModal}
                 onClose={() => setShowUpgradeModal(false)}
                 feature="interpreter"
+                onUpgradePress={() => {
+                    setShowUpgradeModal(false);
+                    onNavigate('profile', { openManagePlan: true });
+                }}
             />
 
             <BottomNavigation currentScreen="sos" onNavigate={onNavigate} />

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, forwardRef, useImperativeHandle } from 'react';
 import { View, Text, TouchableOpacity, TextInput, Animated as RNAnimated } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
@@ -35,30 +35,42 @@ interface ChatInputProps {
   isDark?: boolean;
 }
 
-export const ChatInput = ({
-  messageText = '',
-  setMessageText = () => {},
-  onSend = () => {},
-  onMediaPick = () => {},
-  onAudioRecorderMode = () => {},
-  onVideoTranslatorPress = () => {},
-  onTextToSpeech = () => {},
-  onCorrection = () => {},
-  isCorrecting = false,
-  isSpeaking = false,
-  correctionOpacity = new RNAnimated.Value(0),
-  replyMessage = null,
-  setReplyMessage = () => {},
-  editingMessage = null,
-  onCancelEdit = () => {},
-  inputAreaHeight = 48,
-  setInputAreaHeight = () => {},
-  colors,
-  isDark: isDarkProp
-}: ChatInputProps) => {
+export interface ChatInputHandle {
+  focus: () => void;
+}
+
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInputInner(props, ref) {
+  const {
+    messageText = '',
+    setMessageText = () => {},
+    onSend = () => {},
+    onMediaPick = () => {},
+    onAudioRecorderMode = () => {},
+    onVideoTranslatorPress = () => {},
+    onTextToSpeech = () => {},
+    onCorrection = () => {},
+    isCorrecting = false,
+    isSpeaking = false,
+    correctionOpacity = new RNAnimated.Value(0),
+    replyMessage = null,
+    setReplyMessage = () => {},
+    editingMessage = null,
+    onCancelEdit = () => {},
+    inputAreaHeight = 48,
+    setInputAreaHeight = () => {},
+    colors,
+    isDark: isDarkProp,
+  } = props;
+
   const { colors: themeColors, isDark: themeIsDark } = useTheme();
   const finalColors = colors || themeColors;
   const isDark = isDarkProp ?? themeIsDark;
+  const inputRef = useRef<TextInput>(null);
+
+  // Expose focus() so the parent can manually focus after state changes
+  useImperativeHandle(ref, () => ({
+    focus: () => inputRef.current?.focus(),
+  }));
 
   const MIN_INPUT_HEIGHT = 48;
   const MAX_INPUT_HEIGHT = 400; // Expanded to 400px
@@ -130,10 +142,12 @@ export const ChatInput = ({
             style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, { opacity: correctionOpacity }]}
           />
           <TextInput
+            ref={inputRef}
             style={[chatViewStyles.textInput, { color: finalColors.text, height: '100%' }]}
             placeholder="Escribe un mensaje..."
             placeholderTextColor={finalColors.textMuted}
             multiline
+            blurOnSubmit={false}
             value={messageText}
             onChangeText={setMessageText}
           />
@@ -172,4 +186,4 @@ export const ChatInput = ({
       </View>
     </View>
   );
-};
+});

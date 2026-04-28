@@ -11,6 +11,7 @@ import {
     SafeAreaView,
     Platform
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { chatService } from '../services/chat.service';
 import { contactService, Contact } from '../services/contact.service';
@@ -32,6 +33,7 @@ interface NewGroupScreenProps {
 export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenProps) {
     const { colors, isDark } = useTheme();
     const alert = useAlert();
+    const insets = useSafeAreaInsets();
     const [step, setStep] = useState<1 | 2>(1);
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');

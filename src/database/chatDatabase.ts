@@ -388,15 +388,17 @@ export function saveMessage(msg: {
  */
 export function updateMessageStatus(messageId: string, status: MessageStatus, serverId?: string) {
     const database = ensureInitialized();
+    // Do NOT touch updated_at here — that column drives "(editado)" in the UI.
+    // Read/delivery status changes must not bump it (e.g. recipient opens chat later → blue ticks).
     if (serverId) {
         database.runSync(
-            `UPDATE messages SET status = ?, server_id = ?, updated_at = ? WHERE id = ?`,
-            [status, serverId, new Date().toISOString(), messageId]
+            `UPDATE messages SET status = ?, server_id = ? WHERE id = ?`,
+            [status, serverId, messageId]
         );
     } else {
         database.runSync(
-            `UPDATE messages SET status = ?, updated_at = ? WHERE id = ?`,
-            [status, new Date().toISOString(), messageId]
+            `UPDATE messages SET status = ? WHERE id = ?`,
+            [status, messageId]
         );
     }
 }
@@ -408,8 +410,8 @@ export function markMessageAsRead(messageId: string) {
     const database = ensureInitialized();
     const now = new Date().toISOString();
     database.runSync(
-        `UPDATE messages SET status = 'read', read_at = ?, updated_at = ? WHERE id = ?`,
-        [now, now, messageId]
+        `UPDATE messages SET status = 'read', read_at = ? WHERE id = ?`,
+        [now, messageId]
     );
 }
 
@@ -607,22 +609,24 @@ export function updateConversationPreview(
     lastMessage: string,
     lastMessageAt: string,
     incrementUnread: boolean = false
-) {
+): boolean {
     const database = ensureInitialized();
     if (incrementUnread) {
-        database.runSync(
+        const result = database.runSync(
             `UPDATE conversations 
              SET last_message = ?, last_message_at = ?, unread_count = unread_count + 1, updated_at = ? 
              WHERE id = ?`,
             [lastMessage, lastMessageAt, new Date().toISOString(), conversationId]
         );
+        return (result.changes ?? 0) > 0;
     } else {
-        database.runSync(
+        const result = database.runSync(
             `UPDATE conversations 
              SET last_message = ?, last_message_at = ?, updated_at = ? 
              WHERE id = ?`,
             [lastMessage, lastMessageAt, new Date().toISOString(), conversationId]
         );
+        return (result.changes ?? 0) > 0;
     }
 }
 

@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackHandler, Platform, Text, View, ActivityIndicator, StyleSheet, AppState } from 'react-native';
+import { BackHandler, Platform, Text, View, ActivityIndicator, StyleSheet, AppState, Alert } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Sentry from '@sentry/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -34,6 +34,7 @@ import { SOSScreen } from '../components/SOSScreen';
 import { ProfileScreen } from '../components/ProfileScreen';
 import { NotificationsScreen } from '../components/NotificationsScreen';
 import { AnimatedScreen } from '../components/AnimatedScreen';
+import { QRScannerScreen } from '../components/QRScannerScreen';
 import { CallScreen } from '../screens/CallScreen';
 import { IncomingCallModal } from '../components/IncomingCallModal';
 import { AlertProvider } from '../components/common/CustomAlert';
@@ -100,6 +101,7 @@ function AppContent() {
   // Navigation stack
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
   const [callParams, setCallParams] = useState<{ roomName?: string; username?: string; conversationId?: string; userId?: string } | null>(null);
+  const [profileParams, setProfileParams] = useState<{ openManagePlan?: boolean } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null>(null);
   
@@ -109,6 +111,7 @@ function AppContent() {
 
   const navigate = useCallback((next: ScreenName, params?: NavigationParams) => {
     if (next === 'call' && params) setCallParams(params as any);
+    if (next === 'profile' && params) setProfileParams(params);
     if ((next === 'course_player' || next === 'course_presentation') && params?.courseId) setSelectedCourseId(params.courseId);
     if (next === 'chats' && params?.conversationId) {
       setInitialChatParams({
@@ -192,7 +195,26 @@ function AppContent() {
 
   const handleAcceptInterpreterInvite = async () => {
     if (!interpreterInvite || !user) return;
-    if (user.role === 'interpreter') await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
+    
+    // Transactional Claim: only one interpreter can win the "race"
+    if (interpreterInvite.inviteId) {
+      try {
+        const claimResult = await chatService.claimInterpreterInvite(interpreterInvite.inviteId, user.id);
+        if (!claimResult.success) {
+          Alert.alert('Solicitud Atendida', claimResult.message || 'Esta llamada ya fue aceptada por otro compañero.');
+          setInterpreterInvite(null);
+          return;
+        }
+      } catch (err) {
+        console.error('Claim error:', err);
+        Alert.alert('Error', 'Hubo un problema al procesar la solicitud.');
+        return;
+      }
+    } else if (user.role === 'interpreter') {
+      // Fallback legacy behavior
+      await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
+    }
+
     setCallParams({
       roomName: interpreterInvite.roomName,
       username: user.role === 'interpreter'
@@ -240,23 +262,6 @@ function AppContent() {
 
   return (
     <>
-      <IncomingCallModal
-        visible={!!incomingCall}
-        callerName={incomingCall?.callerName || 'Desconocido'}
-        callerPhoto={incomingCall?.callerPhoto}
-        participants={incomingCall?.participants}
-        onAccept={handleAcceptCall}
-        onDecline={handleDeclineCall}
-      />
-      <IncomingCallModal
-        visible={!!interpreterInvite}
-        callerName={interpreterInvite?.senderName || 'Usuario'}
-        subtitle="Solicita un intérprete en su llamada..."
-        acceptText="Unirse"
-        declineText="Ignorar"
-        onAccept={handleAcceptInterpreterInvite}
-        onDecline={() => setInterpreterInvite(null)}
-      />
       <AnimatedScreen key={underlyingScreen}>
         {underlyingScreen === 'chats' ? (
           <ChatsScreen
@@ -276,25 +281,102 @@ function AppContent() {
           <SOSScreen onNavigate={navigate} onBack={goBack} userId={userId} onShowNotifications={() => navigate('notifications')} />
         ) : underlyingScreen === 'notifications' ? (
           <NotificationsScreen userId={userId} onBack={goBack} />
+        ) : underlyingScreen === 'qr_scanner' ? (
+          <QRScannerScreen onClose={goBack} onScan={async (data) => {
+            if (data.includes('interpreter') || data.includes('INTERPRETE')) {
+              if (!isPremium) {
+                Alert.alert('Acceso Premium Requerido', 'Para conectar con un intérprete vía QR necesitas un plan activo.');
+                goBack();
+                return;
+              }
+
+              const userName = user?.firstName || user?.email || 'Usuario';
+              const uId = user?.id || '';
+              const rName = `qr-interpreter-${uId}-${Date.now()}`;
+
+              try {
+                Alert.alert(
+                  'Solicitar Intérprete',
+                  '¿Desea solicitar un intérprete para unirse a esta llamada?',
+                  [
+                    { text: 'Cancelar', style: 'cancel', onPress: () => goBack() },
+                    {
+                      text: 'Solicitar',
+                      onPress: async () => {
+                        try {
+                          const result = await chatService.inviteInterpreters({
+                            roomName: rName,
+                            userId: uId,
+                            username: userName,
+                          });
+                          if (result.success) {
+                            Alert.alert('Solicitud enviada', `Se ha notificado a ${result.count || 1} intérprete(s).`);
+                          } else {
+                            Alert.alert('Info', result.message || 'No se pudo completar la solicitud.');
+                          }
+                          goBack();
+                          navigate('call', { roomName: rName, username: userName, userId: uId });
+                        } catch (error) {
+                          Alert.alert('Error', 'No se pudo iniciar la llamada con el intérprete.');
+                          goBack();
+                        }
+                      }
+                    }
+                  ]
+                );
+              } catch (error) {
+                Alert.alert('Error', 'No se pudo iniciar la llamada con el intérprete.');
+                goBack();
+              }
+            } else {
+              Alert.alert('Código QR Detectado', `Contenido: ${data}`);
+              goBack();
+            }
+          }} />
         ) : (
-          <ProfileScreen onNavigate={navigate} onBack={goBack} userId={userId} onShowNotifications={() => navigate('notifications')} />
+          <ProfileScreen 
+            onNavigate={navigate} 
+            onBack={goBack} 
+            userId={userId} 
+            onShowNotifications={() => navigate('notifications')} 
+            openManagePlan={profileParams?.openManagePlan} 
+          />
         )}
       </AnimatedScreen>
 
       {callParams && (
         <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 999 }]} pointerEvents={isCallFullScreen ? "auto" : "box-none"}>
           <CallScreen
-            roomName={callParams.roomName || 'default'}
-            username={callParams.username || 'user'}
-            conversationId={callParams.conversationId}
-            userId={callParams.userId}
+            roomName={callParams?.roomName || 'default'}
+            username={callParams?.username || 'user'}
+            conversationId={callParams?.conversationId}
+            userId={callParams?.userId}
             isManualPipMode={!isCallFullScreen}
             onRestoreFromPip={() => currentScreen !== 'call' && setScreenStack(prev => [...prev, 'call'])}
             onMinimize={() => currentScreen === 'call' && goBack()}
             onBack={() => { setCallParams(null); currentScreen === 'call' && goBack(); }}
+            onNavigate={navigate}
           />
         </View>
       )}
+
+      <IncomingCallModal
+        visible={!!incomingCall}
+        callerName={incomingCall?.callerName || 'Desconocido'}
+        callerPhoto={incomingCall?.callerPhoto}
+        participants={incomingCall?.participants}
+        onAccept={handleAcceptCall}
+        onDecline={handleDeclineCall}
+      />
+      <IncomingCallModal
+        visible={!!interpreterInvite}
+        callerName={interpreterInvite?.senderName || 'Usuario'}
+        subtitle="Solicita un intérprete en su llamada..."
+        acceptText="Unirse"
+        declineText="Ignorar"
+        onAccept={handleAcceptInterpreterInvite}
+        onDecline={() => setInterpreterInvite(null)}
+      />
     </>
   );
 }

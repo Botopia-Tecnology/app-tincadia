@@ -36,13 +36,15 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   const [interpreterInvite, setInterpreterInvite] = useState<{ 
     roomName: string; 
     senderId: string; 
-    senderName: string 
+    senderName: string;
+    inviteId?: string;
   } | null>(null);
 
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
   const activeCallRef = useRef<string | null>(null);
   const endedCallsRef = useRef<Set<string>>(new Set());
+  const lastPushTokenRef = useRef<string | null>(null);
 
   /**
    * Resolves the best caller name, photo and participants from local DB.
@@ -144,14 +146,32 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           projectId: '8bf6b071-622c-4428-a2f8-b83b95fa2d99',
         })).data;
         
-        if (token) {
+        if (token && token !== lastPushTokenRef.current) {
           await authService.updatePushToken(user.id, token);
+          lastPushTokenRef.current = token;
           console.log('✅ Push Token Registered:', token);
         }
       }
     };
 
     registerForPush();
+
+    const checkIfCallIsAlive = async (conversationId: string): Promise<boolean> => {
+      try {
+        const { data, error } = await supabase
+          .from('messages')
+          .select('type')
+          .eq('conversation_id', conversationId)
+          .in('type', ['call', 'call_ended', 'call_rejected'])
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (error || !data || data.length === 0) return true;
+        return data[0].type === 'call';
+      } catch (err) {
+        return true;
+      }
+    };
 
     // ─────────────────────────────────────────────────────────────────────
     // BACKGROUND / KILLED APP RECOVERY
@@ -176,6 +196,15 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             console.log('📞 Ignoring call notification from initial recovery (stale/self/active)');
             return;
           }
+
+          // Validación extra: Verificar en Supabase si la llamada sigue viva para evitar "Phantom Calls"
+          const isAlive = await checkIfCallIsAlive(String(data.conversationId));
+          if (!isAlive) {
+            console.log('📞 Phantom Call Blocked: Call is already ended in database.');
+            Notifications.dismissAllNotificationsAsync().catch(() => {});
+            return;
+          }
+
           const { callerName, callerPhoto, participants } = await resolveCallerInfo(
             String(data.senderName || 'Usuario Tincadia'),
             String(data.senderId),
@@ -196,6 +225,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
               roomName: String(data.roomName),
               senderId: String(data.senderId),
               senderName: String(data.senderName || 'Usuario'),
+              inviteId: data.inviteId ? String(data.inviteId) : undefined,
             });
           }
         } else if (data?.conversationId && data?.senderId) {
@@ -248,10 +278,17 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           setInterpreterInvite({
             roomName: String(data.roomName),
             senderId: String(data.senderId),
-            senderName: String(data.senderName || 'Usuario')
+            senderName: String(data.senderName || 'Usuario'),
+            inviteId: data.inviteId ? String(data.inviteId) : undefined,
           });
         }
         Notifications.dismissNotificationAsync(notification.request.identifier).catch(() => {});
+      } else if (data?.type === 'call_invite_taken' || data?._action === 'dismiss_invite') {
+        // Silent push: otro intérprete ya aceptó la llamada
+        // Limpiar la invitación y cualquier notificación del cajón del sistema
+        setInterpreterInvite(null);
+        Notifications.dismissAllNotificationsAsync().catch(() => {});
+        console.log('📞 Silent push: dismiss_invite recibido — limpiando invitaciones de intérprete');
       } else if (data?.type !== 'call_ended' && data?.type !== 'call_rejected') {
         Vibration.vibrate();
       }
@@ -295,6 +332,15 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
         const tappedConvId = String(data.conversationId);
         if (endedCallsRef.current.has(tappedConvId)) {
           console.log('📞 Blocking ghost call — call already ended for', tappedConvId);
+          Notifications.dismissAllNotificationsAsync().catch(() => {});
+          return;
+        }
+
+        // Validación extra fuerte: Consultar DB en tiempo real al tocar la notificación
+        const isAlive = await checkIfCallIsAlive(tappedConvId);
+        if (!isAlive) {
+          console.log('📞 Phantom Call Blocked: Call is already ended in database.');
+          endedCallsRef.current.add(tappedConvId);
           Notifications.dismissAllNotificationsAsync().catch(() => {});
           return;
         }
