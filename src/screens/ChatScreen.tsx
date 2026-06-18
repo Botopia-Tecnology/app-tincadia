@@ -18,9 +18,11 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useChat } from '../hooks/useChat';
-import { MessageBubble } from '../components/chat/MessageBubble';
-import { ChatInput } from '../components/chat/ChatInput';
+import { MessageBubble } from '../components/chat/components/MessageBubble';
+import { ChatInput } from '../components/chat/components/ChatInput';
 import { useAuth } from '../contexts/AuthContext';
+import { useTypingIndicator } from '../hooks/useTypingIndicator';
+import { useProductTourContext } from '../contexts/ProductTourContext';
 
 interface ChatScreenProps {
     conversationId: string;
@@ -34,6 +36,7 @@ export function ChatScreen({ conversationId, otherUserName, onBack, isGroup, oth
     const { user } = useAuth();
     const userId = user?.id || '';
     const insets = useSafeAreaInsets();
+    const { startTour } = useProductTourContext();
 
     const { messages, sendMessage, isLoading, error } = useChat(conversationId, userId);
     const [messageText, setMessageText] = React.useState('');
@@ -48,10 +51,49 @@ export function ChatScreen({ conversationId, otherUserName, onBack, isGroup, oth
         }
     }, [messages.length]);
 
+    // Product Tour for Chat Screen
+    useEffect(() => {
+        // Un pequeño delay para asegurar que los componentes de la interfaz estén montados y medibles
+        const timer = setTimeout(() => {
+            startTour([
+                {
+                    targetKey: 'chat_input_text',
+                    title: 'Escribe tu mensaje',
+                    description: 'Aquí puedes escribir mensajes de texto normales.'
+                },
+                {
+                    targetKey: 'chat_magic_pencil',
+                    title: 'Lápiz Mágico con IA',
+                    description: '¿Dudas con la ortografía? Presiona este botón y la inteligencia artificial corregirá tu texto automáticamente.'
+                },
+                {
+                    targetKey: 'chat_video_call',
+                    title: 'Videollamada Traducida',
+                    description: 'Inicia una videollamada con traducción en tiempo real.'
+                },
+                {
+                    targetKey: 'chat_mic',
+                    title: 'Notas de Voz',
+                    description: 'Mantén presionado para enviar una nota de voz.'
+                }
+            ], 'chat_screen_tour_v1');
+        }, 800);
+
+        return () => clearTimeout(timer);
+    }, [startTour]);
+
     const handleSend = async (content: string) => {
         if (!content.trim()) return;
+        setIsTyping(false);
         await sendMessage(content);
         setMessageText('');
+    };
+
+    const { typingUsers, setIsTyping } = useTypingIndicator(conversationId, userId, user?.firstName || 'Usuario');
+
+    const handleTextChange = (text: string) => {
+        setMessageText(text);
+        setIsTyping(text.length > 0);
     };
 
     return (
@@ -63,9 +105,16 @@ export function ChatScreen({ conversationId, otherUserName, onBack, isGroup, oth
                 <TouchableOpacity onPress={onBack} style={styles.backButton}>
                     <Text style={styles.backText}>← Atrás</Text>
                 </TouchableOpacity>
-                <Text style={styles.title} numberOfLines={1}>
-                    {otherUserName}
-                </Text>
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={styles.title} numberOfLines={1}>
+                        {otherUserName}
+                    </Text>
+                    {typingUsers.length > 0 && (
+                        <Text style={{ fontSize: 12, color: '#4CAF50' }}>
+                            {typingUsers.join(', ')} escribiendo...
+                        </Text>
+                    )}
+                </View>
                 <View style={styles.headerSpacer} />
             </View>
 
@@ -117,10 +166,10 @@ export function ChatScreen({ conversationId, otherUserName, onBack, isGroup, oth
                 />
 
                 {/* Input */}
-                <ChatInput 
-                    onSend={() => handleSend(messageText)} 
+                <ChatInput
+                    onSend={() => handleSend(messageText)}
                     messageText={messageText}
-                    setMessageText={setMessageText}
+                    setMessageText={handleTextChange}
                 />
                 {Platform.OS === 'ios' && <View style={{ height: insets.bottom, backgroundColor: '#FFFFFF' }} />}
             </KeyboardAvoidingView>
@@ -150,7 +199,6 @@ const styles = StyleSheet.create({
         color: '#4CAF50',
     },
     title: {
-        flex: 1,
         fontSize: 18,
         fontWeight: '600',
         color: '#000000',

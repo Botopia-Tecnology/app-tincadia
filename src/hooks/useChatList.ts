@@ -14,6 +14,8 @@ import {
   getLocalContacts,
   saveContact,
   saveConversation,
+  getConversation,
+  patchConversationMetadata,
   shouldSync,
   updateSyncTime,
   updateConversationPreview,
@@ -79,6 +81,7 @@ export const useChatList = (userId: string) => {
 
   // Deduplication for real-time messages
   const recentMessageIdsRef = useRef<Set<string>>(new Set());
+  const wasDisconnectedRef = useRef(false);
 
   // Transform helper
   const transformToItems = useCallback((
@@ -302,20 +305,29 @@ export const useChatList = (userId: string) => {
         createdAt: c.updated_at || new Date().toISOString(),
       }));
 
-      conversations.forEach(conv => saveConversation({
-        id: conv.id,
-        otherUserId: conv.otherUserId,
-        otherUserPhone: conv.otherUserPhone,
-        otherUserName: conv.otherUserName,
-        lastMessage: conv.lastMessage,
-        lastMessageAt: conv.lastMessageAt,
-        unreadCount: conv.unreadCount,
-        otherUserAvatar: conv.otherUserAvatar,
-        type: conv.type,
-        title: conv.title,
-        imageUrl: conv.imageUrl,
-        description: conv.description,
-      }));
+      conversations.forEach(conv => {
+        const existing = getConversation(conv.id);
+        const isGroup = conv.isGroup || conv.type === 'group';
+        const serverDescription = conv.description;
+        const mergedDescription = serverDescription !== undefined && serverDescription !== null
+          ? serverDescription
+          : (isGroup ? (existing?.description || '') : (conv.description || ''));
+
+        saveConversation({
+          id: conv.id,
+          otherUserId: conv.otherUserId,
+          otherUserPhone: conv.otherUserPhone,
+          otherUserName: conv.otherUserName,
+          lastMessage: conv.lastMessage,
+          lastMessageAt: conv.lastMessageAt,
+          unreadCount: conv.unreadCount,
+          otherUserAvatar: conv.otherUserAvatar,
+          type: conv.type,
+          title: conv.title ?? existing?.title ?? undefined,
+          imageUrl: conv.imageUrl ?? existing?.image_url ?? undefined,
+          description: mergedDescription,
+        });
+      });
 
       // Remove local conversations that no longer exist on the server
       const serverConvIds = new Set(conversations.map(c => c.id));
@@ -352,10 +364,14 @@ export const useChatList = (userId: string) => {
     }
   }, [userId, loadFromLocalCache, syncFromServer]);
 
-  // Initial load
+  // Initial load and polling fallback
   useEffect(() => {
     loadChats();
-  }, [loadChats]);
+    const interval = setInterval(() => {
+      syncFromServer(false);
+    }, 60000); // 60s polling safety net
+    return () => clearInterval(interval);
+  }, [loadChats, syncFromServer]);
 
   // Notification count
   const loadUnreadCount = useCallback(async () => {
@@ -393,13 +409,19 @@ export const useChatList = (userId: string) => {
       loadFromLocalCache();
     });
 
+    const chatSyncSub = DeviceEventEmitter.addListener('chat_sync_requested', () => {
+      console.log('🔄 Reactive refresh: chat_sync_requested (forcing sync)');
+      syncFromServer(false, true);
+    });
+
     return () => {
       subscription.remove();
       contactsSub.remove();
       convsSub.remove();
       chatLocalSub.remove();
+      chatSyncSub.remove();
     };
-  }, [loadFromLocalCache]);
+  }, [loadFromLocalCache, syncFromServer]);
 
   // Clean up legacy synced contacts from AsyncStorage (one-time migration)
   useEffect(() => {
@@ -410,7 +432,7 @@ export const useChatList = (userId: string) => {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
-        syncFromServer(false);
+        syncFromServer(false, true); // Force sync when coming to foreground
       }
     });
     return () => subscription.remove();
@@ -428,66 +450,12 @@ export const useChatList = (userId: string) => {
         case 'call': return 'Llamada';
         case 'call_ended': return 'Llamada finalizada';
         case 'call_rejected': return 'Llamada rechazada';
+        case 'call_missed': return 'Llamada perdida';
         default: return 'Nuevo mensaje...';
       }
     };
 
-    const channel = supabase
-      .channel('messages-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const row = payload.new as Record<string, unknown>;
-          const msgId = row.id as string;
-          const senderRaw = row.sender_id ?? row.senderId;
-          const convId = row.conversation_id ?? row.conversationId;
-          const msgType = String(row.type ?? '');
-          const createdAt = String(row.created_at ?? row.createdAt ?? '');
-          const isMine = isSameUserId(senderRaw != null ? String(senderRaw) : undefined, userId);
-          const isCallRelated =
-            msgType === 'call' || msgType === 'call_ended' || msgType === 'call_rejected';
 
-          if (typeof convId === 'string' && convId) {
-            // Deduplication: if we already processed this message via broadcast or previous event, skip
-            if (msgId && recentMessageIdsRef.current.has(msgId)) {
-                return;
-            }
-            if (msgId) {
-                recentMessageIdsRef.current.add(msgId);
-                setTimeout(() => recentMessageIdsRef.current.delete(msgId), 10000);
-            }
-
-            if (!isMine || isCallRelated) {
-                const meta = parseMessageRowMetadata(row);
-                const previewContent =
-                  meta?.isSystem === true ? 'Actividad en el grupo' : getMessagePreview(msgType);
-                const incrementUnread = !isMine && meta?.isSystem !== true;
-                const updated = updateConversationPreview(convId, previewContent, createdAt, incrementUnread);
-                if (updated) {
-                  loadFromLocalCache();
-                } else {
-                  syncFromServer(false);
-                }
-            }
-          }
-        } else if (payload.eventType === 'UPDATE') {
-          // Reload local cache to pick up read receipts / status changes
-          loadFromLocalCache();
-        }
-      })
-      .subscribe();
-
-    // Listen for conversation deletions (e.g. when the other user deletes their contact)
-    const convChannel = supabase
-      .channel('conversations-changes')
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'conversations' }, (payload) => {
-        const deleted = payload.old as { id?: string };
-        if (deleted?.id) {
-          console.log('🗑️ Conversation deleted on server:', deleted.id);
-          localDeleteConversation(deleted.id);
-          loadFromLocalCache();
-        }
-      })
-      .subscribe();
 
     const userChannel = supabase.channel(`user:${userId}`)
       .on('broadcast', { event: 'new_message' }, (payload) => {
@@ -517,11 +485,48 @@ export const useChatList = (userId: string) => {
           }
         }
       })
-      .subscribe();
+      .on('broadcast', { event: 'conversation_deleted' }, (payload) => {
+        const deleted = payload.payload as { id?: string };
+        if (deleted?.id) {
+          console.log('🗑️ Conversation deleted via broadcast:', deleted.id);
+          localDeleteConversation(deleted.id);
+          loadFromLocalCache();
+        }
+      })
+      .on('broadcast', { event: 'message_updated' }, () => {
+        // Reload local cache to pick up read receipts / status changes
+        loadFromLocalCache();
+      })
+      .on('broadcast', { event: 'group_updated' }, (payload) => {
+        const update = payload.payload as {
+          conversationId?: string;
+          title?: string;
+          description?: string;
+          imageUrl?: string;
+        };
+
+        if (!update?.conversationId) return;
+
+        patchConversationMetadata({
+          conversationId: update.conversationId,
+          title: update.title,
+          description: update.description,
+          imageUrl: update.imageUrl,
+        });
+        loadFromLocalCache();
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED' && wasDisconnectedRef.current) {
+            console.log('🔄 Reconnected! Syncing missed conversations...');
+            syncFromServer(false);
+            wasDisconnectedRef.current = false;
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            wasDisconnectedRef.current = true;
+        }
+      });
 
     return () => {
-      supabase.removeChannel(channel);
-      supabase.removeChannel(convChannel);
       supabase.removeChannel(userChannel);
     };
   }, [userId, loadFromLocalCache, syncFromServer]);

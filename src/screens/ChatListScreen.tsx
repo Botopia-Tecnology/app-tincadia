@@ -16,7 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useConversations } from '../hooks/useConversations';
-import { ChatListItem, ChatListItem as ChatListItemType } from '../components/chat/ChatListItem';
+import { ChatListItem } from '../components/chat/components/ChatListItem';
+import type { ChatListItem as ChatListItemType } from '../hooks/useChatList';
 import { initChatDatabase } from '../database/chatDatabase';
 import { useAuth } from '../contexts/AuthContext';
 

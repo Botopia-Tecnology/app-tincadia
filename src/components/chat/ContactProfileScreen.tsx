@@ -76,7 +76,6 @@ export function ContactProfileScreen({
 }: ContactProfileProps) {
     const { colors, isDark } = useTheme();
     const [isEditing, setIsEditing] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
     // DEBUG: Log props to debug missing buttons
@@ -98,7 +97,6 @@ export function ContactProfileScreen({
     useEffect(() => {
         const fetchOriginalProfile = async () => {
             if (otherUserId && (!otherUserPhone || !isContact)) {
-                setIsLoading(true);
                 try {
                     // Get profiles from the conversation or a profile endpoint
                     const response = await chatService.getUserProfile(otherUserId);
@@ -113,8 +111,6 @@ export function ContactProfileScreen({
                     }
                 } catch (err) {
                     console.error('Error fetching user profile:', err);
-                } finally {
-                    setIsLoading(false);
                 }
             }
         };
@@ -362,15 +358,7 @@ export function ContactProfileScreen({
         icon: { color: colors.text }
     };
 
-    if (isLoading) {
-        return (
-            <SafeAreaView style={[styles.container, themeStyles.container]} edges={['top']}>
-                <View style={[styles.loadingContainer, themeStyles.container]}>
-                    <ActivityIndicator size="large" color={colors.primary} />
-                </View>
-            </SafeAreaView>
-        );
-    }
+    // No longer blocking the screen with isLoading
 
     return (
         <View style={[styles.container, themeStyles.container]}>

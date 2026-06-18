@@ -10,6 +10,7 @@
 
 import * as SQLite from 'expo-sqlite';
 import { DeviceEventEmitter } from 'react-native';
+import { DatabaseMessage, DatabaseConversation, DatabaseContact } from '../types/chat.types';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -550,6 +551,49 @@ export function saveConversation(conv: {
             conv.description || '',
         ]
     );
+}
+
+export interface GroupMetadataPatch {
+    conversationId: string;
+    title?: string;
+    description?: string;
+    imageUrl?: string;
+}
+
+/**
+ * Update group metadata without wiping unrelated conversation fields.
+ * Emits events so the editor and other participants refresh immediately.
+ */
+export function patchConversationMetadata(patch: GroupMetadataPatch): void {
+    const existing = getConversation(patch.conversationId);
+    if (!existing) return;
+
+    const nextTitle = patch.title !== undefined ? patch.title : (existing.title || '');
+    const nextDescription = patch.description !== undefined ? patch.description : (existing.description || '');
+    const nextImageUrl = patch.imageUrl !== undefined ? patch.imageUrl : (existing.image_url || '');
+
+    saveConversation({
+        id: existing.id,
+        otherUserId: existing.other_user_id || undefined,
+        otherUserName: patch.title !== undefined ? patch.title : (existing.other_user_name || ''),
+        otherUserAvatar: nextImageUrl,
+        otherUserPhone: existing.other_user_phone || '',
+        lastMessage: existing.last_message || '',
+        lastMessageAt: existing.last_message_at || '',
+        unreadCount: existing.unread_count || 0,
+        type: (existing.type as 'direct' | 'group') || 'group',
+        title: nextTitle,
+        imageUrl: nextImageUrl,
+        description: nextDescription,
+    });
+
+    DeviceEventEmitter.emit('conversations_updated');
+    DeviceEventEmitter.emit('group_metadata_updated', {
+        conversationId: patch.conversationId,
+        title: patch.title,
+        description: patch.description,
+        imageUrl: patch.imageUrl,
+    });
 }
 
 /**

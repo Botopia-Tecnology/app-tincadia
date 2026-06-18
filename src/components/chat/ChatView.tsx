@@ -3,34 +3,38 @@
  * 
  * Container for the chat interface, orchestrating sub-components and useChat hook.
  */
-
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Alert, Animated, Easing, Keyboard, Vibration } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useChat } from '../../hooks/useChat';
+import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { mediaService } from '../../services/media.service';
 import { chatService } from '../../services/chat.service';
+import { callKeepService } from '../../services/callkeep.service';
 import { chatViewStyles } from '../../styles/ChatsScreen.styles';
 import { Audio } from 'expo-av';
 import { API_URL } from '../../config/api.config';
 
 // Components
-import { ChatHeader } from './ChatHeader';
-import { MessageList } from './MessageList';
-import { ChatInput } from './ChatInput';
-import { AudioRecorder } from './AudioRecorder';
-import { StreamingLSCRecorder } from './StreamingLSCRecorder';
+import { ChatHeader } from './components/ChatHeader';
+import { MessageList } from './components/MessageList';
+import { ChatInput } from './components/ChatInput';
+import { AudioRecorder } from './recorders/AudioRecorder';
+import { StreamingLSCRecorder } from './recorders/StreamingLSCRecorder';
 import { AddContactModal } from '../AddContactModal';
+import { AttachmentMenu } from './components/AttachmentMenu';
 import { ContactProfileScreen } from './ContactProfileScreen';
 import { GroupProfileView } from './GroupProfileView';
 import { useSubscription } from '../../hooks/useSubscription';
 import { UpgradeModal } from '../UpgradeModal';
+import { useProductTourContext } from '../../contexts/ProductTourContext';
 import { Contact } from '../../services/contact.service';
 import { Message } from '../../hooks/useChat';
 import { User } from '../../types/auth.types';
-import { MessageActionSheet } from './MessageActionSheet';
+import { MessageActionSheet } from './components/MessageActionSheet';
 import { APP_TIERS } from '../../config/revenuecat.config';
+import { NavigateFunction } from '../../types/navigation.types';
 
 interface ChatViewProps {
   conversationId: string;
@@ -48,9 +52,10 @@ interface ChatViewProps {
   customFirstName?: string;
   customLastName?: string;
   groupDescription?: string;
+  onGroupUpdate?: (updates: { title?: string; description?: string; imageUrl?: string }) => void;
   onContactUpdate?: (contact: Contact) => void;
-  onNavigateCall: (roomName: string, username: string, conversationId: string, userId: string) => void;
-  onNavigate: (screen: string, params?: any) => void;
+  onNavigateCall: (roomName: string, username: string, conversationId: string, userId: string, callSessionId?: string) => void;
+  onNavigate: NavigateFunction;
   currentUser?: User | null;
 }
 
@@ -58,26 +63,27 @@ interface UploadingMessage {
   id: string;
   content: string;
   localUri: string;
-  type: 'image' | 'video';
+  type: 'image' | 'video' | 'document' | 'audio';
   status: 'uploading';
   createdAt: string;
   senderId: string;
+  metadata?: { duration?: number };
 }
 
 export function ChatView(props: ChatViewProps) {
-  const { 
-    conversationId, userId, otherUserName, otherUserId, 
+  const {
+    conversationId, userId, otherUserName, otherUserId,
     onBack, onNavigateCall, currentUser, otherUserPhone, isUnknown, otherUserAvatar,
     onContactUpdate, contactId, alias, customFirstName, customLastName,
-    isGroup, groupDescription, onNavigate
+    isGroup, groupDescription, onGroupUpdate, onNavigate
   } = props;
 
   const { colors, isDark } = useTheme();
-  
+
   // Chat Logic Hook
-  const { 
+  const {
     messages, sendMessage, editMessage, deleteMessage, markMessagesAsRead
-  } = useChat(conversationId, userId, { 
+  } = useChat(conversationId, userId, {
     readReceiptsEnabled: currentUser?.readReceiptsEnabled ?? true,
     isGroup,
   });
@@ -90,23 +96,63 @@ export function ChatView(props: ChatViewProps) {
     canUseLSC, canUseTTS
   } = useSubscription(userId);
 
+  // Typing Indicator Hook
+  const { typingUsers, setIsTyping } = useTypingIndicator(
+    conversationId,
+    userId,
+    currentUser?.firstName || 'Usuario'
+  );
+
   // UI State
   const [messageText, setMessageText] = useState('');
   const [replyMessage, setReplyMessage] = useState<Message | null>(null);
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [showVideoTranslator, setShowVideoTranslator] = useState(false);
   const [uploadingMessages, setUploadingMessages] = useState<UploadingMessage[]>([]);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [inputAreaHeight, setInputAreaHeight] = useState(48);
+
+  const { startTour } = useProductTourContext();
+
+  // Product Tour for Chat
+  useEffect(() => {
+    // Un pequeño delay para asegurar que los componentes de la interfaz estén montados y medibles
+    const timer = setTimeout(() => {
+      startTour([
+        {
+          targetKey: 'chat_input_text',
+          title: 'Escribe tu mensaje',
+          description: 'Aquí puedes escribir mensajes de texto normales.'
+        },
+        {
+          targetKey: 'chat_magic_pencil',
+          title: 'Lápiz Mágico con IA',
+          description: '¿Dudas con la ortografía? Presiona este botón y la inteligencia artificial corregirá tu texto automáticamente.'
+        },
+        {
+          targetKey: 'chat_video_call',
+          title: 'Modelo de Señas a texto',
+          description: 'Traduce las señas una a una a texto para agilizar tiempo.'
+        },
+        {
+          targetKey: 'chat_mic',
+          title: 'Notas de Voz',
+          description: 'Mantén presionado para enviar una nota de voz.'
+        }
+      ], 'chat_screen_tour_v1');
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [startTour]);
+
   const [isRecordingMode, setIsRecordingMode] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [ttsSound, setTtsSound] = useState<Audio.Sound | null>(null);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [upgradeFeature, setUpgradeFeature] = useState<'transcription' | 'transcription_blocked' | 'lsc' | 'correction' | 'correction_blocked' | 'tts' | 'interpreter'>('correction');
-  
+
   // Animations
   const correctionOpacity = useRef(new Animated.Value(0)).current;
   const swipeableRefs = useRef<Map<string, Swipeable | null>>(new Map());
@@ -130,9 +176,24 @@ export function ChatView(props: ChatViewProps) {
 
     const textToSend = messageText;
     const myDisplayName = currentUser?.firstName || 'Tú';
+    let formattedReplyContent = replyMessage?.content;
+    if (replyMessage) {
+       if (replyMessage.type === 'audio') {
+           const duration = replyMessage.metadata?.duration;
+           formattedReplyContent = duration ? `🎵 Audio (${Math.floor(duration/60)}:${Math.floor(duration%60).toString().padStart(2, '0')})` : '🎵 Audio';
+       } else if (replyMessage.type === 'image') {
+           formattedReplyContent = '📷 Foto';
+       } else if (replyMessage.type === 'video') {
+           const duration = replyMessage.metadata?.duration;
+           formattedReplyContent = duration ? `🎥 Video (${Math.floor(duration/60)}:${Math.floor(duration%60).toString().padStart(2, '0')})` : '🎥 Video';
+       } else if (replyMessage.type === 'document') {
+           formattedReplyContent = '📄 Documento';
+       }
+    }
+
     const metadata = replyMessage ? {
       replyToId: replyMessage.id,
-      replyToContent: replyMessage.content,
+      replyToContent: formattedReplyContent,
       replyToSender: replyMessage.senderId === userId
         ? myDisplayName
         : (isGroup ? replyMessage.senderName || otherUserName : otherUserName),
@@ -154,13 +215,13 @@ export function ChatView(props: ChatViewProps) {
     if (!messageText.trim() || isCorrecting) return;
 
     if (!canUseCorrection()) {
-        setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'correction_blocked' : 'correction');
-        setShowUpgradeModal(true);
-        return;
+      setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'correction_blocked' : 'correction');
+      setShowUpgradeModal(true);
+      return;
     }
-    
+
     setIsCorrecting(true);
-    
+
     Animated.loop(
       Animated.sequence([
         Animated.timing(correctionOpacity, { toValue: 1, duration: 1000, easing: Easing.linear, useNativeDriver: true }),
@@ -171,6 +232,7 @@ export function ChatView(props: ChatViewProps) {
     try {
       const { correctedText } = await chatService.correctMessage(messageText);
       setMessageText(correctedText);
+      setIsTyping(correctedText.length > 0);
       recordCorrectionUse();
       Vibration.vibrate(50);
     } catch (err) {
@@ -182,61 +244,94 @@ export function ChatView(props: ChatViewProps) {
     }
   };
 
-  const handleMediaPick = async () => {
-    try {
-      const asset = await mediaService.pickMedia();
-      if (!asset) return;
+  const handleMediaPick = () => {
+    setShowAttachmentMenu(true);
+  };
 
-      const tempId = `upload-${Date.now()}`;
+  const processAsset = async (asset: any) => {
+    const tempId = `upload-${Date.now()}`;
+    try {
       setUploadingMessages(prev => [{
         id: tempId,
         content: '',
         localUri: asset.uri,
-        type: asset.type === 'video' ? 'video' : 'image',
+        type: asset.type === 'video' ? 'video' : (asset.type === 'document' ? 'document' : 'image'),
         status: 'uploading',
         createdAt: new Date().toISOString(),
         senderId: userId
       }, ...prev]);
 
       const result = await mediaService.uploadMedia(asset);
-      await sendMessage(result.publicId, asset.type === 'video' ? 'video' : 'image', { publicId: result.publicId });
+      await sendMessage(result.publicId, asset.type === 'video' ? 'video' : (asset.type === 'document' ? 'document' : 'image'), { publicId: result.publicId, fileName: asset.fileName });
       setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {
       Alert.alert('Error', 'Error al subir archivo');
-      setUploadingMessages([]);
+      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     }
   };
 
   const handleAudioSend = async (uri: string, duration: number) => {
+    // Hide recorder immediately for instant feedback
+    setIsRecordingMode(false);
+    
+    const tempId = `upload-audio-${Date.now()}`;
     try {
+      // Show optimistic uploading bubble
+      setUploadingMessages(prev => [{
+        id: tempId,
+        content: '',
+        localUri: uri,
+        type: 'audio',
+        status: 'uploading',
+        createdAt: new Date().toISOString(),
+        senderId: userId,
+        metadata: { duration }
+      }, ...prev]);
+
       const audioAsset = { uri, type: 'audio' as const, fileName: `audio_${Date.now()}.m4a` };
       const result = await mediaService.uploadMedia(audioAsset);
       await sendMessage(result.publicId, 'audio', { publicId: result.publicId, duration });
       recordTranscriptionUse();
-      setIsRecordingMode(false);
+      
+      // Remove optimistic bubble when real one arrives
+      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {
+      console.error('Error uploading audio:', err);
       Alert.alert('Error', 'Error al enviar audio');
+      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     }
   };
 
+  const [isCalling, setIsCalling] = useState(false);
+
   const handleCall = async () => {
+    if (isCalling) return;
+    setIsCalling(true);
+
     const roomName = `conv_${conversationId}`;
+    const callSessionId = `call_${conversationId}_${Date.now()}`;
     const username = currentUser?.firstName || 'Usuario';
-    
+
     // Send a message of type 'call' to trigger notification for the other user
     // We don't await this to avoid delaying the UI navigation
-    sendMessage('Llamada iniciada', 'call', { roomName }).catch(err => {
+    sendMessage('Llamada iniciada', 'call', { roomName, callSessionId }).catch(err => {
       console.error('Failed to send call notification message:', err);
     });
 
-    onNavigateCall(roomName, username, conversationId, userId);
+    onNavigateCall(roomName, username, conversationId, userId, callSessionId);
+
+    setTimeout(() => setIsCalling(false), 500);
   };
 
-  const handleJoinCall = () => {
-    const roomName = `conv_${conversationId}`;
+  const handleJoinCall = (callMessage?: Message) => {
+    const metadataRoomName = callMessage?.metadata?.roomName;
+    const metadataCallSessionId = callMessage?.metadata?.callSessionId;
+    const roomName = typeof metadataRoomName === 'string' ? metadataRoomName : `conv_${conversationId}`;
+    const callSessionId = typeof metadataCallSessionId === 'string' ? metadataCallSessionId : undefined;
     const username = currentUser?.firstName || 'Usuario';
     // Just join the existing room. Do NOT send a 'call' message.
-    onNavigateCall(roomName, username, conversationId, userId);
+    callKeepService.endAllCallsSilently();
+    onNavigateCall(roomName, username, conversationId, userId, callSessionId);
   };
 
   // ── Message long-press actions ──────────────────────────────────────────
@@ -244,9 +339,15 @@ export function ChatView(props: ChatViewProps) {
     setActionMessage(msg);
   };
 
+  const handleTextChange = (text: string) => {
+    setMessageText(text);
+    setIsTyping(text.length > 0);
+  };
+
   const handleEditMessage = (msg: Message) => {
     setEditingMessage(msg);
     setMessageText(msg.content);
+    setIsTyping(msg.content.length > 0);
   };
 
   const handleCancelEdit = () => {
@@ -271,68 +372,19 @@ export function ChatView(props: ChatViewProps) {
     );
   };
 
-  const handleTextToSpeech = async () => {
-    if (!messageText.trim()) return;
-
-    if (!canUseTTS) {
-        setUpgradeFeature('tts');
-        setShowUpgradeModal(true);
-        return;
-    }
-
-    // Stop if already speaking
-    if (isSpeaking) {
-      if (ttsSound) {
-        await ttsSound.stopAsync();
-        await ttsSound.unloadAsync();
-        setTtsSound(null);
-      }
-      setIsSpeaking(false);
-      return;
-    }
-
-    try {
-      Vibration.vibrate(40);
-      setIsSpeaking(true);
-
-      const result = await fetch(`${API_URL}/model/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: messageText }),
-      }).then(r => r.json());
-
-      if (!result?.audioUrl) throw new Error('No audioUrl received');
-
-      const { sound } = await Audio.Sound.createAsync({ uri: result.audioUrl });
-      setTtsSound(sound);
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setIsSpeaking(false);
-          sound.unloadAsync();
-          setTtsSound(null);
-        }
-      });
-      await sound.playAsync();
-    } catch (e) {
-      console.error('TTS error:', e);
-      setIsSpeaking(false);
-    }
+  const handleTextToSpeech = () => {
+    onNavigate('communication_board');
   };
 
   const handleAudioRecorderMode = () => {
-    if (!canUseTranscription()) {
-        setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'transcription_blocked' : 'transcription');
-        setShowUpgradeModal(true);
-        return;
-    }
     setIsRecordingMode(true);
   };
 
   const handleVideoTranslatorPress = () => {
     if (!canUseLSC) {
-        setUpgradeFeature('lsc');
-        setShowUpgradeModal(true);
-        return;
+      setUpgradeFeature('lsc');
+      setShowUpgradeModal(true);
+      return;
     }
     setShowVideoTranslator(true);
   };
@@ -351,6 +403,10 @@ export function ChatView(props: ChatViewProps) {
             setShowProfile(false);
             onBack();
           }}
+          onUpdate={(updates) => {
+            if (onGroupUpdate) onGroupUpdate(updates);
+          }}
+          onNavigate={onNavigate}
         />
       );
     }
@@ -394,6 +450,7 @@ export function ChatView(props: ChatViewProps) {
         subTitle={otherUserPhone}
         isUnknown={isUnknown}
         colors={colors}
+        typingUsers={typingUsers}
       />
 
       <MessageList
@@ -415,7 +472,7 @@ export function ChatView(props: ChatViewProps) {
       ) : (
         <ChatInput
           messageText={messageText}
-          setMessageText={setMessageText}
+          setMessageText={handleTextChange}
           onSend={handleSend}
           onMediaPick={handleMediaPick}
           onAudioRecorderMode={handleAudioRecorderMode}
@@ -423,7 +480,6 @@ export function ChatView(props: ChatViewProps) {
           onTextToSpeech={handleTextToSpeech}
           onCorrection={handleCorrection}
           isCorrecting={isCorrecting}
-          isSpeaking={isSpeaking}
           correctionOpacity={correctionOpacity}
           replyMessage={replyMessage}
           setReplyMessage={setReplyMessage}
@@ -478,6 +534,19 @@ export function ChatView(props: ChatViewProps) {
         onUpgradePress={() => {
           setShowUpgradeModal(false);
           onNavigate('profile', { openManagePlan: true });
+        }}
+      />
+
+      <AttachmentMenu
+        visible={showAttachmentMenu}
+        onClose={() => setShowAttachmentMenu(false)}
+        onPickMedia={async () => {
+          const asset = await mediaService.pickMedia();
+          if (asset) await processAsset(asset);
+        }}
+        onPickDocument={async () => {
+          const asset = await mediaService.pickDocument();
+          if (asset) await processAsset(asset);
         }}
       />
     </View>

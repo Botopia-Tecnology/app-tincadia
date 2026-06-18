@@ -1,12 +1,12 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
-import { BackArrowIcon, VideoCallIcon } from '../icons/NavigationIcons';
-import { useTheme } from '../../contexts/ThemeContext';
-import { chatViewStyles } from '../../styles/ChatsScreen.styles';
+import { BackArrowIcon, VideoCallIcon } from '../../icons/NavigationIcons';
+import { useTheme } from '../../../contexts/ThemeContext';
+import { chatViewStyles } from '../../../styles/ChatsScreen.styles';
 
-import { API_URL } from '../../config/api.config';
+import { API_URL } from '../../../config/api.config';
 
-import { ThemeColors } from '../../contexts/ThemeContext';
+import { ThemeColors } from '../../../contexts/ThemeContext';
 
 interface ChatHeaderProps {
   onBack: () => void;
@@ -17,9 +17,10 @@ interface ChatHeaderProps {
   subTitle?: string;
   isUnknown?: boolean;
   colors: ThemeColors;
+  typingUsers?: string[];
 }
 
-export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, avatarUrl, subTitle, isUnknown }: ChatHeaderProps) => {
+export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, avatarUrl, subTitle, isUnknown, typingUsers }: ChatHeaderProps) => {
   const { colors, isDark } = useTheme();
 
   const normalizeUrl = (url?: string) => {
@@ -52,10 +53,16 @@ export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, a
           )}
         </View>
         <View style={chatViewStyles.headerInfo}>
-          <Text style={[chatViewStyles.chatName, { color: colors.text }]}>{displayName}</Text>
-          {subTitle ? (
-            <Text style={[chatViewStyles.lastMessage, { color: colors.textSecondary }]}>{subTitle}</Text>
-          ) : null}
+          <Text style={[chatViewStyles.chatName, { color: colors.text }]} numberOfLines={1}>
+            {displayName}
+          </Text>
+          {typingUsers && typingUsers.length > 0 ? (
+            <Text style={{ fontSize: 13, color: '#4CAF50', fontWeight: '500' }}>
+              {typingUsers.join(', ')} escribiendo...
+            </Text>
+          ) : (
+            subTitle && <Text style={[chatViewStyles.lastMessage, { color: colors.textSecondary }]}>{subTitle}</Text>
+          )}
         </View>
       </TouchableOpacity>
 

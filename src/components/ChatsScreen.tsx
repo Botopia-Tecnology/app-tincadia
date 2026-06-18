@@ -15,6 +15,8 @@ import {
   BackHandler,
   Platform,
   Alert,
+  AlertButton,
+  DeviceEventEmitter,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,19 +30,20 @@ import { chatService } from '../services/chat.service';
 import { saveContact } from '../database/chatDatabase';
 import { useChatList, ChatListItem as ChatListItemType } from '../hooks/useChatList';
 import { NavigateFunction } from '../types/navigation.types';
+import { useAutoStartTour, MAIN_TOUR_STEPS } from '../hooks/useProductTour';
 
 // Components
 import { BottomNavigation } from './BottomNavigation';
 import { ChatView } from './chat/ChatView';
 import { NotificationsScreen } from './NotificationsScreen';
 import { AddContactModal } from './AddContactModal';
-import { ChatListItem } from './chat/ChatListItem';
-import { ChatsHeader } from './chat/ChatsHeader';
+import { ChatListItem } from './chat/components/ChatListItem';
+import { ChatsHeader } from './chat/components/ChatsHeader';
 import { PlusIcon, InviteIcon, AccountIcon } from './icons/NavigationIcons';
 
 interface ChatsScreenProps {
   onNavigate: NavigateFunction;
-  initialConversation?: { conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null;
+  initialConversation?: { conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string; description?: string } | null;
   onInitialConversationOpened?: () => void;
 }
 
@@ -63,6 +66,9 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
   const { user } = useAuth();
   const { colors } = useTheme();
   const userId = user?.id || '';
+
+  // Auto-start Product Tour (only runs once, skips if completed)
+  useAutoStartTour(MAIN_TOUR_STEPS, 'main_tour');
 
   // Logic Hook
   const {
@@ -114,7 +120,8 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
             setSelectedChat({
               conversationId: initialConversation.conversationId,
               otherUserName: initialConversation.title || 'Grupo',
-              isGroup: true
+              isGroup: true,
+              description: initialConversation.description,
             });
             if (onInitialConversationOpened) onInitialConversationOpened();
             return;
@@ -139,8 +146,8 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
           const profileData = profile as { first_name?: string; last_name?: string; phone?: string } | null;
 
           const displayName = profileData
-            ? `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim()
-            : profileData?.phone || 'Usuario';
+            ? `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || profileData.phone || 'Usuario'
+            : 'Usuario';
 
           setSelectedChat({
             conversationId,
@@ -159,6 +166,29 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
       openInitialChat();
     }
   }, [initialConversation, userId]);
+
+  // Keep open group chat in sync when metadata changes (including edits by current user)
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      'group_metadata_updated',
+      (update: { conversationId?: string; title?: string; description?: string; imageUrl?: string }) => {
+        if (!update?.conversationId) return;
+
+        setSelectedChat((prev: SelectedChat | null) => {
+          if (!prev || prev.conversationId !== update.conversationId || !prev.isGroup) return prev;
+
+          return {
+            ...prev,
+            otherUserName: update.title !== undefined ? update.title : prev.otherUserName,
+            description: update.description !== undefined ? update.description : prev.description,
+            otherUserAvatar: update.imageUrl !== undefined ? update.imageUrl : prev.otherUserAvatar,
+          };
+        });
+      }
+    );
+
+    return () => subscription.remove();
+  }, []);
 
   // Reactive Update for selectedChat if it converts to contact
   useEffect(() => {
@@ -196,7 +226,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         otherUserId: chat.otherUserId,
         isUnknown: chat.type === 'unknown',
         isGroup: chat.type === 'group',
-        groupDescription: chat.description,
+        description: chat.description,
         contactId: chat.contactId,
         alias: chat.alias,
         customFirstName: chat.customFirstName,
@@ -261,11 +291,20 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
         <StatusBar style={colors.statusBar} />
         <ChatView
           {...selectedChat}
+          groupDescription={selectedChat.description}
           otherUserId={selectedChat.otherUserId || 'unknown'}
           userId={userId}
           currentUser={user}
           onBack={handleBackFromChat}
           onNavigate={onNavigate}
+          onGroupUpdate={(updates) => {
+            setSelectedChat((prev: SelectedChat | null) => prev ? ({
+              ...prev,
+              otherUserName: updates.title !== undefined ? updates.title : prev.otherUserName,
+              description: updates.description !== undefined ? updates.description : prev.description,
+              otherUserAvatar: updates.imageUrl !== undefined ? updates.imageUrl : prev.otherUserAvatar,
+            }) : null);
+          }}
           onAddContact={() => {
             if (selectedChat.otherUserPhone) {
               setPrefillData({ phone: selectedChat.otherUserPhone, firstName: '', lastName: '', userId: undefined });
@@ -295,7 +334,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
             }) : null);
             syncFromServer(false);
           }}
-          onNavigateCall={(roomName, username, conversationId, passedUserId) => onNavigate('call', { roomName, username, conversationId, userId: passedUserId })}
+          onNavigateCall={(roomName, username, conversationId, passedUserId, callSessionId) => onNavigate('call', { roomName, username, conversationId, userId: passedUserId, callSessionId })}
         />
       </KeyboardSafeView>
     );

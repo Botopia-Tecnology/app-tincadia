@@ -11,12 +11,12 @@ import {
     View,
     Text,
     TouchableOpacity,
-    StyleSheet,
     Pressable,
     Clipboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Message } from '../../hooks/useChat';
+import { Message } from '../../../hooks/useChat';
+import { messageActionSheetStyles as styles } from '../../../styles/ChatModals.styles';
 
 interface Props {
     message: Message | null;
@@ -146,67 +146,3 @@ export function MessageActionSheet({
     );
 }
 
-const styles = StyleSheet.create({
-    backdrop: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        justifyContent: 'flex-end',
-    },
-    sheet: {
-        backgroundColor: '#1E1E2E',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        paddingBottom: 34,
-        paddingTop: 12,
-    },
-    preview: {
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.08)',
-    },
-    previewText: {
-        color: 'rgba(255,255,255,0.5)',
-        fontSize: 13,
-        fontStyle: 'italic',
-    },
-    actions: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        paddingVertical: 16,
-        paddingHorizontal: 12,
-        gap: 12,
-    },
-    actionItem: {
-        alignItems: 'center',
-        width: 72,
-        gap: 6,
-    },
-    iconWrap: {
-        width: 52,
-        height: 52,
-        borderRadius: 26,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    actionLabel: {
-        fontSize: 12,
-        fontWeight: '500',
-        textAlign: 'center',
-    },
-    cancelBtn: {
-        marginHorizontal: 16,
-        paddingVertical: 14,
-        borderRadius: 14,
-        backgroundColor: 'rgba(255,255,255,0.07)',
-        alignItems: 'center',
-    },
-    cancelText: {
-        color: '#E2E8F0',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-});

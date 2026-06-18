@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { DeviceEventEmitter } from 'react-native';
+import { DeviceEventEmitter, AppState } from 'react-native';
 import {
     getMessages as getLocalMessages,
     saveMessage,
@@ -57,7 +57,7 @@ export interface Message {
 
 interface UseChatReturn {
     messages: Message[];
-    sendMessage: (content: string, type?: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended', metadata?: MessageMetadata, localContent?: string) => Promise<void>;
+    sendMessage: (content: string, type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'call' | 'call_ended' | 'call_rejected' | 'call_missed', metadata?: MessageMetadata, localContent?: string) => Promise<void>;
     editMessage: (messageId: string, content: string) => Promise<void>;
     deleteMessage: (messageId: string) => Promise<void>;
     isLoading: boolean;
@@ -95,8 +95,8 @@ interface ServerMessage {
 }
 
 export function useChat(
-    conversationId: string, 
-    userId: string, 
+    conversationId: string,
+    userId: string,
     options?: { readReceiptsEnabled?: boolean; isGroup?: boolean }
 ): UseChatReturn {
     const [messages, setMessages] = useState<Message[]>([]);
@@ -107,6 +107,7 @@ export function useChat(
     const channelRef = useRef<RealtimeChannel | null>(null);
     const senderNameMapRef = useRef<Map<string, string>>(new Map());
     const recentBroadcastIdsRef = useRef<Set<string>>(new Set());
+    const lastCallDebugSignatureRef = useRef<string>('');
 
     // Transform LocalMessage to UI Message
     const transformMessage = useCallback((m: LocalMessage): Message => ({
@@ -133,6 +134,42 @@ export function useChat(
         return senderNameMapRef.current.get(senderId);
     }, []);
 
+    const isCallTerminalType = useCallback((type?: string) => (
+        type === 'call_ended' || type === 'call_rejected' || type === 'call_missed'
+    ), []);
+
+    const getSafeTime = useCallback((dateStr?: string) => {
+        if (!dateStr) return 0;
+        return new Date(dateStr.replace(' ', 'T')).getTime() || 0;
+    }, []);
+
+    const isDuplicateCallTerminal = useCallback((
+        type?: string,
+        metadata?: MessageMetadata | Record<string, unknown>,
+        createdAt?: string,
+    ) => {
+        if (!isCallTerminalType(type)) return false;
+
+        const incomingSessionId = typeof metadata?.callSessionId === 'string' ? metadata.callSessionId : undefined;
+        const incomingRoomName = typeof metadata?.roomName === 'string' ? metadata.roomName : undefined;
+        const incomingTime = getSafeTime(createdAt);
+
+        return getLocalMessages(conversationId).some((existing) => {
+            if (!isCallTerminalType(existing.type)) return false;
+
+            const existingSessionId = typeof existing.metadata?.callSessionId === 'string' ? existing.metadata.callSessionId : undefined;
+            if (incomingSessionId && existingSessionId) {
+                return incomingSessionId === existingSessionId;
+            }
+
+            const existingRoomName = typeof existing.metadata?.roomName === 'string' ? existing.metadata.roomName : undefined;
+            if (incomingRoomName && existingRoomName && incomingRoomName !== existingRoomName) return false;
+
+            const existingTime = getSafeTime(existing.createdAt);
+            return incomingTime > 0 && existingTime > 0 && Math.abs(incomingTime - existingTime) < 60_000;
+        });
+    }, [conversationId, getSafeTime, isCallTerminalType]);
+
     const loadGroupParticipants = useCallback(async () => {
         if (!options?.isGroup) return;
         try {
@@ -154,7 +191,38 @@ export function useChat(
     const loadLocalMessages = useCallback(() => {
         try {
             const localMsgs = getLocalMessages(conversationId);
-            setMessages(localMsgs.map(transformMessage));
+            const transformed = localMsgs.map(transformMessage);
+            const callDebugMessages = transformed
+                .filter(m => ['call', 'call_ended', 'call_rejected', 'call_missed'].includes(m.type))
+                .map((m, index) => ({
+                    index,
+                    id: m.id,
+                    serverId: m.serverId,
+                    type: m.type,
+                    senderId: m.senderId,
+                    createdAt: m.createdAt,
+                    roomName: m.metadata?.roomName,
+                    callSessionId: m.metadata?.callSessionId,
+                    isMine: m.isMine,
+                }));
+
+            if (callDebugMessages.length > 0) {
+                const signature = callDebugMessages
+                    .map(m => `${m.id}:${m.type}:${m.callSessionId || ''}:${m.createdAt}`)
+                    .join('|');
+
+                if (signature !== lastCallDebugSignatureRef.current) {
+                    lastCallDebugSignatureRef.current = signature;
+                    console.log('[CALL_DEBUG] useChat.callTimelineChanged', {
+                        conversationId,
+                        total: transformed.length,
+                        callEventCount: callDebugMessages.length,
+                        lastCallEvents: callDebugMessages.slice(-8),
+                    });
+                }
+            }
+
+            setMessages(transformed);
         } catch (err) {
             console.error('Error loading local messages:', err);
         }
@@ -209,44 +277,44 @@ export function useChat(
 
                 // Save to local DB
                 if (msgConversationId && msgSenderId) {
-                  const existing = getLocalMessages(conversationId).find(
-                      (row) => row.id === msg.id || row.serverId === msg.id
-                  );
-                  // Server often bumps updated_at when only read_at changes (DB trigger).
-                  // Same body → keep local updatedAt so "(editado)" does not show falsely.
-                  let updatedAtForSave = msgUpdatedAt;
-                  if (existing && existing.content === msg.content) {
-                      updatedAtForSave = existing.updatedAt || msgCreatedAt || msgUpdatedAt;
-                  }
+                    const existing = getLocalMessages(conversationId).find(
+                        (row) => row.id === msg.id || row.serverId === msg.id
+                    );
+                    // Server often bumps updated_at when only read_at changes (DB trigger).
+                    // Same body → keep local updatedAt so "(editado)" does not show falsely.
+                    let updatedAtForSave = msgUpdatedAt;
+                    if (existing && existing.content === msg.content) {
+                        updatedAtForSave = existing.updatedAt || msgCreatedAt || msgUpdatedAt;
+                    }
 
-                  let metaForSave = (msg.metadata || existing?.metadata) as MessageMetadata | undefined;
-                  if (existing && existing.content !== msg.content) {
-                      metaForSave = { ...(metaForSave || {}), wasEdited: true };
-                  }
+                    let metaForSave = (msg.metadata || existing?.metadata) as MessageMetadata | undefined;
+                    if (existing && existing.content !== msg.content) {
+                        metaForSave = { ...(metaForSave || {}), wasEdited: true };
+                    }
 
-                  // Si el mensaje ya existe localmente como propio, preservar isMine:true
-                  // para evitar el race-condition donde el sync lo sobrescribe como ajeno
-                  const resolvedIsMine = existing?.isMine === true ? true : isMine;
+                    // Si el mensaje ya existe localmente como propio, preservar isMine:true
+                    // para evitar el race-condition donde el sync lo sobrescribe como ajeno
+                    const resolvedIsMine = existing?.isMine === true ? true : isMine;
 
-                  saveMessage({
-                      id: msg.id,
-                      serverId: msg.id,
-                      conversationId: msgConversationId,
-                      senderId: msgSenderId,
-                      senderName: resolveSenderName(msgSenderId),
-                      content: msg.content,
-                      type: msg.type || 'text',
-                      status,
-                      createdAt: msgCreatedAt || new Date().toISOString(),
-                      updatedAt: updatedAtForSave,
-                      readAt: msgReadAt,
-                      deletedAt: msgDeletedAt,
-                      isMine: resolvedIsMine,
-                      replyToId: (m.replyToId || m.reply_to_id || msg.metadata?.replyToId) as string | undefined,
-                      replyToContent: (m.replyToContent || m.reply_to_content || msg.metadata?.replyToContent) as string | undefined,
-                      replyToSender: (m.replyToSender || m.reply_to_sender || msg.metadata?.replyToSender) as string | undefined,
-                      metadata: metaForSave,
-                  });
+                    saveMessage({
+                        id: msg.id,
+                        serverId: msg.id,
+                        conversationId: msgConversationId,
+                        senderId: msgSenderId,
+                        senderName: resolveSenderName(msgSenderId),
+                        content: msg.content,
+                        type: msg.type || 'text',
+                        status,
+                        createdAt: msgCreatedAt || new Date().toISOString(),
+                        updatedAt: updatedAtForSave,
+                        readAt: msgReadAt,
+                        deletedAt: msgDeletedAt,
+                        isMine: resolvedIsMine,
+                        replyToId: (m.replyToId || m.reply_to_id || msg.metadata?.replyToId) as string | undefined,
+                        replyToContent: (m.replyToContent || m.reply_to_content || msg.metadata?.replyToContent) as string | undefined,
+                        replyToSender: (m.replyToSender || m.reply_to_sender || msg.metadata?.replyToSender) as string | undefined,
+                        metadata: metaForSave,
+                    });
                 }
             });
 
@@ -282,8 +350,19 @@ export function useChat(
                 loadLocalMessages();
             }
         });
-        return () => sub.remove();
-    }, [conversationId, loadLocalMessages]);
+
+        const subSync = DeviceEventEmitter.addListener('chat_sync_requested', (syncConvId) => {
+            if (syncConvId === conversationId) {
+                console.log(`🔄 Sync requested from Push Notification for ${conversationId}`);
+                syncFromServer();
+            }
+        });
+
+        return () => {
+            sub.remove();
+            subSync.remove();
+        };
+    }, [conversationId, loadLocalMessages, syncFromServer]);
 
     // Mark messages as read: local + broadcast instant, API call direct
     const markMessagesAsRead = useCallback(async () => {
@@ -299,7 +378,7 @@ export function useChat(
                 type: 'broadcast',
                 event: 'message_read',
                 payload: { conversationId, readerId: userId, timestamp: new Date().toISOString() },
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         // 3. API call: sync server state
@@ -339,6 +418,20 @@ export function useChat(
                         const msgSenderId = rawMsg.sender_id as string;
                         const isMine = isSameUserId(msgSenderId, userId);
 
+                        if (rawMsg.type === 'call' || rawMsg.type === 'call_ended' || rawMsg.type === 'call_rejected' || rawMsg.type === 'call_missed') {
+                            console.log('[CALL_DEBUG] useChat.postgres.INSERT', {
+                                conversationId,
+                                currentUserId: userId,
+                                msgId,
+                                msgSenderId,
+                                isMine,
+                                type: rawMsg.type,
+                                createdAt: rawMsg.created_at,
+                                metadata: rawMsg.metadata,
+                                skippedByBroadcast: recentBroadcastIdsRef.current.has(msgId),
+                            });
+                        }
+
                         // Si el sender soy yo, el optimistic update ya lo manejó correctamente.
                         // No guardar como isMine:false por ningún motivo.
                         if (isMine) {
@@ -353,6 +446,17 @@ export function useChat(
                         } else {
                             // Save directly from postgres_changes payload for instant UI
                             const meta = rawMsg.metadata as Record<string, unknown> | undefined;
+                            if (isDuplicateCallTerminal(rawMsg.type as string | undefined, meta, rawMsg.created_at as string | undefined)) {
+                                console.log('[CALL_DEBUG] useChat.postgres.skipDuplicateTerminal', {
+                                    conversationId,
+                                    msgId,
+                                    type: rawMsg.type,
+                                    createdAt: rawMsg.created_at,
+                                    metadata: meta,
+                                });
+                                return;
+                            }
+
                             saveMessage({
                                 id: msgId,
                                 serverId: msgId,
@@ -408,11 +512,20 @@ export function useChat(
                             }
                         }
                     } else if (payload.eventType === 'DELETE') {
-                        console.log('🗑️ Message deleted, removing local copy');
+                        console.log('🗑️ Message deleted, marking as deleted locally');
                         const oldIdItem = (payload.old as { id: string }).id;
                         if (oldIdItem) {
-                            deleteLocalMessage(oldIdItem);
-                            loadLocalMessages();
+                            const rows = getLocalMessages(conversationId);
+                            const target = rows.find(m => m.id === oldIdItem || m.serverId === oldIdItem);
+                            if (target) {
+                                saveMessage({
+                                    ...target,
+                                    content: 'Mensaje eliminado',
+                                    updatedAt: new Date().toISOString(),
+                                    deletedAt: new Date().toISOString(),
+                                });
+                                loadLocalMessages();
+                            }
                         }
                     }
                 }
@@ -429,6 +542,20 @@ export function useChat(
                     const msgSenderId = sm?.senderId || sm?.sender_id;
                     const msgCreatedAt = sm?.createdAt || sm?.created_at;
 
+                    if (sm?.type === 'call' || sm?.type === 'call_ended' || sm?.type === 'call_rejected' || sm?.type === 'call_missed') {
+                        console.log('[CALL_DEBUG] useChat.broadcast.new_message', {
+                            currentConversationId: conversationId,
+                            msgConversationId,
+                            currentUserId: userId,
+                            msgSenderId,
+                            id: sm.id,
+                            type: sm.type,
+                            createdAt: msgCreatedAt,
+                            metadata: sm.metadata,
+                            willSave: Boolean(sm && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId),
+                        });
+                    }
+
                     if (sm && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId) {
                         // Track this ID so the postgres_changes INSERT handler skips redundant work
                         recentBroadcastIdsRef.current.add(sm.id);
@@ -436,6 +563,17 @@ export function useChat(
 
                         // 1. Save locally for instant rendering
                         const bMeta = sm.metadata as MessageMetadata | undefined;
+                        if (isDuplicateCallTerminal(sm.type, bMeta, msgCreatedAt as string | undefined)) {
+                            console.log('[CALL_DEBUG] useChat.broadcast.skipDuplicateTerminal', {
+                                conversationId,
+                                id: sm.id,
+                                type: sm.type,
+                                createdAt: msgCreatedAt,
+                                metadata: bMeta,
+                            });
+                            return;
+                        }
+
                         saveMessage({
                             id: sm.id,
                             serverId: sm.id,
@@ -536,7 +674,7 @@ export function useChat(
             supabase.removeChannel(channel);
             channelRef.current = null;
         };
-    }, [conversationId, userId, loadLocalMessages]);
+    }, [conversationId, userId, loadLocalMessages, markMessagesAsRead, resolveSenderName, syncFromServer, isDuplicateCallTerminal]);
 
     // Initial load and polling setup
     useEffect(() => {
@@ -559,15 +697,33 @@ export function useChat(
             syncFromServer();
         }, 120_000);
 
+        // 5. Sync when app comes to foreground (Crucial for missed Call events while in background)
+        const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+            if (nextAppState === 'active') {
+                console.log(`📱 App became active, syncing messages for ${conversationId}`);
+                syncFromServer();
+            }
+        });
+
+        // 6. Listen to local SQLite updates (e.g., from CallScreen native hooks writing to DB)
+        const localUpdateSub = DeviceEventEmitter.addListener('chat_local_update', (updatedConvId: string) => {
+            if (updatedConvId === conversationId) {
+                console.log(`📥 Local DB updated for ${conversationId}, reloading messages in useChat`);
+                loadLocalMessages();
+            }
+        });
+
         return () => {
             if (pollingIntervalRef.current) {
                 clearInterval(pollingIntervalRef.current);
             }
+            appStateSubscription.remove();
+            localUpdateSub.remove();
         };
     }, [conversationId, userId, loadLocalMessages, syncFromServer, markMessagesAsRead, loadGroupParticipants]);
 
     // Send a message with optimistic update (WhatsApp style)
-    const sendMessage = useCallback(async (content: string, type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended' = 'text', metadata?: MessageMetadata, localContent?: string) => {
+    const sendMessage = useCallback(async (content: string, type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'call' | 'call_ended' | 'call_rejected' | 'call_missed' = 'text', metadata?: MessageMetadata, localContent?: string) => {
         if (!content.trim()) return;
 
         // Optimistic update
@@ -781,32 +937,40 @@ export function useChat(
         const localNow = new Date().toISOString();
 
         // Optimistic: update React state immediately (zero delay UI)
-        setMessages(prev => prev.map(m =>
-            (m.id === messageId || m.serverId === messageId)
-                ? { ...m, content: 'Mensaje eliminado', updatedAt: localNow, deletedAt: localNow }
-                : m
-        ));
+        console.log('🔄 [deleteMessage] Applying optimistic update for:', messageId, 'Found:', existingMsg.id);
+        setMessages(prev => {
+            const next = prev.map(m => {
+                if (m.id === messageId || m.serverId === messageId) {
+                    console.log('🔄 [deleteMessage] MATCHED in setMessages, marking as deleted');
+                    return { ...m, content: 'Mensaje eliminado', type: 'text', updatedAt: localNow, deletedAt: localNow };
+                }
+                return m;
+            });
+            return next;
+        });
 
         // Persist to SQLite in parallel (non-blocking for UI)
         saveMessage({
             ...existingMsg,
             content: 'Mensaje eliminado',
+            type: 'text',
             updatedAt: localNow,
             deletedAt: localNow,
             status: existingMsg.status as MessageStatus,
         });
 
+        // Broadcast immediately to update the other person's UI instantly
+        if (existingMsg.serverId && channelRef.current && channelRef.current.state === 'joined') {
+            channelRef.current.send({
+                type: 'broadcast',
+                event: 'message_deleted',
+                payload: { messageId: existingMsg.serverId, deletedAt: localNow },
+            });
+        }
+
         try {
             if (existingMsg.serverId) {
                 await chatService.deleteMessage(existingMsg.serverId, userId);
-
-                if (channelRef.current && channelRef.current.state === 'joined') {
-                    channelRef.current.send({
-                        type: 'broadcast',
-                        event: 'message_deleted',
-                        payload: { messageId: existingMsg.serverId, deletedAt: localNow },
-                    });
-                }
             }
         } catch (err) {
             console.error('Error deleting message:', err);

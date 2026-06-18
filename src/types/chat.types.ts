@@ -5,7 +5,7 @@ export interface Message {
     conversationId: string;
     senderId: string;
     content: string;
-    type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended';
+    type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'call' | 'call_ended' | 'call_rejected' | 'call_missed';
     createdAt: string;
     isRead: boolean;
     metadata?: MessageMetadata;
@@ -21,6 +21,8 @@ export interface MessageMetadata {
     width?: number;
     height?: number;
     thumbnailUrl?: string;
+    fileName?: string;
+    fileSize?: number;
     /** True when the user (or remote) actually edited message body */
     wasEdited?: boolean;
     /** Mensaje de actividad del grupo (centrado en el hilo) */

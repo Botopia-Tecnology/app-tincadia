@@ -4,7 +4,6 @@ import {
     Text,
     TouchableOpacity,
     Modal,
-    StyleSheet,
     ActivityIndicator,
     Alert,
     Platform,
@@ -12,9 +11,10 @@ import {
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
-import { API_URL } from '../../config/api.config';
+import { API_URL } from '../../../config/api.config';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
+import { streamingLscRecorderStyles as styles } from '../../../styles/ChatRecorders.styles';
 
 interface StreamingLSCRecorderProps {
     visible: boolean;
@@ -43,7 +43,7 @@ export function StreamingLSCRecorder({
         const loadHtml = async () => {
             try {
                 // Resolve asset
-                const asset = Asset.fromModule(require('../../assets/html/streaming-lsc.html'));
+                const asset = Asset.fromModule(require('../../../assets/html/streaming-lsc.html'));
                 if (!asset.localUri) {
                     await asset.downloadAsync(); // Ensure it's downloaded/cached
                 }
@@ -178,96 +178,3 @@ export function StreamingLSCRecorder({
         </Modal>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#000',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingTop: 50,
-        paddingBottom: 15,
-        backgroundColor: '#111',
-        borderBottomWidth: 1,
-        borderBottomColor: '#333',
-    },
-    headerTitleContainer: {
-        alignItems: 'center',
-    },
-    headerTitle: {
-        color: 'white',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    statusContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-    },
-    statusDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginRight: 6,
-    },
-    statusText: {
-        color: '#ccc',
-        fontSize: 12,
-    },
-    closeButton: {
-        padding: 5,
-    },
-    webviewContainer: {
-        flex: 1,
-        backgroundColor: '#000',
-    },
-    webview: {
-        flex: 1,
-        backgroundColor: '#000',
-    },
-    permissionContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    permissionText: {
-        color: 'white',
-        marginBottom: 20,
-        fontSize: 16,
-    },
-    permissionButton: {
-        backgroundColor: '#4F46E5',
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        borderRadius: 8,
-    },
-    permissionButtonText: {
-        color: 'white',
-        fontWeight: 'bold',
-    },
-    footer: {
-        padding: 20,
-        backgroundColor: '#111',
-        alignItems: 'center',
-    },
-    footerText: {
-        color: '#888',
-        textAlign: 'center',
-        fontSize: 14,
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#000',
-    },
-    loadingText: {
-        color: '#888',
-        marginTop: 10,
-        fontSize: 14,
-    },
-});

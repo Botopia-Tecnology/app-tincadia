@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Dimensions, StyleSheet, Pressable, Vibration } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Pressable, Vibration, Linking, Dimensions } from 'react-native';
 import { Video, ResizeMode, Audio } from 'expo-av';
-import { messageBubbleStyles as styles } from '../../styles/ChatComponents.styles';
+import * as Speech from 'expo-speech';
+import { messageBubbleStyles as styles } from '../../../styles/ChatComponents.styles';
+import { messageBubbleMediaStyles as mediaStyles } from '../../../styles/ChatComponents.styles';
 import { Ionicons } from '@expo/vector-icons';
-import { mediaService } from '../../services/media.service';
+import { mediaService } from '../../../services/media.service';
 import Autolink from 'react-native-autolink';
-import { API_URL } from '../../config/api.config';
-import { apiClient } from '../../lib/api-client';
-import { MessageMetadata } from '../../types/chat.types';
+import { API_URL } from '../../../config/api.config';
+import { apiClient } from '../../../lib/api-client';
+import { MessageMetadata } from '../../../types/chat.types';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -47,7 +49,7 @@ interface MessageBubbleProps {
     isMine: boolean;
     isSynced?: boolean;
     isRead?: boolean;
-    type?: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended';
+    type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'call' | 'call_ended' | 'call_rejected' | 'call_missed';
     replyToContent?: string;
     replyToSender?: string;
     publicId?: string;
@@ -84,7 +86,7 @@ export function MessageBubble({
     // Auto-load media when component mounts
     useEffect(() => {
         const loadMedia = async () => {
-            if ((type === 'image' || type === 'video' || type === 'audio') && content) {
+            if ((type === 'image' || type === 'video' || type === 'audio' || type === 'document') && content) {
                 // 1. If it's a local file (e.g. pending upload), use it immediately
                 if (content.startsWith('file://')) {
                     setMediaUri(content);
@@ -92,11 +94,12 @@ export function MessageBubble({
                 }
 
                 setIsLoading(true);
+                const normalizeUrl = (url: string) => {
+                    if (url.startsWith('http')) return url;
+                    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+                };
+                
                 try {
-                    const normalizeUrl = (url: string) => {
-                        if (url.startsWith('http')) return url;
-                        return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-                    };
 
                     const resolvedKey = resolveChatMediaKey(publicId, content, API_URL);
                     const localUri = await mediaService.downloadMedia(resolvedKey, type as 'image' | 'video' | 'audio');
@@ -119,6 +122,11 @@ export function MessageBubble({
         };
         loadMedia();
     }, [content, type, publicId]);
+
+    // Memoize audio wave heights to prevent jitter on re-renders
+    const audioWaveHeights = useMemo(() => {
+        return [...Array(10)].map(() => 4 + Math.random() * 12);
+    }, []);
 
     // Extract audio duration when mediaUri is available
     useEffect(() => {
@@ -177,16 +185,20 @@ export function MessageBubble({
     };
 
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const [ttsSound, setTtsSound] = useState<Audio.Sound | null>(null);
+
+    // Detener audio nativo si el componente se desmonta (e.g. scroll en lista)
+    useEffect(() => {
+        return () => {
+            if (isSpeaking) {
+                Speech.stop();
+            }
+        };
+    }, [isSpeaking]);
 
     const handleSpeak = async () => {
         if (isSpeaking) {
             // Stop playback if already speaking
-            if (ttsSound) {
-                await ttsSound.stopAsync();
-                await ttsSound.unloadAsync();
-                setTtsSound(null);
-            }
+            Speech.stop();
             setIsSpeaking(false);
             return;
         }
@@ -195,23 +207,12 @@ export function MessageBubble({
             setIsSpeaking(true);
             Vibration.vibrate(40);
 
-            const result = await apiClient<{ success: boolean; audioUrl: string }>('/model/tts', {
-                method: 'POST',
-                body: JSON.stringify({ text: content }),
+            Speech.speak(content, {
+                language: 'es-ES',
+                onDone: () => setIsSpeaking(false),
+                onStopped: () => setIsSpeaking(false),
+                onError: () => setIsSpeaking(false),
             });
-
-            if (!result?.audioUrl) throw new Error('No audioUrl received');
-
-            const { sound } = await Audio.Sound.createAsync({ uri: result.audioUrl });
-            setTtsSound(sound);
-            sound.setOnPlaybackStatusUpdate((status) => {
-                if (status.isLoaded && status.didJustFinish) {
-                    setIsSpeaking(false);
-                    sound.unloadAsync();
-                    setTtsSound(null);
-                }
-            });
-            await sound.playAsync();
         } catch (e) {
             console.error('TTS error:', e);
             setIsSpeaking(false);
@@ -242,6 +243,7 @@ export function MessageBubble({
 
     const isDeleted = content === 'Mensaje eliminado' || content === '🚫 Mensaje eliminado' || updatedAt?.includes('deleted');
     const isEdited = !isDeleted && (() => {
+        if (type !== 'text') return false; // Media messages NEVER show "(editado)"
         if (metadata?.wasEdited === true) return true;
         if (!updatedAt || !time) return false;
         const createdMs = new Date(time).getTime();
@@ -305,13 +307,13 @@ export function MessageBubble({
                         color={isMine ? 'white' : '#4CAF50'}
                     />
                     <View style={mediaStyles.audioWave}>
-                        {[...Array(10)].map((_, i) => (
+                        {audioWaveHeights.map((height, i) => (
                             <View
                                 key={i}
                                 style={[
                                     mediaStyles.audioBar,
                                     {
-                                        height: 4 + Math.random() * 12,
+                                        height: height,
                                         backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : 'rgba(76,175,80,0.6)',
                                     },
                                 ]}
@@ -327,6 +329,33 @@ export function MessageBubble({
                     }}>
                         {displayDuration ? formatDuration(displayDuration) : '--:--'}
                     </Text>
+                </TouchableOpacity>
+            );
+        }
+
+        if (type === 'document') {
+            const fileName = metadata?.fileName || 'Documento adjunto';
+            const handleOpenDocument = () => {
+                if (mediaUri) {
+                    Linking.openURL(mediaUri).catch(() => {
+                        console.error('Could not open document:', mediaUri);
+                    });
+                }
+            };
+
+            return (
+                <TouchableOpacity onPress={handleOpenDocument} style={mediaStyles.document}>
+                    <View style={mediaStyles.documentIconContainer}>
+                        <Ionicons name="document-text" size={32} color={isMine ? 'white' : '#4F46E5'} />
+                    </View>
+                    <View style={mediaStyles.documentTextContainer}>
+                        <Text style={[mediaStyles.documentName, { color: isMine ? 'white' : '#333' }]} numberOfLines={1}>
+                            {fileName}
+                        </Text>
+                        <Text style={[mediaStyles.documentSubtext, { color: isMine ? 'rgba(255,255,255,0.7)' : '#666' }]}>
+                            Tocar para abrir
+                        </Text>
+                    </View>
                 </TouchableOpacity>
             );
         }
@@ -418,8 +447,8 @@ export function MessageBubble({
         );
     }
 
-    // Regular text message
-    if (type === 'text' || type === 'call' || type === 'call_ended') {
+    // Regular text message or any deleted message
+    if (isDeleted || type === 'text' || type === 'call' || type === 'call_ended' || type === 'call_rejected' || type === 'call_missed') {
         return (
             <View style={[styles.container, isMine ? styles.containerMine : styles.containerOther]}>
             <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
@@ -502,62 +531,3 @@ export function MessageBubble({
     );
 }
 
-const mediaStyles = StyleSheet.create({
-    placeholder: {
-        width: 200,
-        height: 150,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.1)',
-        borderRadius: 10,
-    },
-    thumbnail: {
-        width: 200,
-        height: 150,
-        borderRadius: 10,
-    },
-    audio: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        minWidth: 180,
-    },
-    audioWave: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginLeft: 10,
-        gap: 2,
-    },
-    audioBar: {
-        width: 3,
-        borderRadius: 2,
-    },
-    modalBackdrop: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.95)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    modalContent: {
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    fullscreenImage: {
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT * 0.8,
-    },
-    closeButton: {
-        position: 'absolute',
-        top: 50,
-        right: 20,
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-});

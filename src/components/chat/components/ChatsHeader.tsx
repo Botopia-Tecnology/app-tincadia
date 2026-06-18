@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, ViewStyle, TextStyle, ImageStyle } from 'react-native';
-import { NotificationIcon, SearchIcon } from '../icons/NavigationIcons';
-import { useTheme } from '../../contexts/ThemeContext';
+import { NotificationIcon, SearchIcon } from '../../icons/NavigationIcons';
+import { useTheme } from '../../../contexts/ThemeContext';
 
 interface ChatsHeaderProps {
   searchQuery: string;

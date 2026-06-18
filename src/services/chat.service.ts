@@ -5,7 +5,7 @@
  */
 
 import { apiClient } from '../lib/api-client';
-import { API_ENDPOINTS, API_URL } from '../config/api.config';
+import { API_ENDPOINTS } from '../config/api.config';
 import { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata } from '../types/chat.types';
 
 export type { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata };
@@ -14,7 +14,7 @@ interface SendMessageDto {
     conversationId: string;
     senderId: string;
     content: string;
-    type: 'text' | 'image' | 'video' | 'audio' | 'call' | 'call_ended';
+    type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'call' | 'call_ended' | 'call_rejected' | 'call_missed';
     metadata?: MessageMetadata;
 }
 
@@ -73,7 +73,7 @@ export const chatService = {
      * Create a new group chat
      */
     async createGroup(data: { creatorId: string; title: string; participants: string[]; imageUrl?: string; description?: string }): Promise<{ conversationId: string }> {
-        return apiClient(`${API_URL}/chat/groups`, { // Ensure direct path if endpoints config not updated
+        return apiClient('/chat/groups', {
             method: 'POST',
             body: JSON.stringify(data),
         });
@@ -344,7 +344,7 @@ export const chatService = {
     /**
      * Update group information (Admin only)
      */
-    async updateGroup(data: { conversationId: string; adminId: string; title?: string; imageUrl?: string; description?: string }): Promise<{ group: Group }> {
+    async updateGroup(data: { conversationId: string; adminId: string; title?: string; imageUrl?: string; description?: string }): Promise<{ group: Conversation }> {
         return apiClient('/chat/groups', {
             method: 'PUT',
             body: JSON.stringify(data),

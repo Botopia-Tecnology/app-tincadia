@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text } from 'react-native';
+import { dateSeparatorStyles as styles } from '../../../styles/ChatComponents.styles';
 
 interface DateSeparatorProps {
     date: Date;
@@ -31,29 +32,3 @@ export const DateSeparator = ({ date }: DateSeparatorProps) => {
     );
 };
 
-const styles = StyleSheet.create({
-    container: {
-        alignItems: 'center',
-        marginVertical: 12,
-        marginBottom: 8,
-    },
-    bubble: {
-        backgroundColor: 'rgba(229, 231, 235, 0.8)', // gray-200 with opacity
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        borderRadius: 12,
-        shadowColor: "#000",
-        shadowOffset: {
-            width: 0,
-            height: 1,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 1,
-        elevation: 1,
-    },
-    text: {
-        fontSize: 12,
-        color: '#4B5563', // gray-600
-        fontWeight: '600',
-    },
-});

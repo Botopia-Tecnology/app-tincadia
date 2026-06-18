@@ -5,8 +5,9 @@
  */
 
 import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
+import { videoPreviewModalStyles as styles } from '../../../styles/ChatModals.styles';
 
 interface VideoPreviewModalProps {
     visible: boolean;
@@ -17,7 +18,7 @@ interface VideoPreviewModalProps {
     isLoading?: boolean;
 }
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 
 export function VideoPreviewModal({
     visible,
@@ -97,77 +98,3 @@ export function VideoPreviewModal({
     );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#000000',
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingTop: 50,
-        paddingBottom: 16,
-    },
-    headerButton: {
-        color: '#007AFF',
-        fontSize: 16,
-    },
-    headerTitle: {
-        color: '#FFFFFF',
-        fontSize: 18,
-        fontWeight: '600',
-    },
-    videoContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#000000',
-    },
-    video: {
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT * 0.5,
-    },
-    instructions: {
-        padding: 20,
-        alignItems: 'center',
-    },
-    instructionsText: {
-        color: '#9CA3AF',
-        fontSize: 14,
-        textAlign: 'center',
-    },
-    actions: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        paddingBottom: 40,
-        gap: 12,
-    },
-    button: {
-        flex: 1,
-        paddingVertical: 16,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    retakeButton: {
-        backgroundColor: '#374151',
-    },
-    retakeButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    confirmButton: {
-        backgroundColor: '#10B981',
-    },
-    confirmButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    buttonDisabled: {
-        opacity: 0.6,
-    },
-});

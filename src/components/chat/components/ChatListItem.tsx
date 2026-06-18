@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, ViewStyle, TextStyle, ImageStyle } from 'react-native';
+import { View, Text, TouchableOpacity, Image, ViewStyle, TextStyle, ImageStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { PlusIcon } from '../icons/NavigationIcons';
-import { ChatListItem as ChatListItemType } from '../../hooks/useChatList';
-import { useTheme } from '../../contexts/ThemeContext';
+import { PlusIcon } from '../../icons/NavigationIcons';
+import { ChatListItem as ChatListItemType } from '../../../hooks/useChatList';
+import { useTheme } from '../../../contexts/ThemeContext';
+import { chatListItemPreviewStyles as previewStyles } from '../../../styles/ChatComponents.styles';
 
 // Format message time for display (moved from ChatsScreen)
 export const formatMessageTime = (dateString: string): string => {
@@ -159,15 +160,3 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
     </View>
   );
 };
-
-const previewStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-});

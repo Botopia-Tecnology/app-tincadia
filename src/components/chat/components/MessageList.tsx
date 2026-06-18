@@ -1,17 +1,17 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, FlatList, Pressable, Vibration, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { MessageBubble } from './MessageBubble';
-import { chatViewStyles } from '../../styles/ChatsScreen.styles';
-import { Message } from '../../hooks/useChat';
-import { ThemeColors } from '../../contexts/ThemeContext';
+import { chatViewStyles } from '../../../styles/ChatsScreen.styles';
+import { Message } from '../../../hooks/useChat';
+import { ThemeColors } from '../../../contexts/ThemeContext';
 
 interface UploadingMessage {
   id: string;
   content: string;
   localUri: string;
-  type: 'image' | 'video';
+  type: 'image' | 'video' | 'document' | 'audio';
   status: 'uploading';
   createdAt: string;
   senderId: string;
@@ -25,7 +25,7 @@ interface MessageListProps {
   isGroup?: boolean;
   onLongPress: (msg: Message) => void;
   onSwipeReply: (msg: Message) => void;
-  onJoinCall: () => void;
+  onJoinCall: (msg: Message) => void;
   colors: ThemeColors;
   isDark: boolean;
   swipeableRefs: React.MutableRefObject<Map<string, Swipeable | null>>;
@@ -45,6 +45,27 @@ export const MessageList = ({
   swipeableRefs,
   readReceiptsEnabled = true
 }: MessageListProps) => {
+  const terminalCallTypes = useMemo(() => {
+    return new Set(isGroup ? ['call_ended', 'call_missed'] : ['call_ended', 'call_rejected', 'call_missed']);
+  }, [isGroup]);
+
+  const endedCallSessionIds = useMemo(() => {
+    const endedSessions = new Set<string>();
+
+    messages.forEach((message) => {
+      if (!terminalCallTypes.has(message.type)) return;
+
+      const sessionId = typeof message.metadata?.callSessionId === 'string'
+        ? message.metadata.callSessionId
+        : undefined;
+
+      if (sessionId) {
+        endedSessions.add(sessionId);
+      }
+    });
+
+    return endedSessions;
+  }, [messages, terminalCallTypes]);
 
   const renderMessageItem = ({ item }: { item: Message | UploadingMessage }) => {
     if ('status' in item && item.status === 'uploading') {
@@ -79,23 +100,55 @@ export const MessageList = ({
       const callTime = getSafeTime(item.createdAt);
       const isExpired = callTime > 0 && (Date.now() - callTime) > CALL_EXPIRY_MS;
 
-      const hasEnded = isExpired || messages.some(m =>
-        (m.type === 'call_ended' || m.type === 'call_rejected') &&
-        getSafeTime(m.createdAt) > callTime
-      );
+      const callSessionId = typeof msg.metadata?.callSessionId === 'string' ? msg.metadata.callSessionId : undefined;
+      const roomName = typeof msg.metadata?.roomName === 'string' ? msg.metadata.roomName : undefined;
+      const hasEndedBySession = Boolean(callSessionId && endedCallSessionIds.has(callSessionId));
+      const callIndex = messages.findIndex(m => m.id === msg.id);
+      const nextCallIndex = messages.findIndex((m, index) => index > callIndex && m.type === 'call');
+      const nextCallTime = nextCallIndex >= 0 ? getSafeTime(messages[nextCallIndex].createdAt) : 0;
+
+      const hasEndedByLegacyFallback = messages.some((m, index) => {
+        if (!terminalCallTypes.has(m.type)) return false;
+
+        const endingSessionId = typeof m.metadata?.callSessionId === 'string' ? m.metadata.callSessionId : undefined;
+        if (endingSessionId) return false;
+
+        if (callIndex >= 0 && index <= callIndex) return false;
+        if (nextCallIndex >= 0 && index >= nextCallIndex) return false;
+
+        const endingTime = getSafeTime(m.createdAt);
+        if (endingTime < callTime) return false;
+        if (nextCallTime > 0 && endingTime > nextCallTime) return false;
+
+        const endingRoomName = typeof m.metadata?.roomName === 'string' ? m.metadata.roomName : undefined;
+        if (roomName && endingRoomName && endingRoomName !== roomName) return false;
+
+        // Legacy fallback: some persisted/broadcast end events arrive without callSessionId.
+        // Bind them only to the message window of this call so fast repeated calls stay independent.
+        return true;
+      });
+
+      const hasEnded = isExpired || hasEndedBySession || hasEndedByLegacyFallback;
+
+      if (hasEnded) {
+        return (
+          <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center', marginVertical: 10 }]}>
+            <View style={{ backgroundColor: isDark ? '#2A2A35' : '#F3F4F6', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="call" size={14} color={colors.textMuted} />
+              <Text style={{ color: colors.textMuted, fontStyle: 'italic', fontSize: 13 }}>Llamada finalizada</Text>
+            </View>
+          </View>
+        );
+      }
 
       return (
         <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center', marginVertical: 10 }]}>
           <View style={{ backgroundColor: isDark ? '#1E1E3F' : '#E0E7FF', padding: 15, borderRadius: 15, alignItems: 'center' }}>
             <Text style={{ fontWeight: 'bold', marginBottom: 5, color: colors.text }}>Videollamada</Text>
             <Text style={{ marginBottom: 10, color: colors.textSecondary }}>{isMe ? 'Iniciaste una llamada' : 'Te invitaron a una llamada'}</Text>
-            {!hasEnded ? (
-              <TouchableOpacity onPress={onJoinCall} style={{ backgroundColor: '#4F46E5', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}>
-                <Text style={{ color: 'white', fontWeight: 'bold' }}>Unirse ahora</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={{ color: colors.textMuted, fontStyle: 'italic', fontSize: 12 }}>Llamada finalizada</Text>
-            )}
+            <TouchableOpacity onPress={() => onJoinCall(msg)} style={{ backgroundColor: '#4F46E5', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}>
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>Unirse ahora</Text>
+            </TouchableOpacity>
           </View>
         </View>
       );
@@ -150,7 +203,7 @@ export const MessageList = ({
             isMine={isMe}
             isSynced={item.status !== 'pending'}
             isRead={item.status === 'read' && readReceiptsEnabled !== false}
-            type={(item.type as "image" | "video" | "call_ended" | "call" | "text" | "audio") || 'text'}
+            type={(item.type as "image" | "video" | "call_ended" | "call_rejected" | "call_missed" | "call" | "text" | "audio") || 'text'}
             replyToContent={item.replyToContent}
             replyToSender={
               item.replyToSender
@@ -169,11 +222,12 @@ export const MessageList = ({
     );
   };
 
-  const displayData = [...uploadingMessages, ...[...messages].filter(m => m.type !== 'call_rejected' && m.type !== 'sos_active' && m.type !== 'call_ended').reverse()];
+  const displayData = [...uploadingMessages, ...[...messages].filter(m => m.type !== 'call_rejected' && m.type !== 'sos_active' && m.type !== 'call_ended' && m.type !== 'call_missed').reverse()];
 
   return (
     <FlatList
       data={displayData}
+      extraData={messages}
       inverted
       keyExtractor={(item) => item.id}
       contentContainerStyle={{ paddingVertical: 16 }}

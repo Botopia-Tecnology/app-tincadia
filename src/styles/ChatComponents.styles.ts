@@ -1,4 +1,6 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Dimensions } from 'react-native';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
  * Styles for ChatInput component
@@ -197,5 +199,137 @@ export const messageBubbleStyles = StyleSheet.create({
         fontSize: 12,
         marginLeft: 4,
         fontWeight: '600',
+    },
+});
+
+/**
+ * Styles for DateSeparator component
+ */
+export const dateSeparatorStyles = StyleSheet.create({
+    container: {
+        alignItems: 'center',
+        marginVertical: 12,
+        marginBottom: 8,
+    },
+    bubble: {
+        backgroundColor: 'rgba(229, 231, 235, 0.8)', // gray-200 with opacity
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 12,
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: 1,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 1,
+        elevation: 1,
+    },
+    text: {
+        fontSize: 12,
+        color: '#4B5563', // gray-600
+        fontWeight: '600',
+    },
+});
+
+/**
+ * Styles for MessageBubble Media elements
+ */
+export const messageBubbleMediaStyles = StyleSheet.create({
+    placeholder: {
+        width: 200,
+        height: 150,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        borderRadius: 10,
+    },
+    thumbnail: {
+        width: 200,
+        height: 150,
+        borderRadius: 10,
+    },
+    audio: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        minWidth: 180,
+    },
+    audioWave: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginLeft: 10,
+        gap: 2,
+    },
+    audioBar: {
+        width: 3,
+        borderRadius: 2,
+    },
+    modalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        width: SCREEN_WIDTH,
+        height: SCREEN_HEIGHT,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fullscreenImage: {
+        width: SCREEN_WIDTH,
+        height: SCREEN_HEIGHT * 0.8,
+    },
+    closeButton: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    document: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 8,
+        minWidth: 200,
+        maxWidth: 250,
+    },
+    documentIconContainer: {
+        marginRight: 12,
+        backgroundColor: 'rgba(0,0,0,0.05)',
+        padding: 8,
+        borderRadius: 8,
+    },
+    documentTextContainer: {
+        flex: 1,
+    },
+    documentName: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    documentSubtext: {
+        fontSize: 11,
+    },
+});
+
+/**
+ * Styles for ChatListItem preview row
+ */
+export const chatListItemPreviewStyles = StyleSheet.create({
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '500',
     },
 });

@@ -20,7 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { chatService } from '../../services/chat.service';
 import { mediaService } from '../../services/media.service';
 import { supabase } from '../../lib/supabase';
-import { getLocalContacts, LocalContact, saveConversation, getConversation } from '../../database/chatDatabase';
+import { getLocalContacts, LocalContact, patchConversationMetadata } from '../../database/chatDatabase';
 import { EditStringModal } from '../modals/EditStringModal';
 import { ContactSelectionModal } from '../modals/ContactSelectionModal';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -34,6 +34,7 @@ interface GroupProfileViewProps {
     onBack: () => void;
     onLeave?: () => void;
     onUpdate?: (updates: { title?: string; imageUrl?: string; description?: string }) => void;
+    onNavigate?: (screen: string, params?: any) => void;
 }
 
 interface Participant {
@@ -54,6 +55,7 @@ export function GroupProfileView({
     onBack,
     onLeave,
     onUpdate,
+    onNavigate,
 }: GroupProfileViewProps) {
     const { colors, isDark } = useTheme();
     const [participants, setParticipants] = useState<Participant[]>([]);
@@ -87,7 +89,7 @@ export function GroupProfileView({
         setIsLoading(true);
         try {
             const data = await chatService.getGroupParticipants(conversationId);
-            setParticipants(data);
+            setParticipants(data.map(p => ({ ...p, role: (p.role as 'admin' | 'member') || 'member' })));
 
             // Set current user role
             const me = data.find(p => p.id === userId);
@@ -104,6 +106,10 @@ export function GroupProfileView({
         fetchParticipants();
         fetchLocalContacts();
     }, [conversationId]);
+
+    useEffect(() => {
+        setLocalDescription(groupDescription || '');
+    }, [groupDescription]);
 
     const handlePromoteToAdmin = (p: Participant) => {
         Alert.alert(
@@ -241,14 +247,21 @@ export function GroupProfileView({
             }
 
             // 4. Update group in DB
-            await chatService.updateGroup({
+            const { group } = await chatService.updateGroup({
                 conversationId,
                 adminId: userId,
                 imageUrl: uploadResult.url
             });
 
+            const imageUrl = group?.imageUrl || (group as { image_url?: string })?.image_url || uploadResult.url;
+
+            patchConversationMetadata({
+                conversationId,
+                imageUrl,
+            });
+
             if (onUpdate) {
-                onUpdate({ imageUrl: uploadResult.url });
+                onUpdate({ imageUrl });
             }
 
             Alert.alert('Éxito', 'Foto del grupo actualizada correctamente');
@@ -301,33 +314,33 @@ export function GroupProfileView({
             }
 
             // 1. Update on server
-            await chatService.updateGroup(updates);
+            const { group } = await chatService.updateGroup(updates);
 
-            // 2. Update local database (SQLite)
-            const existing = getConversation(conversationId);
-            if (existing) {
-                saveConversation({
-                    id: existing.id,
-                    otherUserId: existing.other_user_id || undefined,
-                    otherUserName: existing.other_user_name || '',
-                    otherUserAvatar: existing.other_user_avatar || '',
-                    otherUserPhone: existing.other_user_phone || '',
-                    lastMessage: existing.last_message || '',
-                    lastMessageAt: existing.last_message_at || '',
-                    unreadCount: existing.unread_count || 0,
-                    type: existing.type as 'direct' | 'group',
-                    title: updates.title || existing.title || undefined,
-                    imageUrl: existing.image_url || undefined,
-                    description: updates.description !== undefined ? updates.description : (existing.description || undefined),
+            const serverTitle = group?.title ?? updates.title;
+            const serverDescription = group?.description ?? updates.description;
+            const serverImageUrl = group?.imageUrl || (group as { image_url?: string })?.image_url;
+
+            // 2. Update local database (SQLite) and notify all listeners (including editor)
+            if (editModalConfig.field === 'title' && serverTitle !== undefined) {
+                patchConversationMetadata({
+                    conversationId,
+                    title: serverTitle,
+                    imageUrl: serverImageUrl,
+                });
+            } else if (editModalConfig.field === 'description' && serverDescription !== undefined) {
+                patchConversationMetadata({
+                    conversationId,
+                    description: serverDescription,
+                    imageUrl: serverImageUrl,
                 });
             }
 
             // 3. Update local state and notify parent
             if (editModalConfig.field === 'title') {
-                if (onUpdate) onUpdate({ title: value.trim() });
+                if (onUpdate) onUpdate({ title: serverTitle });
             } else {
-                setLocalDescription(value.trim());
-                if (onUpdate) onUpdate({ description: value.trim() });
+                setLocalDescription(serverDescription || '');
+                if (onUpdate) onUpdate({ description: serverDescription });
             }
         } catch (error) {
             Alert.alert('Error', 'No se pudo actualizar la información');
@@ -443,8 +456,24 @@ export function GroupProfileView({
                         participants.map((participant) => (
                             <TouchableOpacity
                                 key={participant.id}
-                                disabled={currentUserRole !== 'admin' || participant.id === userId}
-                                onPress={() => {
+                                disabled={participant.id === userId}
+                                onPress={async () => {
+                                    if (participant.id === userId) return;
+                                    try {
+                                        const { conversationId: directConvId } = await chatService.startConversation(userId, participant.id);
+                                        if (onNavigate) {
+                                            onNavigate('chats', {
+                                                conversationId: directConvId,
+                                                recipientId: participant.id,
+                                                isGroup: false,
+                                                title: getDisplayName(participant),
+                                            });
+                                        }
+                                    } catch (error) {
+                                        console.error('Error starting conversation:', error);
+                                    }
+                                }}
+                                onLongPress={() => {
                                     if (currentUserRole === 'admin' && participant.id !== userId) {
                                         Alert.alert(
                                             'Acciones de Usuario',
