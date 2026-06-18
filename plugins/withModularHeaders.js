@@ -4,31 +4,20 @@ const withModularHeaders = (config) => {
   return withPodfile(config, (config) => {
     const podfileContent = config.modResults.contents;
 
-    // Build settings to inject
+    // Build settings to inject conditionally
     const buildSettingsLogic = `
-    target.build_configurations.each do |config|
-      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+    if target.name.include?('livekit') || target.name.include?('webrtc') || target.name.include?('WebRTC')
+      target.build_configurations.each do |config|
+        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      end
     end
-`;
-
-    const podLines = `
-pod 'GoogleUtilities', :modular_headers => true
-pod 'FirebaseCore', :modular_headers => true
-pod 'FirebaseInstallations', :modular_headers => true
-pod 'FirebaseCoreInternal', :modular_headers => true
 `;
 
     let newContent = podfileContent;
 
-    // 1. Add Pods (if not present)
-    if (!newContent.includes("'GoogleUtilities', :modular_headers => true")) {
-      newContent += podLines;
-    }
-
-    // 2. Add post_install block or inject into existing
+    // Add post_install block or inject into existing
     if (newContent.includes("post_install do |installer|")) {
       // Find the line with "installer.pods_project.targets.each do |target|" inside post_install
-      // Expo's default post_install usually has this loop.
       const targetLoopStart = "installer.pods_project.targets.each do |target|";
 
       if (newContent.includes(targetLoopStart)) {

@@ -4,7 +4,7 @@
     "slug": "tincadia",
     "scheme": "tincadia",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "platforms": [
@@ -19,7 +19,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
       "usesAppleSignIn": true,
-      "buildNumber": "9",
+      "buildNumber": "12",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
@@ -28,7 +28,8 @@
         "UIBackgroundModes": [
           "audio",
           "fetch",
-          "remote-notification"
+          "remote-notification",
+          "voip"
         ],
         "NSCameraUsageDescription": "Necesitamos acceso a tu cámara para videollamadas y enviar fotos.",
         "NSMicrophoneUsageDescription": "Necesitamos acceso a tu micrófono para llamadas de voz y mensajes de audio.",
@@ -39,7 +40,7 @@
     "android": {
       "package": "com.tincadia.app",
       "usesCleartextTraffic": true,
-      "versionCode": 11,
+      "versionCode": 16,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -61,12 +62,15 @@
         "android.permission.FOREGROUND_SERVICE_MICROPHONE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.WAKE_LOCK",
+        "android.permission.FOREGROUND_SERVICE_PHONE_CALL"
       ]
     },
     "notification": {
       "icon": "./assets/icon.png",
-      "color": "#ffffff",
       "androidMode": "default"
     },
     "plugins": [
@@ -84,6 +88,7 @@
           }
         }
       ],
+      "@react-native-firebase/messaging",
       [
         "expo-build-properties",
         {
@@ -93,7 +98,12 @@
             "buildToolsVersion": "35.0.0"
           },
           "ios": {
-            "useFrameworks": "static"
+            "useFrameworks": "static",
+            "forceStaticLinking": [
+              "RNFBApp",
+              "RNFBAuth",
+              "RNFBMessaging"
+            ]
           }
         }
       ],
@@ -137,7 +147,10 @@
           "userTrackingPermission": "Tincadia utiliza esta información para evaluar el rendimiento, analizar el uso y proveer de soporte técnico especializado, con el fin de mejorar tu experiencia en la aplicación."
         }
       ],
-      "./plugins/withPictureInPicture"
+      "./plugins/withPictureInPicture",
+      "@config-plugins/react-native-callkeep",
+      "./plugins/withFirebaseManifestFix",
+      "./plugins/withTabletSupport"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
