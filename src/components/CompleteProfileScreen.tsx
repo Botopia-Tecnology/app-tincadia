@@ -156,7 +156,8 @@ export function CompleteProfileScreen() {
                             placeholderTextColor="#999"
                             value={phone}
                             onChangeText={(text) => {
-                                setPhone(text);
+                                const sanitized = text.replace(/\D/g, '');
+                                setPhone(sanitized);
                                 setIsPhoneVerified(false); // Reset verification on edit
                             }}
                             keyboardType="phone-pad"

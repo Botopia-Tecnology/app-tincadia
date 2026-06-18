@@ -52,6 +52,8 @@ export interface OAuthLoginDto {
 }
 
 export interface UpdateProfileDto {
+    firstName?: string;
+    lastName?: string;
     documentTypeId?: number;
     documentNumber?: string;
     phone?: string;

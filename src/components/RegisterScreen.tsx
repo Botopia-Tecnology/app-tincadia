@@ -433,7 +433,8 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   placeholderTextColor={colors.textMuted}
                   value={phone}
                   onChangeText={(text) => {
-                    setPhone(text);
+                    const sanitized = text.replace(/\D/g, '');
+                    setPhone(sanitized);
                     setIsPhoneVerified(false);
                   }}
                   keyboardType="phone-pad"

@@ -164,7 +164,7 @@ export function EmergencyContactsScreen({ onBack }: Props) {
                                 placeholder="3001234567"
                                 placeholderTextColor={colors.textMuted}
                                 value={newPhone}
-                                onChangeText={setNewPhone}
+                                onChangeText={(text) => setNewPhone(text.replace(/\D/g, ''))}
                                 keyboardType="phone-pad"
                             />
                         </View>

@@ -323,13 +323,30 @@ export const authService = {
         }
         return null;
     },
-    /**
-     * Update/Register push notification token
-     */
     async updatePushToken(userId: string, pushToken: string): Promise<void> {
         await apiClient(API_ENDPOINTS.UPDATE_PUSH_TOKEN, {
             method: 'POST',
             body: JSON.stringify({ userId, pushToken }),
+        });
+    },
+
+    /**
+     * Update/Register VoIP Push token (iOS only)
+     */
+    async updateVoipToken(userId: string, voipToken: string): Promise<void> {
+        await apiClient('/auth/update-voip-token', {
+            method: 'POST',
+            body: JSON.stringify({ userId, voipToken }),
+        });
+    },
+
+    /**
+     * Update/Register FCM token for Android Data Messages
+     */
+    async updateFcmToken(userId: string, fcmToken: string): Promise<void> {
+        await apiClient('/auth/update-fcm-token', {
+            method: 'POST',
+            body: JSON.stringify({ userId, fcmToken }),
         });
     },
 
@@ -386,7 +403,7 @@ export const authService = {
             // The result.user contains the Firebase user.
             // We usually want to link this to our backend user or return it.
             // For now, we return the firebase user or handle backend syncing if needed.
-            return result.user;
+            return result?.user || null;
         } catch (error) {
             console.error('Invalid code', error);
             throw error;
