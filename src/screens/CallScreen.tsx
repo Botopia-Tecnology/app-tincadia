@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, Alert, Image, Dimensions, DeviceEventEmitter, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, Alert, Image, Dimensions, DeviceEventEmitter, ScrollView, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     LiveKitRoom,
@@ -18,10 +18,13 @@ import { Audio } from 'expo-av';
 import { API_URL } from '../config/api.config';
 import { CameraIcon, MicrophoneIcon, PhoneIcon, SyncIcon } from '../components/icons/NavigationIcons';
 import { chatService } from '../services/chat.service';
+import { apiClient } from '../lib/api-client';
 import { useAuth } from '../contexts/AuthContext';
-import { saveMessage, deleteMessage } from '../database/chatDatabase';
+import { saveMessage, deleteMessage, updateConversationPreview } from '../database/chatDatabase';
 import { useSubscription } from '../hooks/useSubscription';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { supabase } from '../lib/supabase';
+import { callKeepService } from '../services/callkeep.service';
 
 type LayoutMode = 'grid' | 'interpreter';
 
@@ -65,28 +68,110 @@ function colorForSpeakerName(name: string): string {
     return SPEAKER_NAME_COLORS[Math.abs(h) % SPEAKER_NAME_COLORS.length];
 }
 
+function asOptionalString(value: unknown): string | undefined {
+    if (value == null) return undefined;
+    const text = String(value);
+    return text.length > 0 ? text : undefined;
+}
+
+function broadcastCallEndedToChat(
+    conversationId: string,
+    senderId: string,
+    messageId: string,
+    createdAt: string,
+    roomName?: string,
+    callSessionId?: string,
+) {
+    const channel = supabase.channel(`chat:${conversationId.toLowerCase()}`);
+    let sent = false;
+
+    const cleanup = () => {
+        void supabase.removeChannel(channel);
+    };
+
+    const timeout = setTimeout(cleanup, 2500);
+
+    channel.subscribe(async (status) => {
+        console.log('[CALL_DEBUG] CallScreen.broadcastCallEnded.subscribe', {
+            status,
+            sent,
+            conversationId,
+            senderId,
+            messageId,
+            createdAt,
+            roomName,
+            callSessionId,
+        });
+
+        if (status !== 'SUBSCRIBED' || sent) return;
+        sent = true;
+        clearTimeout(timeout);
+
+        try {
+            console.log('[CALL_DEBUG] CallScreen.broadcastCallEnded.send', {
+                conversationId,
+                senderId,
+                messageId,
+                createdAt,
+                roomName,
+                callSessionId,
+            });
+            await channel.send({
+                type: 'broadcast',
+                event: 'new_message',
+                payload: {
+                    id: messageId,
+                    conversationId,
+                    senderId,
+                    content: 'Llamada finalizada',
+                    type: 'call_ended',
+                    createdAt,
+                    conversation_id: conversationId,
+                    sender_id: senderId,
+                    created_at: createdAt,
+                    isMine: false,
+                    metadata: {
+                        roomName,
+                        callSessionId,
+                    },
+                },
+            });
+        } catch (error) {
+            console.warn('Could not broadcast call_ended fast path:', error);
+        } finally {
+            cleanup();
+        }
+    });
+}
+
 export interface CallScreenProps {
     roomName: string;
     username: string;
     conversationId?: string;
     userId?: string;
+    callSessionId?: string;
     onBack: () => void;
     isManualPipMode?: boolean;
     onRestoreFromPip?: () => void;
     onMinimize?: () => void;
     onNavigate?: (screen: string, params?: any) => void;
+    isIncomingCall?: boolean;
 }
 
-export const CallScreen = ({ 
-    roomName, 
-    username, 
-    conversationId, 
-    userId, 
+import { CallState } from '../lib/callState';
+
+export const CallScreen = ({
+    roomName,
+    username,
+    conversationId,
+    userId,
+    callSessionId,
     onBack,
     isManualPipMode = false,
     onRestoreFromPip,
     onMinimize,
-    onNavigate
+    onNavigate,
+    isIncomingCall = false
 }: CallScreenProps) => {
     const [token, setToken] = useState<string | null>(null);
     const [url, setUrl] = useState<string | null>(null);
@@ -94,11 +179,111 @@ export const CallScreen = ({
     const [isFrontCamera, setIsFrontCamera] = useState(true);
     const hasExitedRef = useRef(false);
 
+    useEffect(() => {
+        CallState.isInsideCallScreen = true;
+        return () => {
+            CallState.isInsideCallScreen = false;
+            // Garantizar que la llamada nativa muera cuando salimos de la pantalla (evita que se quede atascada)
+            try {
+                callKeepService.endAllCallsSilently();
+            } catch (e) {
+                console.warn('[CallScreen] Error ending native call on unmount:', e);
+            }
+        };
+    }, []);
+
     const safeOnBack = useCallback(() => {
         if (hasExitedRef.current) return;
         hasExitedRef.current = true;
         onBack();
     }, [onBack]);
+
+    // FAST BROADCAST LISTENER
+    // Escucha directamente en el canal del chat para recibir el rechazo de la llamada a la velocidad de la luz
+    useEffect(() => {
+        if (!conversationId || !userId) return;
+
+        const channel = supabase.channel(`chat:${conversationId.toLowerCase()}`)
+            .on('broadcast', { event: 'call_ended' }, (payload) => {
+                const data = payload.payload;
+                if (data.senderId !== userId && (data.roomName === roomName || data.conversationId === conversationId)) {
+                    console.log('📱 Fast Broadcast remote call end detected, terminating local call...');
+                    safeOnBack();
+                }
+            })
+            .subscribe();
+
+        return () => {
+            void supabase.removeChannel(channel);
+        };
+    }, [conversationId, roomName, userId, safeOnBack]);
+
+    const handleCallTimeout = useCallback(() => {
+        console.log('Call timed out after 30s. Disconnecting...');
+        if (conversationId && userId) {
+            // 1. Optimistic Local Save for Instant UI Feedback
+            const tempId = `call_${Date.now()}`;
+            const now = new Date().toISOString();
+            
+            saveMessage({
+                id: tempId,
+                serverId: tempId,
+                conversationId,
+                senderId: userId,
+                content: 'Llamada perdida',
+                type: 'call_missed',
+                status: 'pending',
+                createdAt: now,
+                updatedAt: now,
+                isMine: true,
+                metadata: {
+                    roomName,
+                    callSessionId,
+                },
+            });
+            
+            // AVISO RÁPIDO PARA LIMPIAR PANTALLA RECEPTOR
+            broadcastCallEndedToChat(conversationId, userId, tempId, now, roomName, callSessionId);
+
+            DeviceEventEmitter.emit('chat_local_update', conversationId);
+            updateConversationPreview(conversationId, 'Llamada perdida', now, false);
+            DeviceEventEmitter.emit('conversations_updated');
+
+            // 2. Network Sync
+            chatService.sendMessage({
+                conversationId,
+                senderId: userId,
+                content: 'Llamada perdida',
+                type: 'call_missed',
+                metadata: {
+                    roomName,
+                    callSessionId,
+                },
+            }).then(({ message: serverMsg }) => {
+                deleteMessage(tempId);
+                saveMessage({
+                    id: serverMsg.id,
+                    serverId: serverMsg.id,
+                    conversationId,
+                    senderId: userId,
+                    content: serverMsg.content,
+                    type: serverMsg.type,
+                    status: 'sent',
+                    createdAt: serverMsg.createdAt,
+                    updatedAt: (serverMsg as any).updatedAt || now,
+                    isMine: true,
+                    metadata: {
+                        roomName,
+                        callSessionId,
+                    },
+                });
+                DeviceEventEmitter.emit('chat_local_update', conversationId);
+            }).catch(e => {
+                console.log('Error sending timeout message:', e);
+            });
+        }
+        safeOnBack();
+    }, [conversationId, userId, roomName, callSessionId, safeOnBack]);
 
     // Listen for remote call rejections/hang-ups
     useEffect(() => {
@@ -110,6 +295,65 @@ export const CallScreen = ({
         });
         return () => sub.remove();
     }, [conversationId, roomName, safeOnBack]);
+
+    useEffect(() => {
+        if (!conversationId) return;
+
+        const activeCallChannel = supabase.channel(`active-call:${conversationId.toLowerCase()}`);
+
+        activeCallChannel
+            .on('broadcast', { event: 'new_message' }, (payload) => {
+                const message = payload.payload as {
+                    type?: string;
+                    conversationId?: string;
+                    conversation_id?: string;
+                    senderId?: string;
+                    sender_id?: string;
+                    metadata?: { roomName?: string };
+                    isGroup?: boolean | string;
+                };
+
+                const messageType = asOptionalString(message?.type);
+                if (!messageType || !['call_ended', 'call_rejected', 'call_missed'].includes(messageType)) {
+                    return;
+                }
+
+                // If it's a group call, one person rejecting the call doesn't mean the call ends for everyone.
+                const isGroup = message?.isGroup === true || message?.isGroup === 'true';
+                if (messageType === 'call_rejected' && isGroup) {
+                    return;
+                }
+
+                const messageConversationId = asOptionalString(message?.conversationId || message?.conversation_id);
+                const messageSenderId = asOptionalString(message?.senderId || message?.sender_id);
+                const messageRoomName = asOptionalString(message?.metadata?.roomName);
+                const matchesConversation = messageConversationId?.toLowerCase() === conversationId.toLowerCase();
+                const matchesRoom = messageRoomName === roomName;
+
+                if ((!matchesConversation && !matchesRoom) || (userId && messageSenderId === userId)) {
+                    return;
+                }
+
+                console.log('[CALL_DEBUG] Remote terminal call event received via chat broadcast, closing immediately.', {
+                    conversationId,
+                    roomName,
+                    messageType,
+                    messageConversationId,
+                    messageSenderId,
+                    messageRoomName,
+                });
+                safeOnBack();
+            })
+            .subscribe();
+
+        return () => {
+            void supabase.removeChannel(activeCallChannel);
+        };
+    }, [conversationId, roomName, userId, safeOnBack]);
+
+    // Do not save a generic call_ended marker on every unmount.
+    // Hangup and remote-end flows already emit/persist terminal events; doing it here
+    // creates duplicate call_ended rows and makes call-card matching noisy.
 
     // Apaga el agente Vosk en Model-ms al salir de la llamada (evita procesos colgados en active_agents).
     useEffect(() => {
@@ -131,17 +375,14 @@ export const CallScreen = ({
                     playThroughEarpieceAndroid: false,
                 });
 
-                const response = await fetch(`${API_URL}/calls/token`, {
+                const data = await apiClient<{ token: string; url: string }>('/calls/token', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ roomName, username }),
                 });
 
-                const data = await response.json();
-
                 if (data.token && isMounted) {
                     setToken(data.token);
-                    
+
                     if (typeof data.url === 'string' && data.url.startsWith('wss://')) {
                         setUrl(data.url);
                     } else {
@@ -179,12 +420,13 @@ export const CallScreen = ({
                 video={true}
                 onDisconnected={safeOnBack}
             >
-                <RingingSoundManager />
+                <RingingSoundManager onTimeout={handleCallTimeout} />
                 <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
                 <ControlsView
                     onHangup={safeOnBack}
                     conversationId={conversationId}
                     userId={userId}
+                    callSessionId={callSessionId}
                     roomName={roomName}
                     username={username}
                     layoutMode={layoutMode}
@@ -194,6 +436,8 @@ export const CallScreen = ({
                     isManualPipMode={isManualPipMode}
                     onRestoreFromPip={onRestoreFromPip}
                     onMinimize={onMinimize}
+                    onBack={onBack}
+                    onNavigate={onNavigate}
                 />
                 <RoomEvents onLeave={safeOnBack} />
             </LiveKitRoom>
@@ -255,13 +499,13 @@ function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 3
                     isFinal?: boolean;
                     speakerId?: string;
                 };
-                
+
                 if (data.type !== 'transcription' || typeof data.text !== 'string') return;
                 const trimmed = data.text.trim();
                 if (!trimmed) return;
 
                 const rawSpeaker = data.speakerId || participant?.identity || '';
-                
+
                 // Only process transcription if it matches this participant
                 if (rawSpeaker !== participantIdentity) return;
 
@@ -333,8 +577,24 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
     useEffect(() => {
         if (!room) return;
 
-        const onParticipantDisconnected = () => {
-            if (room.numParticipants <= 1) {
+        const onParticipantDisconnected = (participant: RemoteParticipant) => {
+            if (!participant) return;
+
+            const isAgent = participant.isAgent ||
+                participant.identity.toLowerCase().includes('agent') ||
+                participant.identity.toLowerCase().includes('bot') ||
+                participant.identity.toLowerCase().includes('transcriber');
+
+            if (isAgent) return;
+
+            let remoteHumanCount = 0;
+            room.remoteParticipants.forEach((p) => {
+                if (!p.isAgent && !p.identity.toLowerCase().includes('agent') && !p.identity.toLowerCase().includes('bot') && !p.identity.toLowerCase().includes('transcriber')) {
+                    remoteHumanCount++;
+                }
+            });
+
+            if (remoteHumanCount === 0) {
                 onLeave();
             }
         };
@@ -349,9 +609,19 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
     return null;
 }
 
-function RingingSoundManager() {
+function RingingSoundManager({ onTimeout }: { onTimeout?: () => void }) {
     const participants = useParticipants();
+    const room = useRoomContext();
     const soundRef = useRef<Audio.Sound | null>(null);
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Keep a fresh reference to onTimeout to avoid re-triggering effects or stale closures
+    const onTimeoutRef = useRef(onTimeout);
+    useEffect(() => {
+        onTimeoutRef.current = onTimeout;
+    }, [onTimeout]);
+
+    const humanCount = participants.filter(p => !p.identity.toLowerCase().startsWith('transcriber-')).length;
 
     useEffect(() => {
         let isMounted = true;
@@ -359,7 +629,16 @@ function RingingSoundManager() {
         const playSound = async () => {
             try {
                 // If only local participant is in the room, play dialing sound
-                if (participants.length <= 1) {
+                if (humanCount <= 1) {
+                    if (!timeoutRef.current) {
+                        timeoutRef.current = setTimeout(() => {
+                            if (onTimeoutRef.current) {
+                                room.disconnect().catch(e => console.error('Error disconnecting room on timeout:', e));
+                                onTimeoutRef.current();
+                            }
+                        }, 30000);
+                    }
+
                     if (!soundRef.current) {
                         const { sound } = await Audio.Sound.createAsync(
                             require('../../assets/ringing.wav'),
@@ -373,6 +652,10 @@ function RingingSoundManager() {
                     }
                 } else {
                     // Someone joined, stop ringing
+                    if (timeoutRef.current) {
+                        clearTimeout(timeoutRef.current);
+                        timeoutRef.current = null;
+                    }
                     if (soundRef.current) {
                         await soundRef.current.stopAsync();
                         await soundRef.current.unloadAsync();
@@ -389,13 +672,16 @@ function RingingSoundManager() {
         return () => {
             isMounted = false;
         };
-    }, [participants.length]);
+    }, [humanCount, room]);
 
     useEffect(() => {
         return () => {
             if (soundRef.current) {
                 soundRef.current.stopAsync();
                 soundRef.current.unloadAsync();
+            }
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
             }
         };
     }, []);
@@ -405,8 +691,8 @@ function RingingSoundManager() {
 
 function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFrontCamera: boolean }) {
     const tracks = useTracks([Track.Source.Camera]);
-    const participants = useParticipants();
-    const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+    const { height: screenHeight } = Dimensions.get('window');
+    const insets = useSafeAreaInsets();
 
     const isInterpreter = (identity: string) => {
         return identity.toLowerCase().includes('interp') || identity.toLowerCase().includes('intérp');
@@ -415,27 +701,41 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
     const interpreterTracks = tracks.filter(t => isInterpreter(t.participant.identity));
     const otherTracks = tracks.filter(t => !isInterpreter(t.participant.identity));
 
-    const renderParticipant = (track: typeof tracks[number], width: number, height: number) => (
-        <View key={track.participant.identity} style={[styles.participant, { width, height }]}>
-            {track.publication.isMuted ? (
-                <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
-                    <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
+    const renderParticipant = (track: typeof tracks[number], width: DimensionValue, height: DimensionValue, isBottomRow: boolean = true) => {
+        // Use percentage-based offsets relative to the tile height so labels
+        // render consistently across devices regardless of screen size / density.
+        const numericHeight = typeof height === 'number' ? height : undefined;
+        // The controls container takes up ~100px + insets.bottom. 
+        // We position the label safely above it using absolute math so they never cross.
+        const labelBottom = isBottomRow
+            ? Math.max(110 + insets.bottom, numericHeight ? numericHeight * 0.18 : 110)
+            : 8;
+        const transcriptionBottom = isBottomRow
+            ? Math.max(140 + insets.bottom, numericHeight ? numericHeight * 0.25 : 140)
+            : 40;
+
+        return (
+            <View key={track.participant.identity} style={[styles.participant, { width, height }]}>
+                {track.publication.isMuted ? (
+                    <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
+                        <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
+                    </View>
+                ) : (
+                    <VideoTrack
+                        trackRef={track}
+                        style={styles.video}
+                        mirror={track.participant.isLocal && isFrontCamera}
+                    />
+                )}
+                <View style={[styles.participantLabel, { bottom: labelBottom }]}>
+                    <Text style={styles.participantName} numberOfLines={1}>
+                        {track.participant.identity}
+                    </Text>
                 </View>
-            ) : (
-                <VideoTrack 
-                    trackRef={track} 
-                    style={styles.video} 
-                    mirror={track.participant.isLocal && isFrontCamera} 
-                />
-            )}
-            <View style={styles.participantLabel}>
-                <Text style={styles.participantName} numberOfLines={1}>
-                    {track.participant.identity}
-                </Text>
+                <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={transcriptionBottom} />
             </View>
-            <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={35} />
-        </View>
-    );
+        );
+    };
 
     if (layoutMode === 'grid' || interpreterTracks.length === 0) {
         const count = tracks.length;
@@ -443,31 +743,28 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
         if (count <= 1) {
             return (
                 <View style={styles.videoGrid}>
-                    {tracks.map(t => renderParticipant(t, screenWidth, screenHeight))}
+                    {tracks.map(t => renderParticipant(t, '100%', '100%', true))}
                 </View>
             );
         }
 
         if (count === 2) {
-            const halfH = screenHeight / 2;
             return (
                 <View style={styles.videoGrid}>
-                    {tracks.map(t => renderParticipant(t, screenWidth, halfH))}
+                    {tracks.map((t, index) => renderParticipant(t, '100%', '50%', index === 1))}
                 </View>
             );
         }
 
         if (count === 3) {
-            const halfW = screenWidth / 2;
-            const halfH = screenHeight / 2;
             return (
                 <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', height: halfH }}>
-                        {renderParticipant(tracks[0], halfW, halfH)}
-                        {renderParticipant(tracks[1], halfW, halfH)}
+                    <View style={{ flexDirection: 'row', height: '50%' }}>
+                        {renderParticipant(tracks[0], '50%', '100%', false)}
+                        {renderParticipant(tracks[1], '50%', '100%', false)}
                     </View>
-                    <View style={{ height: halfH }}>
-                        {renderParticipant(tracks[2], screenWidth, halfH)}
+                    <View style={{ height: '50%' }}>
+                        {renderParticipant(tracks[2], '100%', '100%', true)}
                     </View>
                 </View>
             );
@@ -476,12 +773,15 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
         // 4+ participants: 2-column grid
         const cols = 2;
         const rows = Math.ceil(count / cols);
-        const tileW = screenWidth / cols;
-        const tileH = screenHeight / rows;
+        const tileW: DimensionValue = `${100 / cols}%`;
+        const tileH: DimensionValue = `${100 / rows}%`;
 
         return (
             <View style={styles.videoGrid}>
-                {tracks.map(t => renderParticipant(t, tileW, tileH))}
+                {tracks.map((t, index) => {
+                    const isBottomRow = index >= (rows - 1) * cols;
+                    return renderParticipant(t, tileW, tileH, isBottomRow);
+                })}
             </View>
         );
     }
@@ -503,10 +803,10 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
                                     mirror={track.participant.isLocal && isFrontCamera}
                                 />
                             )}
-                            <View style={styles.interpreterMainLabel}>
+                            <View style={[styles.interpreterMainLabel, { bottom: Math.max(110 + insets.bottom, screenHeight * 0.12) }]}>
                                 <Text style={styles.interpreterMainName}>🤟 Intérprete</Text>
                             </View>
-                            <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={130} />
+                            <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={Math.max(140 + insets.bottom, screenHeight * 0.20)} />
                         </View>
                     ))
                 ) : (
@@ -535,7 +835,7 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
                                 {track.participant.identity}
                             </Text>
                         </View>
-                        <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={25} />
+                        <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={35} />
                     </View>
                 ))}
             </View>
@@ -543,23 +843,27 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
     );
 }
 
-function ControlsView({ 
-    onHangup, 
-    conversationId, 
-    userId, 
-    roomName, 
-    username, 
-    layoutMode, 
+function ControlsView({
+    onHangup,
+    conversationId,
+    userId,
+    callSessionId,
+    roomName,
+    username,
+    layoutMode,
     onToggleLayout,
     onToggleCameraFacing,
     isFrontCamera,
     isManualPipMode,
     onRestoreFromPip,
-    onMinimize
+    onMinimize,
+    onBack,
+    onNavigate
 }: {
     onHangup: () => void;
     conversationId?: string;
     userId?: string;
+    callSessionId?: string;
     roomName: string;
     username: string;
     layoutMode: LayoutMode;
@@ -569,6 +873,8 @@ function ControlsView({
     isManualPipMode: boolean;
     onRestoreFromPip?: () => void;
     onMinimize?: () => void;
+    onBack: () => void;
+    onNavigate?: (screen: string, params?: any) => void;
 }) {
     const { user } = useAuth();
     const { isMicrophoneEnabled, isCameraEnabled, localParticipant, cameraTrack } = useLocalParticipant();
@@ -603,6 +909,13 @@ function ControlsView({
     };
 
     const handleDisconnect = () => {
+        console.log('[CALL_DEBUG] CallScreen.handleDisconnect.start', {
+            conversationId,
+            userId,
+            roomName,
+            callSessionId,
+        });
+
         // Disconnect immediately to avoid UI hang
         if (room) {
             room.disconnect().catch(e => console.error('Error disconnecting room:', e));
@@ -611,8 +924,32 @@ function ControlsView({
 
         // Perform side-effects in the background
         if (conversationId && userId) {
-            // 1. Optimistic Local Save for Instant UI Feedback
             const tempId = `call_${Date.now()}`;
+            const now = new Date().toISOString();
+
+            // Fetch the latest call to ensure our marker is strictly newer than the call message
+            const localMsgs = require('../database/chatDatabase').getMessages(conversationId);
+            const latestCall = localMsgs.find((m: any) => m.type === 'call');
+            let markerTime = Date.now();
+            if (latestCall && latestCall.createdAt) {
+                const callTimeMs = new Date(latestCall.createdAt.replace(' ', 'T')).getTime();
+                if (markerTime <= callTimeMs) {
+                    markerTime = callTimeMs + 1000;
+                }
+            }
+            const markerDateStr = new Date(markerTime).toISOString();
+            console.log('[CALL_DEBUG] CallScreen.handleDisconnect.marker', {
+                tempId,
+                conversationId,
+                userId,
+                roomName,
+                callSessionId,
+                latestCallId: latestCall?.id,
+                latestCallCreatedAt: latestCall?.createdAt,
+                markerDateStr,
+            });
+
+            // 1. Optimistic Local Save — caller's chat updates instantly
             saveMessage({
                 id: tempId,
                 serverId: tempId,
@@ -621,19 +958,30 @@ function ControlsView({
                 content: 'Llamada finalizada',
                 type: 'call_ended',
                 status: 'pending',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                isMine: true
+                createdAt: markerDateStr,
+                updatedAt: markerDateStr,
+                isMine: true,
+                metadata: {
+                    roomName,
+                    callSessionId,
+                },
             });
+            broadcastCallEndedToChat(conversationId, userId, tempId, markerDateStr, roomName, callSessionId);
             DeviceEventEmitter.emit('chat_local_update', conversationId);
+            updateConversationPreview(conversationId, 'Llamada finalizada', now, false);
+            DeviceEventEmitter.emit('conversations_updated');
 
-            // 2. Network Sync
+            // 2. SLOW PATH — API call for server persistence (creates the DB record)
             chatService.sendMessage({
                 conversationId,
                 senderId: userId,
                 content: 'Llamada finalizada',
-                    type: 'call_ended'
-                }).then(({ message: serverMsg }) => {
+                type: 'call_ended',
+                metadata: {
+                    roomName,
+                    callSessionId,
+                },
+            }).then(({ message: serverMsg }) => {
                 deleteMessage(tempId);
                 saveMessage({
                     id: serverMsg.id,
@@ -643,9 +991,13 @@ function ControlsView({
                     content: 'Llamada finalizada',
                     type: 'call_ended',
                     status: 'sent',
-                    createdAt: (serverMsg as any).createdAt || (serverMsg as any).created_at || new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    isMine: true
+                    createdAt: (serverMsg as any).createdAt || (serverMsg as any).created_at || now,
+                    updatedAt: now,
+                    isMine: true,
+                    metadata: {
+                        roomName,
+                        callSessionId,
+                    },
                 });
                 DeviceEventEmitter.emit('chat_local_update', conversationId);
             }).catch(e => console.log('Could not send call_ended message:', e));
@@ -710,8 +1062,8 @@ function ControlsView({
             )}
 
             <View style={[
-                styles.controlsContainer, 
-                { bottom: 40 + Math.max(insets.bottom, 10) }, 
+                styles.controlsContainer,
+                { paddingBottom: Math.max(insets.bottom, 10) + 16 },
                 isManualPipMode && styles.controlsContainerMini
             ]}>
                 <TouchableOpacity
@@ -761,8 +1113,13 @@ function ControlsView({
                 feature="interpreter"
                 onUpgradePress={() => {
                     setShowUpgradeModal(false);
-                    onBack();
-                    onNavigate?.('profile', { openManagePlan: true });
+                    // Defer the back and navigate to avoid crash from unmounting CallScreen while navigating
+                    setTimeout(() => {
+                        onBack();
+                        if (onNavigate) {
+                            onNavigate('profile', { openManagePlan: true });
+                        }
+                    }, 50);
                 }}
             />
         </>
@@ -819,7 +1176,6 @@ const styles = StyleSheet.create({
     },
     interpreterMainLabel: {
         position: 'absolute',
-        bottom: 80,
         left: 16,
         right: 16,
         backgroundColor: 'rgba(124, 58, 237, 0.9)',
@@ -910,13 +1266,18 @@ const styles = StyleSheet.create({
     },
     controlsContainer: {
         position: 'absolute',
-        bottom: 40,
+        bottom: 0,
         left: 0,
         right: 0,
+        backgroundColor: 'rgba(15, 15, 20, 0.85)',
+        paddingTop: 16,
         flexDirection: 'row',
         justifyContent: 'space-evenly',
         alignItems: 'center',
         paddingHorizontal: 20,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        zIndex: 50,
     },
     button: {
         width: 50,
@@ -972,21 +1333,21 @@ const styles = StyleSheet.create({
     },
     participantTranscriptionBox: {
         backgroundColor: 'rgba(6, 6, 10, 0.65)',
-        paddingHorizontal: 8,
-        paddingTop: 6,
-        paddingBottom: 6,
-        borderRadius: 8,
+        paddingHorizontal: 6,
+        paddingTop: 3,
+        paddingBottom: 3,
+        borderRadius: 5,
         width: '100%',
-        maxHeight: 70,
+        maxHeight: 50,
     },
     ccBadge: {
         position: 'absolute',
-        top: 4,
-        right: 6,
-        backgroundColor: 'rgba(124, 58, 237, 0.38)',
-        paddingHorizontal: 5,
+        top: -6,
+        left: 4,
+        backgroundColor: '#cc0000',
+        paddingHorizontal: 3,
         paddingVertical: 1,
-        borderRadius: 4,
+        borderRadius: 3,
         zIndex: 2,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -995,10 +1356,10 @@ const styles = StyleSheet.create({
         color: 'rgba(255, 255, 255, 0.9)',
         fontSize: 7,
         fontWeight: '700',
-        letterSpacing: 0.4,
+        letterSpacing: 0.2,
     },
     transcriptionScroll: {
-        maxHeight: 58,
+        maxHeight: 45,
     },
     transcriptionScrollContent: {
         flexGrow: 1,
@@ -1007,35 +1368,36 @@ const styles = StyleSheet.create({
     },
     transcriptionLineFinal: {
         textAlign: 'left',
-        marginBottom: 5,
-        lineHeight: 15,
+        marginBottom: 2,
+        lineHeight: 14,
     },
     transcriptionSpeakerName: {
-        fontSize: 10,
+        color: 'rgba(255, 255, 255, 0.65)',
+        fontSize: 9,
         fontWeight: '800',
     },
     transcriptionSpeakerColon: {
         color: 'rgba(255, 255, 255, 0.42)',
-        fontSize: 10,
+        fontSize: 9,
         fontWeight: '600',
     },
     transcriptionUtterance: {
         color: 'rgba(248, 248, 248, 0.96)',
         fontSize: 11,
         fontWeight: '500',
-        textShadowColor: 'rgba(0, 0, 0, 0.45)',
+        textShadowColor: 'rgba(0, 0, 0, 0.65)',
         textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 2,
+        textShadowRadius: 1,
     },
     transcriptionLinePartial: {
         textAlign: 'left',
-        lineHeight: 15,
-        marginTop: 1,
+        lineHeight: 14,
+        marginTop: 0,
     },
     transcriptionUtterancePartial: {
         color: 'rgba(220, 220, 220, 0.82)',
         fontSize: 11,
-        fontWeight: '500',
+        fontWeight: '400',
         fontStyle: 'italic',
     },
 });
