@@ -9,11 +9,13 @@ import {
     ActivityIndicator,
     Image,
     SafeAreaView,
-    Platform
+    Platform,
+    DeviceEventEmitter,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { chatService } from '../services/chat.service';
+import { saveConversation } from '../database/chatDatabase';
 import { contactService, Contact } from '../services/contact.service';
 import { BackArrowIcon, CheckIcon } from './icons/NavigationIcons';
 import { useAlert } from '../components/common/CustomAlert';
@@ -140,20 +142,42 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
 
         setIsCreating(true);
         try {
+            const trimmedTitle = title.trim();
+            const trimmedDescription = description.trim();
+
             const { conversationId } = await chatService.createGroup({
                 creatorId: userId,
-                title: title.trim(),
-                description: description.trim(),
+                title: trimmedTitle,
+                description: trimmedDescription,
                 participants: Array.from(selectedContactIds),
                 imageUrl: groupImage || undefined,
             });
+
+            saveConversation({
+                id: conversationId,
+                otherUserName: trimmedTitle,
+                type: 'group',
+                title: trimmedTitle,
+                description: trimmedDescription,
+                imageUrl: groupImage || undefined,
+                lastMessage: '👥 Grupo creado',
+                lastMessageAt: new Date().toISOString(),
+            });
+
+            DeviceEventEmitter.emit('group_metadata_updated', {
+                conversationId,
+                title: trimmedTitle,
+                description: trimmedDescription,
+                imageUrl: groupImage || undefined,
+            });
+            DeviceEventEmitter.emit('conversations_updated');
 
             // Navigate directly to the group chat
             onNavigate('chats', {
                 conversationId,
                 isGroup: true,
-                groupTitle: title.trim(),
-                groupDescription: description.trim(),
+                title: trimmedTitle,
+                description: trimmedDescription,
             });
         } catch (error: unknown) {
             const err = error as { message?: string };
@@ -240,7 +264,7 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
                         </View>
 
                         {isLoading ? (
-                            <ActivityIndicator size="large" color="#10B981" style={{ marginTop: 50 }} />
+                            <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 50 }} />
                         ) : (
                             <FlatList
                                 data={filteredContacts}
@@ -265,7 +289,7 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
 
                         {/* FAB Next */}
                         {selectedContactIds.size > 0 && (
-                            <TouchableOpacity style={styles.fab} onPress={handleNext}>
+                            <TouchableOpacity style={[styles.fab, { backgroundColor: colors.primary }]} onPress={handleNext}>
                                 <Text style={styles.fabText}>→</Text>
                             </TouchableOpacity>
                         )}
@@ -323,7 +347,7 @@ export function NewGroupScreen({ onNavigate, onBack, userId }: NewGroupScreenPro
                         </View>
 
                         <TouchableOpacity
-                            style={styles.createButton}
+                            style={[styles.createButton, { backgroundColor: colors.primary }]}
                             onPress={handleCreateGroup}
                             disabled={isCreating}
                         >

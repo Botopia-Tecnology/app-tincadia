@@ -12,7 +12,8 @@ export type ScreenName =
     | 'notifications'
     | 'new_group'
     | 'sos'
-    | 'qr_scanner';
+    | 'qr_scanner'
+    | 'communication_board';
 
 export interface NavigationParams {
     courseId?: string;
@@ -23,6 +24,8 @@ export interface NavigationParams {
     roomName?: string;
     username?: string;
     userId?: string;
+    callSessionId?: string;
+    isIncomingCall?: boolean;
     [key: string]: unknown;
 }
 

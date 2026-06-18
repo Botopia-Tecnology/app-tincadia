@@ -1,13 +1,3 @@
-/**
- * Main App Component
- * 
- * Wraps the app with AuthProvider and handles:
- * - Splash screen during initial load
- * - Login screen for unauthenticated users
- * - Profile completion for OAuth users with incomplete profiles
- * - Main app screens for fully authenticated users
- */
-
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Platform, Text, View, ActivityIndicator, StyleSheet, AppState, Alert } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -30,6 +20,7 @@ import { NewGroupScreen } from '../components/NewGroupScreen';
 import { CoursesScreen } from '../components/CoursesScreen';
 import { CoursePlayerScreen } from '../components/CoursePlayerScreen';
 import { CoursePresentationScreen } from '../components/CoursePresentationScreen';
+import { CommunicationBoardScreen } from '../screens/CommunicationBoardScreen';
 import { SOSScreen } from '../components/SOSScreen';
 import { ProfileScreen } from '../components/ProfileScreen';
 import { NotificationsScreen } from '../components/NotificationsScreen';
@@ -39,12 +30,12 @@ import { CallScreen } from '../screens/CallScreen';
 import { IncomingCallModal } from '../components/IncomingCallModal';
 import { AlertProvider } from '../components/common/CustomAlert';
 import { LSCPreloader } from '../components/LSCPreloader';
+import { ProductTourProvider } from '../contexts/ProductTourContext';
 import { useNotifications } from '../hooks/useNotifications';
 import { useDeepLinking } from '../hooks/useDeepLinking';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { appStyles as styles } from '../styles/App.styles';
 
-// Initialize Sentry with Session Replay
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   debug: __DEV__,
@@ -60,24 +51,29 @@ Sentry.init({
   ],
 });
 
-// Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data;
-    const isCall = data?.type === 'call' || data?.type === 'call_invite';
-    // Always read AppState DYNAMICALLY inside the handler, never capture it outside.
-    // When the app is in foreground the in-app modal handles call UI,
-    // but we still need the system notification for when it's in background/killed.
+    const isCall = data?.type === 'call';
+    const isCallInvite = data?.type === 'call_invite';
     const isForeground = AppState.currentState === 'active';
 
     if (isCall) {
       return {
-        // Show system notification only in background so it rings even when the
-        // app is not visible. The foreground listener will show the in-app modal.
         shouldShowAlert: !isForeground,
         shouldPlaySound: !isForeground,
         shouldSetBadge: false,
         shouldShowBanner: !isForeground,
+        shouldShowList: true,
+      };
+    }
+
+    if (isCallInvite) {
+      return {
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
         shouldShowList: true,
       };
     }
@@ -92,33 +88,31 @@ Notifications.setNotificationHandler({
   },
 });
 
-
-
 function AppContent() {
   const { isAuthenticated, profileComplete, isLoading, user } = useAuth();
   const { colors } = useTheme();
   
-  // Navigation stack
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
-  const [callParams, setCallParams] = useState<{ roomName?: string; username?: string; conversationId?: string; userId?: string } | null>(null);
+  const [callParams, setCallParams] = useState<{ roomName?: string; username?: string; conversationId?: string; userId?: string; callSessionId?: string; isIncomingCall?: boolean } | null>(null);
   const [profileParams, setProfileParams] = useState<{ openManagePlan?: boolean } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
-  const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string } | null>(null);
+  const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string; description?: string } | null>(null);
   
   const { isPremium, isLoading: isSubscriptionLoading } = useSubscription(user?.id);
 
   const currentScreen = useMemo(() => screenStack[screenStack.length - 1] ?? 'chats', [screenStack]);
 
-  const navigate = useCallback((next: ScreenName, params?: NavigationParams) => {
+  const navigate = useCallback((next: any, params?: any) => {
     if (next === 'call' && params) setCallParams(params as any);
-    if (next === 'profile' && params) setProfileParams(params);
+    if (next === 'profile' && params) setProfileParams(params as any);
     if ((next === 'course_player' || next === 'course_presentation') && params?.courseId) setSelectedCourseId(params.courseId);
     if (next === 'chats' && params?.conversationId) {
       setInitialChatParams({
         conversationId: params.conversationId,
         recipientId: params.recipientId,
         isGroup: params.isGroup,
-        title: params.title
+        title: params.title || params.groupTitle,
+        description: params.description || params.groupDescription,
       });
     }
     setScreenStack((prev) => prev[prev.length - 1] === next ? prev : [...prev, next]);
@@ -128,8 +122,7 @@ function AppContent() {
     setScreenStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
   }, []);
 
-  // Notifications logic
-  const { incomingCall, setIncomingCall, interpreterInvite, setInterpreterInvite, setActiveCall } = useNotifications(
+  const { interpreterInvite, setInterpreterInvite, setActiveCall } = useNotifications(
     user,
     (params) => {
       setScreenStack(['chats']);
@@ -145,58 +138,14 @@ function AppContent() {
     setActiveCall(callParams?.conversationId || null);
   }, [callParams, setActiveCall]);
 
-  // Deep linking logic
   useDeepLinking(isAuthenticated, user, isPremium, isSubscriptionLoading, (params) => {
     setCallParams(params);
     setScreenStack(prev => prev[prev.length - 1] === 'call' ? prev : [...prev, 'call']);
   });
 
-  // Call Handlers
-  const handleAcceptCall = async () => {
-    if (!incomingCall || !user) return;
-    if (user.role === 'interpreter') await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
-
-    const newParams = {
-      roomName: incomingCall.roomName || `conv_${incomingCall.conversationId}`,
-      username: user.role === 'interpreter' 
-        ? `Intérprete: ${user.firstName || user.email?.split('@')[0] || 'Usuario'}`
-        : (user.firstName || user.email?.split('@')[0] || 'Usuario'),
-      conversationId: incomingCall.conversationId,
-      userId: user.id
-    };
-
-    // If already in a call, unmount the current CallScreen first so LiveKit
-    // disconnects cleanly before connecting to the new room.
-    if (callParams) {
-      setCallParams(null);
-      setIncomingCall(null);
-      setTimeout(() => {
-        setCallParams(newParams);
-        setScreenStack(prev =>
-          prev[prev.length - 1] === 'call' ? prev : [...prev, 'call']
-        );
-      }, 300);
-    } else {
-      setCallParams(newParams);
-      setIncomingCall(null);
-      setScreenStack(prev => [...prev, 'call']);
-    }
-  };
-
-  const handleDeclineCall = async () => {
-    if (incomingCall && user) await chatService.sendMessage({
-      conversationId: incomingCall.conversationId,
-      senderId: user.id,
-      content: 'Llamada rechazada',
-      type: 'call_ended'
-    }).catch(() => {});
-    setIncomingCall(null);
-  };
-
   const handleAcceptInterpreterInvite = async () => {
     if (!interpreterInvite || !user) return;
     
-    // Transactional Claim: only one interpreter can win the "race"
     if (interpreterInvite.inviteId) {
       try {
         const claimResult = await chatService.claimInterpreterInvite(interpreterInvite.inviteId, user.id);
@@ -206,12 +155,10 @@ function AppContent() {
           return;
         }
       } catch (err) {
-        console.error('Claim error:', err);
         Alert.alert('Error', 'Hubo un problema al procesar la solicitud.');
         return;
       }
     } else if (user.role === 'interpreter') {
-      // Fallback legacy behavior
       await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
     }
 
@@ -227,7 +174,6 @@ function AppContent() {
     setScreenStack(prev => [...prev, 'call']);
   };
 
-  // Android Hardware Back Handler
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -236,10 +182,13 @@ function AppContent() {
           setScreenStack(prev => prev.length > 1 ? prev.slice(0, -1) : ['chats']);
           return true;
         }
-        if (screenStack.length > 1) goBack();
-        return true;
+        if (screenStack.length > 1) {
+          goBack();
+          return true;
+        }
+        return false; // Let default behavior (exit app) happen
       }
-      return true;
+      return false; // Let default behavior happen
     });
     return () => sub.remove();
   }, [isAuthenticated, profileComplete, currentScreen, screenStack.length, goBack]);
@@ -333,6 +282,8 @@ function AppContent() {
               goBack();
             }
           }} />
+        ) : underlyingScreen === 'communication_board' ? (
+          <CommunicationBoardScreen onBack={goBack} />
         ) : (
           <ProfileScreen 
             onNavigate={navigate} 
@@ -351,6 +302,8 @@ function AppContent() {
             username={callParams?.username || 'user'}
             conversationId={callParams?.conversationId}
             userId={callParams?.userId}
+            callSessionId={callParams?.callSessionId}
+            isIncomingCall={!!callParams?.isIncomingCall}
             isManualPipMode={!isCallFullScreen}
             onRestoreFromPip={() => currentScreen !== 'call' && setScreenStack(prev => [...prev, 'call'])}
             onMinimize={() => currentScreen === 'call' && goBack()}
@@ -360,14 +313,6 @@ function AppContent() {
         </View>
       )}
 
-      <IncomingCallModal
-        visible={!!incomingCall}
-        callerName={incomingCall?.callerName || 'Desconocido'}
-        callerPhoto={incomingCall?.callerPhoto}
-        participants={incomingCall?.participants}
-        onAccept={handleAcceptCall}
-        onDecline={handleDeclineCall}
-      />
       <IncomingCallModal
         visible={!!interpreterInvite}
         callerName={interpreterInvite?.senderName || 'Usuario'}
@@ -393,10 +338,12 @@ function InnerApp() {
     <I18nProvider>
       <AuthProvider>
         <SubscriptionProvider>
-          <AlertProvider>
-            <LSCPreloader />
-            <AppContent />
-          </AlertProvider>
+          <ProductTourProvider>
+            <AlertProvider>
+              <LSCPreloader />
+              <AppContent />
+            </AlertProvider>
+          </ProductTourProvider>
         </SubscriptionProvider>
       </AuthProvider>
     </I18nProvider>
@@ -411,7 +358,7 @@ function App() {
           apiKey={process.env.EXPO_PUBLIC_POSTHOG_KEY}
           options={{
             host: process.env.EXPO_PUBLIC_POSTHOG_HOST,
-            disabled: true, // Desactivado por defecto hasta que se obtenga el permiso (ATT)
+            disabled: true,
           }}
         >
           <SafeAreaProvider>

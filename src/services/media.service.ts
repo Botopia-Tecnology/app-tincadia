@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Audio } from 'expo-av';
 import { Alert } from 'react-native';
@@ -9,7 +10,7 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // Increased to 50MB for videos
 
 export interface MediaFile {
     uri: string;
-    type: 'image' | 'video' | 'audio';
+    type: 'image' | 'video' | 'audio' | 'document';
     width?: number;
     height?: number;
     fileSize?: number;
@@ -77,6 +78,42 @@ class MediaService {
 
         return null; // User cancelled
     }
+
+    /**
+     * Pick a document (PDF, etc.)
+     */
+    async pickDocument(): Promise<MediaFile | null> {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*',
+                copyToCacheDirectory: true,
+            });
+
+            if (result.canceled || !result.assets || result.assets.length === 0) {
+                return null;
+            }
+
+            const asset = result.assets[0];
+
+            if (asset.size && asset.size > MAX_FILE_SIZE) {
+                Alert.alert('Archivo muy grande', 'El documento debe ser menor a 50MB.');
+                return null;
+            }
+
+            return {
+                uri: asset.uri,
+                type: 'document',
+                fileSize: asset.size,
+                mimeType: asset.mimeType || 'application/octet-stream',
+                fileName: asset.name || `doc_${Date.now()}`,
+            };
+        } catch (error) {
+            console.error('Document picker error:', error);
+            Alert.alert('Error', 'No se pudo abrir el selector de documentos.');
+            return null;
+        }
+    }
+
 
     /**
      * Record a video using the camera
@@ -176,7 +213,7 @@ class MediaService {
             // Prepare type field
             // Note: Cloudinary 'raw' is used for generic files, but for audio we often use 'video' or 'raw'
             // We'll stick to 'image' | 'video' | 'raw' as defined in backend
-            let uploadType = media.type === 'audio' ? 'raw' : media.type;
+            let uploadType = (media.type === 'audio' || media.type === 'document') ? 'raw' : media.type;
 
             console.log(`📤 Uploading ${media.type} to ${uploadUrl}`);
 

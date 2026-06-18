@@ -213,7 +213,7 @@ export function AddContactModal({
                 resetForm();
                 onClose();
             } else {
-                const msg = err?.message || 'No se encontró un usuario con ese número';
+                const msg = error?.message || 'No se encontró un usuario con ese número';
                 showAlert({
                     type: 'error',
                     title: 'Error',
@@ -354,7 +354,7 @@ export function AddContactModal({
                                 <TextInput
                                     style={[styles.input, { color: colors.text }]}
                                     value={phone}
-                                    onChangeText={setPhone}
+                                    onChangeText={(text) => setPhone(text.replace(/\D/g, ''))}
                                     keyboardType="phone-pad"
                                     placeholderTextColor={colors.textMuted}
                                 />

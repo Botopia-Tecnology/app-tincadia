@@ -205,7 +205,7 @@ export function CoursePlayerScreen({ courseId, onBack }: CoursePlayerScreenProps
 
             {/* Video Player Section */}
             <View style={styles.videoContainer}>
-                {activeLesson && !isLessonLocked(course, { lessons: [] }, activeLesson) && activeLesson?.videoUrl ? (
+                {activeLesson && !isLessonLocked(course, { id: 'temp', title: 'temp', lessons: [] }, activeLesson) && activeLesson?.videoUrl ? (
                     <TouchableWithoutFeedback onPress={handleVideoPress}>
                         <View style={{ width: '100%', height: '100%' }}>
                             <Video

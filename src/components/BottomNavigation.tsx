@@ -14,8 +14,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import { chatService } from '../services/chat.service';
 import { useSubscription } from '../hooks/useSubscription';
 import { UpgradeModal } from './UpgradeModal';
-import { Video, QrCode } from 'lucide-react-native';
+import { Video, QrCode, MessageSquare } from 'lucide-react-native';
 import { NavigateFunction } from '../types/navigation.types';
+import { useProductTour } from '../hooks/useProductTour';
 
 interface BottomNavigationProps {
     currentScreen: 'chats' | 'courses' | 'sos' | 'profile';
@@ -31,6 +32,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
     const [isRequestingInterpreter, setIsRequestingInterpreter] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const insets = useSafeAreaInsets();
+    const { registerTarget } = useProductTour();
 
     const toggleMenu = () => {
         setIsMenuOpen(!isMenuOpen);
@@ -98,6 +100,21 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                                     style={styles.floatingMenuItem}
                                     onPress={() => {
                                         closeMenu();
+                                        onNavigate('communication_board');
+                                    }}
+                                >
+                                    <View style={[styles.floatingLabelContainer, { backgroundColor: colors.card }]}>
+                                        <Text style={[styles.floatingLabel, { color: colors.text }]}>Pizarra</Text>
+                                    </View>
+                                    <View style={[styles.floatingButton, { backgroundColor: '#4F46E5' }]}>
+                                        <MessageSquare size={24} color="white" />
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.floatingMenuItem}
+                                    onPress={() => {
+                                        closeMenu();
                                         onNavigate('qr_scanner');
                                     }}
                                 >
@@ -136,6 +153,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
             <View style={styles.bottomContainer}>
                 <View style={[styles.bottomNav, { backgroundColor: colors.navBar }]}>
                     <TouchableOpacity
+                        ref={registerTarget('nav-chats')}
                         style={[styles.navItem, currentScreen === 'chats' && [styles.navItemActive, { backgroundColor: colors.navBarActive }]]}
                         onPress={() => onNavigate('chats')}
                     >
@@ -146,6 +164,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                     </TouchableOpacity>
 
                     <TouchableOpacity
+                        ref={registerTarget('nav-courses')}
                         style={[styles.navItem, currentScreen === 'courses' && [styles.navItemActive, { backgroundColor: colors.navBarActive }]]}
                         onPress={() => onNavigate('courses')}
                     >
@@ -155,7 +174,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                         </Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity onPress={toggleMenu} style={styles.tincadiaIconContainer}>
+                    <TouchableOpacity ref={registerTarget('nav-tincadia')} onPress={toggleMenu} style={styles.tincadiaIconContainer}>
                         <Image
                             source={require('../../assets/icon.png')}
                             style={[styles.tincadiaIcon, { tintColor: colors.text }]}
@@ -163,6 +182,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                     </TouchableOpacity>
 
                     <TouchableOpacity
+                        ref={registerTarget('nav-sos')}
                         style={[styles.navItem, currentScreen === 'sos' && [styles.navItemActive, { backgroundColor: colors.navBarActive }]]}
                         onPress={() => onNavigate('sos')}
                     >
@@ -173,6 +193,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                     </TouchableOpacity>
 
                     <TouchableOpacity
+                        ref={registerTarget('nav-profile')}
                         style={[styles.navItem, currentScreen === 'profile' && [styles.navItemActive, { backgroundColor: colors.navBarActive }]]}
                         onPress={() => onNavigate('profile')}
                     >

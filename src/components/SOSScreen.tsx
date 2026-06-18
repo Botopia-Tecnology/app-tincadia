@@ -1,10 +1,10 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Linking, ActivityIndicator, Animated, Alert, TextInput } from 'react-native';
-import { Audio, AVPlaybackStatus } from 'expo-av';
+import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
 import * as Clipboard from 'expo-clipboard';
-import { emergencyService } from '../services/emergency.service';
 import { KeyboardSafeView } from './common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
@@ -49,8 +49,6 @@ interface SOSScreenProps {
     onShowNotifications?: () => void;
 }
 
-// Global audio instance to persist across navigation
-let globalSound: Audio.Sound | null = null;
 
 export function SOSScreen({
     onNavigate,
@@ -72,12 +70,15 @@ export function SOSScreen({
     ];
 
     const [activeEmergency, setActiveEmergency] = useState<EmergencyType | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [location, setLocation] = useState<Location.LocationObject | null>(null);
     const [address, setAddress] = useState<string | null>(null);
-    const [audioUrl, setAudioUrl] = useState<string | null>(null);
     const [isRequestingInterpreter, setIsRequestingInterpreter] = useState(false);
+    
+    // Track if we already autoplayed for the current emergency type
+    const [autoplayedEmergency, setAutoplayedEmergency] = useState<string | null>(null);
+    const [isLocationResolved, setIsLocationResolved] = useState(false);
+    const locationPromiseRef = useRef<Promise<{ loc: Location.LocationObject | null, addr: string | null }> | null>(null);
 
     const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -103,13 +104,22 @@ export function SOSScreen({
 
     // Get location on mount
     useEffect(() => {
-        (async () => {
+        const fetchLocation = async (): Promise<{ loc: Location.LocationObject | null, addr: string | null }> => {
             let { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') return;
+            if (status !== 'granted') {
+                setIsLocationResolved(true);
+                return { loc: null, addr: null };
+            }
 
-            let loc = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Highest,
-            });
+            let loc;
+            try {
+                loc = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.Highest,
+                });
+            } catch (e) {
+                setIsLocationResolved(true);
+                return { loc: null, addr: null };
+            }
             setLocation(loc);
 
             const lat = loc.coords.latitude;
@@ -117,6 +127,7 @@ export function SOSScreen({
 
             // 1. Intentar con Expo (nativo)
             let resolved = false;
+            let resolvedAddress: string | null = null;
             try {
                 let reverseGeocode = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
                 if (reverseGeocode.length > 0) {
@@ -128,7 +139,8 @@ export function SOSScreen({
                         addr.city || addr.subregion || addr.region || null,
                     ].filter(Boolean);
                     if (parts.length > 0 && parts.some(p => (p as string).trim().length > 0)) {
-                        setAddress(parts.join(', '));
+                        resolvedAddress = parts.join(', ');
+                        setAddress(resolvedAddress);
                         resolved = true;
                     }
                 }
@@ -153,7 +165,8 @@ export function SOSScreen({
                             a.city || a.town || a.village || a.state || null,
                         ].filter(Boolean);
                         if (parts.length > 0) {
-                            setAddress(parts.join(', '));
+                            resolvedAddress = parts.join(', ');
+                            setAddress(resolvedAddress);
                             resolved = true;
                         }
                     }
@@ -165,78 +178,91 @@ export function SOSScreen({
             // 3. Último fallback: coordenadas legibles
             if (!resolved) {
                 setAddress(`${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+                resolvedAddress = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
             }
-        })();
+            
+            setIsLocationResolved(true);
+            return { loc, addr: resolvedAddress };
+        };
+
+        locationPromiseRef.current = fetchLocation();
     }, []);
 
-    // Auto-play effect when URL is ready
+    // Stop speech on unmount
     useEffect(() => {
-        if (audioUrl) {
-            playAudio(audioUrl);
-        }
-    }, [audioUrl]);
+        return () => {
+            Speech.stop();
+        };
+    }, []);
 
-    const playAudio = async (url: string) => {
-        try {
-            // Stop existing if any
-            if (globalSound) {
-                await globalSound.unloadAsync();
-                globalSound = null;
+    // Auto-play effect when text is ready and address is resolved
+    useEffect(() => {
+        if (activeEmergency && autoplayedEmergency !== activeEmergency.id) {
+            // We wait until isLocationResolved is true
+            if (isLocationResolved) {
+                playSpeech(getSpeechText());
+                setAutoplayedEmergency(activeEmergency.id);
             }
-
-            const { sound } = await Audio.Sound.createAsync(
-                { uri: url },
-                { shouldPlay: true }
-            );
-            globalSound = sound;
-            setIsPlaying(true);
-
-            sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
-                if (status.isLoaded && status.didJustFinish) {
-                    setIsPlaying(false);
-                    // Reset position for replay
-                    sound.setPositionAsync(0);
-                }
-            });
-        } catch (error) {
-            console.error('Playback failed', error);
         }
+    }, [activeEmergency, isLocationResolved, autoplayedEmergency]);
+
+    const playSpeech = (text: string) => {
+        Speech.stop();
+        setIsPlaying(true);
+        Speech.speak(text, {
+            language: 'es-ES',
+            onDone: () => setIsPlaying(false),
+            onStopped: () => setIsPlaying(false),
+            onError: () => setIsPlaying(false),
+        });
     };
 
-    const togglePlayback = async () => {
-        if (!globalSound) {
-            if (audioUrl) playAudio(audioUrl);
-            return;
-        }
+    const getSpeechText = () => {
+        if (!activeEmergency) return '';
+        // If address is null, it means we don't have location yet or permissions failed.
+        // We match the fallback text shown in the UI.
+        const locationText = address ? `la dirección: ${address}` : `una ubicación no determinada (rastreen mi dispositivo)`;
 
+        return `Atención, soy una persona sorda y no puedo hablar. Necesito ayuda urgente por ${typeToText(activeEmergency.label)}. Estoy ubicado en ${locationText}. Por favor envíen ayuda inmediatamente a esta ubicación. Repito, soy una persona sorda y necesito ${typeToText(activeEmergency.label)} en ${locationText}.`;
+    };
+
+    const togglePlayback = () => {
         if (isPlaying) {
-            await globalSound.pauseAsync();
+            Speech.stop();
             setIsPlaying(false);
         } else {
-            await globalSound.playAsync();
-            setIsPlaying(true);
+            const text = getSpeechText();
+            if (text) {
+                playSpeech(text);
+            }
         }
     };
 
     const handleEmergencyPress = async (type: EmergencyType) => {
         setActiveEmergency(type);
-        setAudioUrl(null);
 
         // Stop previous audio
-        if (globalSound) {
-            await globalSound.unloadAsync();
-            globalSound = null;
-            setIsPlaying(false);
+        Speech.stop();
+        setIsPlaying(false);
+
+        // Wait for location to resolve before doing anything
+        let freshLoc = location;
+        let freshAddr = address;
+        
+        if (locationPromiseRef.current) {
+            const result = await locationPromiseRef.current;
+            if (result) {
+                freshLoc = result.loc;
+                freshAddr = result.addr;
+            }
         }
 
         const emergencyNumber = type.phone;
 
         // Build emergency message with location
-        const lat = location?.coords.latitude.toFixed(6) || 'Desconocida';
-        const lon = location?.coords.longitude.toFixed(6) || 'Desconocida';
-        const locationText = address ? address : `Lat: ${lat}, Lon: ${lon}`;
-        const googleMapsLink = location
-            ? `https://maps.google.com/?q=${location.coords.latitude},${location.coords.longitude}`
+        const locationText = freshAddr ? freshAddr : `Ubicación actual detectada (GPS no disponible)`;
+        const googleMapsLink = freshLoc
+            ? `https://maps.google.com/?q=${freshLoc.coords.latitude},${freshLoc.coords.longitude}`
             : '';
 
         const emergencyMessage = `🆘 EMERGENCIA - SOY PERSONA SORDA\n\nTipo: ${typeToText(type.label).toUpperCase()}\nUbicación: ${locationText}\n${googleMapsLink ? `Mapa: ${googleMapsLink}` : ''}\n\nNecesito ayuda urgente. No puedo hablar por teléfono.`;
@@ -254,25 +280,7 @@ export function SOSScreen({
         // 2. Then make the call
         Linking.openURL(`tel:${emergencyNumber}`);
 
-        // 3. Generate audio in background (for manual playback if needed)
-        generateAudioForType(type);
-    };
-
-    const generateAudioForType = async (type: EmergencyType) => {
-        setIsLoading(true);
-        try {
-            const lat = location?.coords.latitude.toFixed(5) || 'Desconocida';
-            const lon = location?.coords.longitude.toFixed(5) || 'Desconocida';
-            const locationText = address ? `cerca de ${address}` : `Coordenadas: latitud ${lat}, longitud ${lon}`;
-
-            const { url } = await emergencyService.generateAudio(typeToText(type.label), locationText);
-            setAudioUrl(url);
-        } catch (error) {
-            console.error('Error generating audio:', error);
-            Alert.alert('Error', 'No se pudo generar el audio de emergencia. Por favor intenta de nuevo.');
-        } finally {
-            setIsLoading(false);
-        }
+        // Audio will be triggered by useEffect once address is resolved
     };
 
     const typeToText = (label: string) => {
@@ -286,9 +294,7 @@ export function SOSScreen({
     };
 
     const buildEmergencyWhatsAppMessage = (): string => {
-        const lat = location?.coords.latitude.toFixed(6) || 'Desconocida';
-        const lon = location?.coords.longitude.toFixed(6) || 'Desconocida';
-        const locationText = address || `Lat: ${lat}, Lon: ${lon}`;
+        const locationText = address || `Ubicación actual detectada (GPS no disponible)`;
         const googleMapsLink = location
             ? `https://maps.google.com/?q=${location.coords.latitude},${location.coords.longitude}`
             : '';
@@ -455,13 +461,6 @@ export function SOSScreen({
                         </View>
 
                         <View style={styles.audioControls}>
-                            {isLoading ? (
-                                <View style={styles.loadingContainer}>
-                                    <ActivityIndicator size="small" color={activeEmergency.color} />
-                                    <Text style={[styles.loadingText, { color: colors.textMuted }]}>Generando voz de auxilio...</Text>
-                                </View>
-                            ) : (
-                                <>
                                     <TouchableOpacity
                                         style={[styles.playButton, { backgroundColor: activeEmergency.color }]}
                                         onPress={togglePlayback}
@@ -488,8 +487,6 @@ export function SOSScreen({
                                     <Text style={[styles.activeHint, { color: colors.textMuted, marginTop: 10, fontSize: 12, lineHeight: 17 }]}>
                                         Se abre WhatsApp para que elijas el contacto o grupo. El mensaje también se copia: después de enviar, puedes pegarlo en otros chats.
                                     </Text>
-                                </>
-                            )}
                         </View>
                         <Text style={[styles.activeHint, { color: colors.textMuted }]}>
                             El operador escuchará esto: "Soy una persona sorda, necesito ayuda..."
@@ -577,3 +574,5 @@ export function SOSScreen({
         </KeyboardSafeView>
     );
 }
+
+

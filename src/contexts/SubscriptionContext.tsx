@@ -267,7 +267,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }, [transcriptionUsesToday]);
 
     const canUseCorrection = useCallback(() => {
-        const limit = getLimit('correction_limit', 1);
+        const limit = getLimit('CORRECTION_LIMIT', 1);
         if (limit === -1) return true;
         if (limit === 0) return false;
         return correctionUsesToday < limit;
