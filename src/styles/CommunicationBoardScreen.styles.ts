@@ -74,5 +74,24 @@ export const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginLeft: 12,
+  },
+  displayScrollView: {
+    flex: 1,
+  },
+  displayScrollViewContent: {
+    flexGrow: 1,
+  },
+  textDisplay: {
+    fontSize: 40,
+    fontWeight: '500',
+    color: colors.text,
+    lineHeight: 56,
+  },
+  sentenceText: {
+    color: colors.text,
+  },
+  sentenceTextActive: {
+    backgroundColor: '#FEF08A',
+    color: '#000000',
   }
 });
