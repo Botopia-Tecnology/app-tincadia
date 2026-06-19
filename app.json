@@ -3,7 +3,7 @@
     "name": "Tincadia",
     "slug": "tincadia",
     "scheme": "tincadia",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -19,7 +19,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
       "usesAppleSignIn": true,
-      "buildNumber": "12",
+      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",

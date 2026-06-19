@@ -20,13 +20,14 @@
     "submit": {
         "preview": {
             "ios": {
-                "appleId": "juanda.rincon.lopez@gmail.com",
-                "appleTeamId": "CT344J3KHR"
+                "appleId": "israelramirez@tincadia.com",
+                "appleTeamId": "C78B6GQ7TB"
             }
         },
         "production": {
             "ios": {
-                "appleTeamId": "CT344J3KHR",
+                "appleId": "israelramirez@tincadia.com",
+                "appleTeamId": "C78B6GQ7TB",
                 "ascAppId": "6756493332"
             }
         }
