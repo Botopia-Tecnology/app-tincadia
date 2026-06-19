@@ -1064,6 +1064,11 @@ function ControlsView({
             <View style={[
                 styles.controlsContainer,
                 { paddingBottom: Math.max(insets.bottom, 10) + 16 },
+                !isManualPipMode && {
+                    left: -insets.left,
+                    right: -insets.right,
+                    paddingHorizontal: 20 + Math.max(insets.left, insets.right),
+                },
                 isManualPipMode && styles.controlsContainerMini
             ]}>
                 <TouchableOpacity
