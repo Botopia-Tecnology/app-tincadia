@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useCommunicationBoard } from '../hooks/useCommunicationBoard';
 import { getStyles } from '../styles/CommunicationBoardScreen.styles';
 import { useTheme } from '../contexts/ThemeContext';
+import { MagicPencilIcon } from '../components/icons/ActionIcons';
 
 interface CommunicationBoardScreenProps {
   onBack: () => void;
@@ -18,7 +19,9 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     text,
     setText,
     isSpeaking,
+    isCorrecting,
     handleSpeak,
+    handleAICorrect,
     handleClear,
     handleClose,
   } = useCommunicationBoard(onBack);
@@ -66,8 +69,24 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
 
           <View style={styles.actionRow}>
             <TouchableOpacity style={styles.actionButton} onPress={handleClear}>
-              <Ionicons name="trash-outline" size={32} color={colors.textSecondary} />
+              <Ionicons name="trash-outline" size={28} color={colors.textSecondary} />
               <Text style={styles.actionText}>Limpiar Texto</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[
+                styles.actionButton, 
+                (!text.trim() || isCorrecting) && { opacity: 0.4 }
+              ]} 
+              onPress={handleAICorrect}
+              disabled={isCorrecting || !text.trim()}
+            >
+              {isCorrecting ? (
+                <ActivityIndicator size="small" color="#FF69B4" style={{ height: 28 }} />
+              ) : (
+                <MagicPencilIcon size={28} />
+              )}
+              <Text style={styles.actionText}>Corregir Español</Text>
             </TouchableOpacity>
           </View>
         </View>

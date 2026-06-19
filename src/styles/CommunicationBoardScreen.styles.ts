@@ -43,7 +43,7 @@ export const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-evenly',
     alignItems: 'center',
   },
   actionButton: {

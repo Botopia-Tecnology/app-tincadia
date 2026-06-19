@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import * as Speech from 'expo-speech';
+import { chatService } from '../services/chat.service';
 
 export const useCommunicationBoard = (onClose?: () => void) => {
   const [text, setText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isCorrecting, setIsCorrecting] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -30,6 +32,21 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     });
   };
 
+  const handleAICorrect = async () => {
+    if (!text.trim() || isCorrecting) return;
+
+    setIsCorrecting(true);
+    try {
+      await chatService.correctMessageStream(text, (partialText) => {
+        setText(partialText);
+      });
+    } catch (error) {
+      console.error('Error al corregir texto con IA:', error);
+    } finally {
+      setIsCorrecting(false);
+    }
+  };
+
   const handleClear = () => {
     setText('');
     if (isSpeaking) {
@@ -50,7 +67,9 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     text,
     setText,
     isSpeaking,
+    isCorrecting,
     handleSpeak,
+    handleAICorrect,
     handleClear,
     handleClose,
   };
