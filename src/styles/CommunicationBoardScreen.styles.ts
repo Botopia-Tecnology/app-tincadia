@@ -84,14 +84,15 @@ export const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   textDisplay: {
     fontSize: 40,
     fontWeight: '500',
-    color: colors.text,
     lineHeight: 56,
   },
   sentenceText: {
     color: colors.text,
+    opacity: 0.3,
   },
   sentenceTextActive: {
-    backgroundColor: '#FEF08A',
-    color: '#000000',
+    color: '#EAB308',
+    fontWeight: 'bold',
+    opacity: 1,
   }
 });

@@ -4,9 +4,9 @@ import { chatService } from '../services/chat.service';
 
 const parseSentences = (inputText: string): string[] => {
   if (!inputText.trim()) return [];
-  // Divide el texto por signos de puntuación o saltos de línea manteniendo el delimitador
+  // Divide el texto por signos de puntuación (incluyendo comas y punto y coma) o saltos de línea manteniendo el delimitador
   return inputText
-    .split(/([.!?\n]+)/)
+    .split(/([.!?,;:\n]+)/)
     .reduce<string[]>((acc, part, i) => {
       if (i % 2 === 0) {
         if (part.trim()) {
@@ -67,12 +67,14 @@ export const useCommunicationBoard = (onClose?: () => void) => {
         // Detenido por pausa o stop
       },
       onError: (e) => {
-        console.error('TTS error on sentence', index, e);
-        setIsSpeaking(false);
-        setIsPaused(false);
-        setCurrentSentenceIndex(-1);
-        isSpeakingRef.current = false;
-        currentIndexRef.current = -1;
+        console.log('TTS stopped or encountered error on sentence', index, e);
+        if (isSpeakingRef.current) {
+          setIsSpeaking(false);
+          setIsPaused(false);
+          setCurrentSentenceIndex(-1);
+          isSpeakingRef.current = false;
+          currentIndexRef.current = -1;
+        }
       }
     });
   };
