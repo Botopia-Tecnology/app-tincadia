@@ -53,6 +53,9 @@ export const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     borderRadius: 16,
     minWidth: 100,
   },
+  actionButtonActive: {
+    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)',
+  },
   actionText: {
     marginTop: 8,
     fontSize: 16,

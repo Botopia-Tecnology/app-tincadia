@@ -21,8 +21,10 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     isSpeaking,
     isCorrecting,
     isPaused,
-    sentences,
-    currentSentenceIndex,
+    isListening,
+    words,
+    currentWordIndex,
+    hasNextSentence,
     handleSpeak,
     handlePause,
     handleStop,
@@ -30,27 +32,54 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     handleAICorrect,
     handleClear,
     handleClose,
+    startListening,
+    stopListening,
   } = useCommunicationBoard(onBack);
 
   const styles = getStyles(colors, isDark);
 
   const renderTextWithHighlight = () => {
+    const elements: React.ReactNode[] = [];
+    let lastIndex = 0;
+
+    words.forEach((token, index) => {
+      // Añadimos el espacio/texto que hay entre el token anterior y el actual
+      if (token.start > lastIndex) {
+        const interstitial = text.substring(lastIndex, token.start);
+        elements.push(
+          <Text key={`inter-${index}`} style={styles.sentenceText}>
+            {interstitial}
+          </Text>
+        );
+      }
+
+      const isActive = index === currentWordIndex;
+      elements.push(
+        <Text
+          key={`word-${index}`}
+          style={[
+            styles.sentenceText,
+            isActive && styles.sentenceTextActive
+          ]}
+        >
+          {token.word}
+        </Text>
+      );
+      lastIndex = token.end;
+    });
+
+    // Añadimos cualquier texto que quede al final (espacios finales, etc.)
+    if (lastIndex < text.length) {
+      elements.push(
+        <Text key="tail" style={styles.sentenceText}>
+          {text.substring(lastIndex)}
+        </Text>
+      );
+    }
+
     return (
       <Text style={styles.textDisplay}>
-        {sentences.map((sentence, index) => {
-          const isActive = index === currentSentenceIndex;
-          return (
-            <Text 
-              key={index} 
-              style={[
-                styles.sentenceText,
-                isActive && styles.sentenceTextActive
-              ]}
-            >
-              {sentence}{' '}
-            </Text>
-          );
-        })}
+        {elements}
       </Text>
     );
   };
@@ -116,10 +145,10 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
                 <TouchableOpacity 
                   style={[
                     styles.actionButton, 
-                    currentSentenceIndex >= sentences.length - 1 && { opacity: 0.4 }
+                    !hasNextSentence && { opacity: 0.4 }
                   ]} 
                   onPress={handleNextSentence}
-                  disabled={currentSentenceIndex >= sentences.length - 1}
+                  disabled={!hasNextSentence}
                 >
                   <Ionicons name="play-skip-forward" size={28} color={colors.textSecondary} />
                   <Text style={styles.actionText}>Avanzar</Text>
@@ -138,6 +167,23 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
               </TouchableOpacity>
 
               <View style={styles.actionRow}>
+                <TouchableOpacity 
+                  style={[
+                    styles.actionButton, 
+                    isListening && styles.actionButtonActive
+                  ]} 
+                  onPress={isListening ? stopListening : startListening}
+                >
+                  <Ionicons 
+                    name={isListening ? "mic" : "mic-outline"} 
+                    size={28} 
+                    color={isListening ? "#EF4444" : colors.textSecondary} 
+                  />
+                  <Text style={[styles.actionText, isListening && { color: '#EF4444' }]}>
+                    {isListening ? 'Escuchando' : 'Dictar por Voz'}
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity style={styles.actionButton} onPress={handleClear}>
                   <Ionicons name="trash-outline" size={28} color={colors.textSecondary} />
                   <Text style={styles.actionText}>Limpiar Texto</Text>
