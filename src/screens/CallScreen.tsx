@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, Alert, Image, Dimensions, DeviceEventEmitter, ScrollView, type DimensionValue } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, Alert, Image, Dimensions, DeviceEventEmitter, ScrollView, Keyboard, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     LiveKitRoom,
@@ -72,6 +72,15 @@ function asOptionalString(value: unknown): string | undefined {
     if (value == null) return undefined;
     const text = String(value);
     return text.length > 0 ? text : undefined;
+}
+
+function getCallSessionIdFromPayload(payload: any): string | undefined {
+    return asOptionalString(
+        payload?.callSessionId ||
+        payload?.call_session_id ||
+        payload?.metadata?.callSessionId ||
+        payload?.metadata?.call_session_id
+    );
 }
 
 function broadcastCallEndedToChat(
@@ -177,9 +186,15 @@ export const CallScreen = ({
     const [url, setUrl] = useState<string | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
     const [isFrontCamera, setIsFrontCamera] = useState(true);
+    const [roomRenderKey, setRoomRenderKey] = useState(0);
+    const [isRoomConnected, setIsRoomConnected] = useState(false);
+    const [connectionError, setConnectionError] = useState<string | null>(null);
     const hasExitedRef = useRef(false);
+    const hasConnectedRef = useRef(false);
+    const reconnectAttemptsRef = useRef(0);
 
     useEffect(() => {
+        Keyboard.dismiss();
         CallState.isInsideCallScreen = true;
         return () => {
             CallState.isInsideCallScreen = false;
@@ -192,11 +207,71 @@ export const CallScreen = ({
         };
     }, []);
 
+    useEffect(() => {
+        Keyboard.dismiss();
+    }, [roomName, callSessionId]);
+
     const safeOnBack = useCallback(() => {
         if (hasExitedRef.current) return;
         hasExitedRef.current = true;
         onBack();
     }, [onBack]);
+
+    const retryRoomConnection = useCallback(() => {
+        setConnectionError(null);
+        setIsRoomConnected(false);
+        hasConnectedRef.current = false;
+        reconnectAttemptsRef.current = 0;
+        setRoomRenderKey((value) => value + 1);
+    }, []);
+
+    const handleRoomConnected = useCallback(() => {
+        console.log('[CALL_DEBUG] LiveKit connected.', { roomName, conversationId, callSessionId });
+        hasConnectedRef.current = true;
+        reconnectAttemptsRef.current = 0;
+        setConnectionError(null);
+        setIsRoomConnected(true);
+    }, [roomName, conversationId, callSessionId]);
+
+    const handleRoomDisconnected = useCallback(() => {
+        console.log('[CALL_DEBUG] LiveKit disconnected.', {
+            roomName,
+            conversationId,
+            callSessionId,
+            hasExited: hasExitedRef.current,
+            hadConnected: hasConnectedRef.current,
+            reconnectAttempts: reconnectAttemptsRef.current,
+        });
+
+        setIsRoomConnected(false);
+
+        if (hasExitedRef.current) return;
+
+        if (!hasConnectedRef.current && reconnectAttemptsRef.current < 2) {
+            reconnectAttemptsRef.current += 1;
+            setRoomRenderKey((value) => value + 1);
+            return;
+        }
+
+        if (!hasConnectedRef.current) {
+            setConnectionError('No se pudo conectar la llamada. Intent? de nuevo.');
+        }
+    }, [roomName, conversationId, callSessionId]);
+
+    const handleRoomError = useCallback((error: Error) => {
+        console.error('[CALL_DEBUG] LiveKit connection error:', error);
+        setIsRoomConnected(false);
+
+        if (hasExitedRef.current) return;
+
+        if (!hasConnectedRef.current && reconnectAttemptsRef.current < 2) {
+            reconnectAttemptsRef.current += 1;
+            setRoomRenderKey((value) => value + 1);
+            return;
+        }
+
+        setConnectionError('No se pudo conectar la llamada. Intent? de nuevo.');
+    }, []);
 
     // FAST BROADCAST LISTENER
     // Escucha directamente en el canal del chat para recibir el rechazo de la llamada a la velocidad de la luz
@@ -206,8 +281,20 @@ export const CallScreen = ({
         const channel = supabase.channel(`chat:${conversationId.toLowerCase()}`)
             .on('broadcast', { event: 'call_ended' }, (payload) => {
                 const data = payload.payload;
+                const eventCallSessionId = getCallSessionIdFromPayload(data);
+
+                if (callSessionId && eventCallSessionId && eventCallSessionId !== callSessionId) {
+                    console.log('[CALL_DEBUG] Ignoring stale call_ended broadcast for different session.', {
+                        currentCallSessionId: callSessionId,
+                        eventCallSessionId,
+                        conversationId,
+                        roomName,
+                    });
+                    return;
+                }
+
                 if (data.senderId !== userId && (data.roomName === roomName || data.conversationId === conversationId)) {
-                    console.log('📱 Fast Broadcast remote call end detected, terminating local call...');
+                    console.log('[CALL_DEBUG] Fast Broadcast remote call end detected, terminating local call...');
                     safeOnBack();
                 }
             })
@@ -216,7 +303,7 @@ export const CallScreen = ({
         return () => {
             void supabase.removeChannel(channel);
         };
-    }, [conversationId, roomName, userId, safeOnBack]);
+    }, [conversationId, roomName, userId, callSessionId, safeOnBack]);
 
     const handleCallTimeout = useCallback(() => {
         console.log('Call timed out after 30s. Disconnecting...');
@@ -285,16 +372,110 @@ export const CallScreen = ({
         safeOnBack();
     }, [conversationId, userId, roomName, callSessionId, safeOnBack]);
 
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('CallKeep_EndCall', (data) => {
+            if (!data?.wasInsideCallScreen || isRoomConnected) return;
+
+            const eventCallSessionId = getCallSessionIdFromPayload(data);
+            if (callSessionId && eventCallSessionId && eventCallSessionId !== callSessionId) {
+                return;
+            }
+
+            const eventConversationId = asOptionalString(data?.conversationId || data?.conversation_id);
+            const eventRoomName = asOptionalString(data?.roomName || data?.room_name);
+            const eventCallUUID = asOptionalString(data?.callUUID || data?.call_uuid);
+            const hasRoutingData = Boolean(eventConversationId || eventRoomName || eventCallUUID);
+            const matchesConversation = Boolean(eventConversationId && conversationId && eventConversationId.toLowerCase() === conversationId.toLowerCase());
+            const matchesRoom = Boolean(eventRoomName && eventRoomName === roomName);
+            const matchesUUID = Boolean(eventCallUUID && (eventCallUUID === roomName || eventCallUUID === conversationId));
+
+            if (hasRoutingData && !matchesConversation && !matchesRoom && !matchesUUID) return;
+
+            console.log('[CALL_DEBUG] Native CallKeep end while CallScreen is connecting; ending app call.');
+            if (conversationId && userId) {
+                const tempId = `call_native_end_${Date.now()}`;
+                const now = new Date().toISOString();
+
+                saveMessage({
+                    id: tempId,
+                    serverId: tempId,
+                    conversationId,
+                    senderId: userId,
+                    content: 'Llamada finalizada',
+                    type: 'call_ended',
+                    status: 'pending',
+                    createdAt: now,
+                    updatedAt: now,
+                    isMine: true,
+                    metadata: {
+                        roomName,
+                        callSessionId,
+                    },
+                });
+                broadcastCallEndedToChat(conversationId, userId, tempId, now, roomName, callSessionId);
+                DeviceEventEmitter.emit('chat_local_update', conversationId);
+                updateConversationPreview(conversationId, 'Llamada finalizada', now, false);
+                DeviceEventEmitter.emit('conversations_updated');
+
+                chatService.sendMessage({
+                    conversationId,
+                    senderId: userId,
+                    content: 'Llamada finalizada',
+                    type: 'call_ended',
+                    metadata: {
+                        roomName,
+                        callSessionId,
+                    },
+                }).then(({ message: serverMsg }) => {
+                    deleteMessage(tempId);
+                    saveMessage({
+                        id: serverMsg.id,
+                        serverId: serverMsg.id,
+                        conversationId,
+                        senderId: userId,
+                        content: 'Llamada finalizada',
+                        type: 'call_ended',
+                        status: 'sent',
+                        createdAt: (serverMsg as any).createdAt || (serverMsg as any).created_at || now,
+                        updatedAt: now,
+                        isMine: true,
+                        metadata: {
+                            roomName,
+                            callSessionId,
+                        },
+                    });
+                    DeviceEventEmitter.emit('chat_local_update', conversationId);
+                }).catch(e => console.log('Could not send native call_ended message:', e));
+            }
+
+            safeOnBack();
+        });
+
+        return () => sub.remove();
+    }, [isRoomConnected, conversationId, userId, roomName, callSessionId, safeOnBack]);
+
     // Listen for remote call rejections/hang-ups
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('external_call_ended', (data) => {
+            const eventCallSessionId = getCallSessionIdFromPayload(data);
+
+            if (callSessionId && eventCallSessionId && eventCallSessionId !== callSessionId) {
+                console.log('[CALL_DEBUG] Ignoring stale external_call_ended for different session.', {
+                    currentCallSessionId: callSessionId,
+                    eventCallSessionId,
+                    conversationId,
+                    roomName,
+                });
+                return;
+            }
+
             if (data.conversationId === conversationId || data.roomName === roomName) {
-                console.log('📱 Remote call end detected, terminating local call...');
+                console.log('[CALL_DEBUG] Remote call end detected, terminating local call...');
                 safeOnBack();
             }
         });
         return () => sub.remove();
-    }, [conversationId, roomName, safeOnBack]);
+    }, [conversationId, roomName, callSessionId, safeOnBack]);
 
     useEffect(() => {
         if (!conversationId) return;
@@ -309,7 +490,9 @@ export const CallScreen = ({
                     conversation_id?: string;
                     senderId?: string;
                     sender_id?: string;
-                    metadata?: { roomName?: string };
+                    callSessionId?: string;
+                    call_session_id?: string;
+                    metadata?: { roomName?: string; callSessionId?: string; call_session_id?: string };
                     isGroup?: boolean | string;
                 };
 
@@ -327,6 +510,19 @@ export const CallScreen = ({
                 const messageConversationId = asOptionalString(message?.conversationId || message?.conversation_id);
                 const messageSenderId = asOptionalString(message?.senderId || message?.sender_id);
                 const messageRoomName = asOptionalString(message?.metadata?.roomName);
+                const messageCallSessionId = getCallSessionIdFromPayload(message);
+
+                if (callSessionId && messageCallSessionId && messageCallSessionId !== callSessionId) {
+                    console.log('[CALL_DEBUG] Ignoring stale terminal call event for different session.', {
+                        conversationId,
+                        roomName,
+                        messageType,
+                        currentCallSessionId: callSessionId,
+                        messageCallSessionId,
+                    });
+                    return;
+                }
+
                 const matchesConversation = messageConversationId?.toLowerCase() === conversationId.toLowerCase();
                 const matchesRoom = messageRoomName === roomName;
 
@@ -349,7 +545,7 @@ export const CallScreen = ({
         return () => {
             void supabase.removeChannel(activeCallChannel);
         };
-    }, [conversationId, roomName, userId, safeOnBack]);
+    }, [conversationId, roomName, userId, callSessionId, safeOnBack]);
 
     // Do not save a generic call_ended marker on every unmount.
     // Hangup and remote-end flows already emit/persist terminal events; doing it here
@@ -364,6 +560,14 @@ export const CallScreen = ({
 
     useEffect(() => {
         let isMounted = true;
+        hasExitedRef.current = false;
+        setToken(null);
+        setUrl(null);
+        setIsRoomConnected(false);
+        setConnectionError(null);
+        hasConnectedRef.current = false;
+        reconnectAttemptsRef.current = 0;
+        setRoomRenderKey((value) => value + 1);
 
         const prepareSession = async () => {
             try {
@@ -398,13 +602,32 @@ export const CallScreen = ({
         prepareSession();
 
         return () => { isMounted = false; };
-    }, [roomName, username]);
+    }, [roomName, username, callSessionId]);
+
+    if (connectionError) {
+        return (
+            <View style={styles.container}>
+                <Text style={styles.text}>{connectionError}</Text>
+                <View style={styles.connectionActions}>
+                    <TouchableOpacity style={styles.retryButton} onPress={retryRoomConnection}>
+                        <Text style={styles.retryButtonText}>Reintentar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.retryButton, styles.exitButton]} onPress={safeOnBack}>
+                        <Text style={styles.retryButtonText}>Salir</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    }
 
     if (!token || !url) {
         return (
             <View style={styles.container}>
                 <ActivityIndicator size="large" color="#7C3AED" />
                 <Text style={styles.text}>Conectando...</Text>
+                <TouchableOpacity style={[styles.loadingHangupButton, { marginTop: 24 }]} onPress={safeOnBack}>
+                    <PhoneIcon size={28} color="#fff" />
+                </TouchableOpacity>
             </View>
         );
     }
@@ -412,34 +635,49 @@ export const CallScreen = ({
     return (
         <View style={{ flex: 1, backgroundColor: '#000' }}>
             <LiveKitRoom
+                key={`${roomName}-${roomRenderKey}`}
                 serverUrl={url}
                 token={token}
                 connect={true}
                 options={{ adaptiveStream: true }}
                 audio={true}
                 video={true}
-                onDisconnected={safeOnBack}
+                onConnected={handleRoomConnected}
+                onDisconnected={handleRoomDisconnected}
+                onError={handleRoomError}
             >
-                <RingingSoundManager onTimeout={handleCallTimeout} />
-                <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
-                <ControlsView
-                    onHangup={safeOnBack}
-                    conversationId={conversationId}
-                    userId={userId}
-                    callSessionId={callSessionId}
-                    roomName={roomName}
-                    username={username}
-                    layoutMode={layoutMode}
-                    onToggleLayout={() => setLayoutMode(m => m === 'grid' ? 'interpreter' : 'grid')}
-                    onToggleCameraFacing={() => setIsFrontCamera(prev => !prev)}
-                    isFrontCamera={isFrontCamera}
-                    isManualPipMode={isManualPipMode}
-                    onRestoreFromPip={onRestoreFromPip}
-                    onMinimize={onMinimize}
-                    onBack={onBack}
-                    onNavigate={onNavigate}
-                />
-                <RoomEvents onLeave={safeOnBack} />
+                {!isRoomConnected ? (
+                    <View style={styles.connectingOverlay}>
+                        <ActivityIndicator size="large" color="#7C3AED" />
+                        <Text style={styles.text}>Conectando a la sala...</Text>
+                        <TouchableOpacity style={[styles.loadingHangupButton, { marginTop: 24 }]} onPress={safeOnBack}>
+                            <PhoneIcon size={28} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <>
+                        <RingingSoundManager onTimeout={handleCallTimeout} />
+                        <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
+                        <ControlsView
+                            onHangup={safeOnBack}
+                            conversationId={conversationId}
+                            userId={userId}
+                            callSessionId={callSessionId}
+                            roomName={roomName}
+                            username={username}
+                            layoutMode={layoutMode}
+                            onToggleLayout={() => setLayoutMode(m => m === 'grid' ? 'interpreter' : 'grid')}
+                            onToggleCameraFacing={() => setIsFrontCamera(prev => !prev)}
+                            isFrontCamera={isFrontCamera}
+                            isManualPipMode={isManualPipMode}
+                            onRestoreFromPip={onRestoreFromPip}
+                            onMinimize={onMinimize}
+                            onBack={onBack}
+                            onNavigate={onNavigate}
+                        />
+                        <RoomEvents onLeave={safeOnBack} />
+                    </>
+                )}
             </LiveKitRoom>
         </View>
     );
@@ -908,7 +1146,7 @@ function ControlsView({
         }
     };
 
-    const handleDisconnect = () => {
+    const handleDisconnect = useCallback(() => {
         console.log('[CALL_DEBUG] CallScreen.handleDisconnect.start', {
             conversationId,
             userId,
@@ -1007,7 +1245,48 @@ function ControlsView({
             chatService.updateInterpreterStatus(user.id, false)
                 .catch(e => console.error('Error updating interpreter status:', e));
         }
-    };
+    }, [room, onHangup, conversationId, userId, roomName, callSessionId, user?.role, user?.id]);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('CallKeep_EndCall', (data) => {
+            if (!data?.wasInsideCallScreen) return;
+
+            const eventCallSessionId = getCallSessionIdFromPayload(data);
+            if (callSessionId && eventCallSessionId && eventCallSessionId !== callSessionId) {
+                console.log('[CALL_DEBUG] Ignoring native end for different call session.', {
+                    currentCallSessionId: callSessionId,
+                    eventCallSessionId,
+                    conversationId,
+                    roomName,
+                });
+                return;
+            }
+
+            const eventConversationId = asOptionalString(data?.conversationId || data?.conversation_id);
+            const eventRoomName = asOptionalString(data?.roomName || data?.room_name);
+            const eventCallUUID = asOptionalString(data?.callUUID || data?.call_uuid);
+            const hasRoutingData = Boolean(eventConversationId || eventRoomName || eventCallUUID);
+            const matchesConversation = Boolean(eventConversationId && conversationId && eventConversationId.toLowerCase() === conversationId.toLowerCase());
+            const matchesRoom = Boolean(eventRoomName && eventRoomName === roomName);
+            const matchesUUID = Boolean(eventCallUUID && (eventCallUUID === roomName || eventCallUUID === conversationId));
+
+            if (hasRoutingData && !matchesConversation && !matchesRoom && !matchesUUID) {
+                console.log('[CALL_DEBUG] Ignoring native end for unrelated call.', {
+                    eventConversationId,
+                    eventRoomName,
+                    eventCallUUID,
+                    conversationId,
+                    roomName,
+                });
+                return;
+            }
+
+            console.log('[CALL_DEBUG] Native CallKeep end matched active CallScreen; hanging up app call.');
+            handleDisconnect();
+        });
+
+        return () => sub.remove();
+    }, [conversationId, roomName, callSessionId, handleDisconnect]);
 
     const handleInviteInterpreters = async () => {
         if (!userId) return;
@@ -1141,6 +1420,41 @@ const styles = StyleSheet.create({
     text: {
         color: 'white',
         marginTop: 10,
+    },
+    connectionActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginTop: 24,
+    },
+    retryButton: {
+        backgroundColor: '#7C3AED',
+        paddingHorizontal: 18,
+        paddingVertical: 12,
+        borderRadius: 12,
+    },
+    exitButton: {
+        backgroundColor: '#374151',
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    loadingHangupButton: {
+        width: 58,
+        height: 58,
+        borderRadius: 29,
+        backgroundColor: '#dc2626',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    connectingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: '#111',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 20,
     },
     videoGrid: {
         flex: 1,

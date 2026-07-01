@@ -24,6 +24,7 @@ import { getLocalContacts, LocalContact, patchConversationMetadata } from '../..
 import { EditStringModal } from '../modals/EditStringModal';
 import { ContactSelectionModal } from '../modals/ContactSelectionModal';
 import { useTheme } from '../../contexts/ThemeContext';
+import { NavigateFunction } from '../../types/navigation.types';
 
 interface GroupProfileViewProps {
     conversationId: string;
@@ -34,7 +35,7 @@ interface GroupProfileViewProps {
     onBack: () => void;
     onLeave?: () => void;
     onUpdate?: (updates: { title?: string; imageUrl?: string; description?: string }) => void;
-    onNavigate?: (screen: string, params?: any) => void;
+    onNavigate?: NavigateFunction;
 }
 
 interface Participant {

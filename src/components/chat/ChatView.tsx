@@ -330,7 +330,11 @@ export function ChatView(props: ChatViewProps) {
     const callSessionId = typeof metadataCallSessionId === 'string' ? metadataCallSessionId : undefined;
     const username = currentUser?.firstName || 'Usuario';
     // Just join the existing room. Do NOT send a 'call' message.
-    callKeepService.endAllCallsSilently();
+    try {
+      callKeepService.endAllCallsSilently();
+    } catch (error) {
+      console.warn('[CALL_DEBUG] Could not clear native call UI before joining call:', error);
+    }
     onNavigateCall(roomName, username, conversationId, userId, callSessionId);
   };
 

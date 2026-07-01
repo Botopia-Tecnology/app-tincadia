@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackHandler, Platform, Text, View, ActivityIndicator, StyleSheet, AppState, Alert } from 'react-native';
+import { BackHandler, Platform, Text, View, ActivityIndicator, StyleSheet, AppState, Alert, Keyboard } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Sentry from '@sentry/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -103,6 +103,7 @@ function AppContent() {
   const currentScreen = useMemo(() => screenStack[screenStack.length - 1] ?? 'chats', [screenStack]);
 
   const navigate = useCallback((next: any, params?: any) => {
+    if (next === 'call') Keyboard.dismiss();
     if (next === 'call' && params) setCallParams(params as any);
     if (next === 'profile' && params) setProfileParams(params as any);
     if ((next === 'course_player' || next === 'course_presentation') && params?.courseId) setSelectedCourseId(params.courseId);
@@ -129,6 +130,7 @@ function AppContent() {
       setInitialChatParams(params);
     },
     (params) => {
+      Keyboard.dismiss();
       setCallParams(params);
       setScreenStack(prev => [...prev, 'call']);
     }
@@ -139,6 +141,7 @@ function AppContent() {
   }, [callParams, setActiveCall]);
 
   useDeepLinking(isAuthenticated, user, isPremium, isSubscriptionLoading, (params) => {
+    Keyboard.dismiss();
     setCallParams(params);
     setScreenStack(prev => prev[prev.length - 1] === 'call' ? prev : [...prev, 'call']);
   });
@@ -162,6 +165,7 @@ function AppContent() {
       await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
     }
 
+    Keyboard.dismiss();
     setCallParams({
       roomName: interpreterInvite.roomName,
       username: user.role === 'interpreter'

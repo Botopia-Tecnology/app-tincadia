@@ -12,6 +12,12 @@ function isSameUserId(a: string | null | undefined, b: string | null | undefined
   return String(a).toLowerCase() === String(b).toLowerCase();
 }
 
+function getStringValue(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const text = String(value);
+  return text.length > 0 ? text : undefined;
+}
+
 async function isOwnCallPayload(data: Record<string, string> | undefined): Promise<boolean> {
   if (!data?.senderId && !data?.sender_id) return false;
 
@@ -28,7 +34,9 @@ async function isOwnCallPayload(data: Record<string, string> | undefined): Promi
 
 function endNativeCallFromPayload(data: Record<string, string> | undefined) {
   const idsToEnd = Array.from(new Set([
+    data?.nativeCallUUID,
     data?.callUUID,
+    data?.uuid,
     data?.conversationId,
     data?.roomName,
   ].filter(Boolean))) as string[];
@@ -40,6 +48,38 @@ function endNativeCallFromPayload(data: Record<string, string> | undefined) {
       // Native call UI may already be dismissed.
     }
   });
+}
+
+async function handleVoipPushNotification(notificationObj: unknown) {
+  console.log('Background VoIP Push received:', notificationObj);
+  const notification = (notificationObj && typeof notificationObj === 'object')
+    ? notificationObj as Record<string, any>
+    : {};
+
+  if (notification?.type === 'call_ended' || notification?.type === 'call_missed' || notification?.type === 'call_rejected') {
+    endNativeCallFromPayload(notification as Record<string, string>);
+    return;
+  }
+
+  if (await isOwnCallPayload(notification as Record<string, string>)) return;
+
+  const conversationId = getStringValue(notification.conversationId);
+  const senderName = getStringValue(notification.senderName || notification.callerName);
+  const callUUID = getStringValue(notification.nativeCallUUID || notification.callUUID || notification.uuid);
+  const roomName = getStringValue(notification.roomName);
+  const nativeCallId = callUUID || roomName || conversationId;
+
+  if (nativeCallId) {
+    // PushKit/AppDelegate reports the native CallKit UI on iOS.
+    // Keep only the app-side context here to avoid displaying the same call twice.
+    callKeepService.registerIncomingCallContext(nativeCallId, nativeCallId, {
+      roomName,
+      conversationId,
+      callSessionId: getStringValue(notification.callSessionId || notification.call_session_id),
+      senderId: getStringValue(notification.senderId || notification.sender_id),
+      senderName,
+    }, true);
+  }
 }
 
 // Initialize CallKeep early in the lifecycle
@@ -68,7 +108,13 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
 
     const callUUID = data.callUUID || data.roomName || data.conversationId;
     if (callUUID) {
-      callKeepService.displayIncomingCall(callUUID, 'Tincadia Llamada', data.senderName || 'Llamada entrante');
+      callKeepService.displayIncomingCall(callUUID, 'Tincadia Llamada', data.senderName || 'Llamada entrante', {
+        roomName: data.roomName,
+        conversationId: data.conversationId,
+        callSessionId: data.callSessionId,
+        senderId: data.senderId || data.sender_id,
+        senderName: data.senderName,
+      });
     }
   } else if (data?.type === 'call_ended' || data?.type === 'call_missed' || data?.type === 'call_rejected') {
     endNativeCallFromPayload(data);
@@ -76,22 +122,17 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
 });
 
 // ---- iOS: VoIP Push Background Handler ----
-RNVoipPushNotification.addEventListener('notification', async (notificationObj) => {
-  console.log('Background VoIP Push received:', notificationObj);
-  const notification = notificationObj as Record<string, any>;
-  if (notification?.type === 'call_ended' || notification?.type === 'call_missed' || notification?.type === 'call_rejected') {
-    endNativeCallFromPayload(notification);
-    return;
-  }
+RNVoipPushNotification.addEventListener('didLoadWithEvents', (events: any) => {
+  if (!Array.isArray(events)) return;
 
-  if (await isOwnCallPayload(notification)) return;
-
-  const { conversationId, senderName, callUUID, roomName } = notification;
-  const nativeCallId = callUUID || roomName || conversationId;
-  if (nativeCallId) {
-    callKeepService.displayIncomingCall(nativeCallId, 'Tincadia Llamada', senderName || 'Llamada entrante');
-  }
+  events.forEach((event) => {
+    if (event?.name === 'RNVoipPushRemoteNotificationReceivedEvent') {
+      void handleVoipPushNotification(event.data);
+    }
+  });
 });
+
+RNVoipPushNotification.addEventListener('notification', handleVoipPushNotification);
 
 // Register headless task for Android incoming calls via FCM Data
 AppRegistry.registerHeadlessTask('RNCallKeepBackgroundMessage', () => ({ name, callUUID, handle }: any) => {

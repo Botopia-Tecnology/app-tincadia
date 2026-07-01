@@ -41,6 +41,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     const callUUID = getStringValue(payload.callUUID);
     const conversationId = getStringValue(payload.conversationId);
     const roomName = getStringValue(payload.roomName);
+    const callSessionId = getStringValue(payload.callSessionId || (payload.metadata as Record<string, unknown> | undefined)?.callSessionId);
     console.log('[PUSH_DEBUG] clearNativeCallUi called', { callUUID, conversationId });
 
     // VERY IMPORTANT: Emit this FIRST so CallScreen knows to close immediately
@@ -49,19 +50,18 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       callUUID,
       conversationId,
       roomName,
+      callSessionId,
     });
 
     const idsToEnd = Array.from(new Set([
       callUUID,
       conversationId,
       roomName,
+      activeIncomingCallRef.current,
     ].filter(Boolean))) as string[];
-
-    if (activeIncomingCallRef.current && idsToEnd.includes(activeIncomingCallRef.current)) {
-      idsToEnd.push(activeIncomingCallRef.current);
-    }
-
+    CallState.clearIncomingCall(conversationId || roomName || callUUID || activeIncomingCallRef.current);
     activeIncomingCallRef.current = null;
+    DeviceEventEmitter.emit('chat_local_update', conversationId || roomName || callUUID);
 
     idsToEnd.forEach((id) => {
       try {
@@ -160,8 +160,9 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
 
           const callUUID = getStringValue(data.callUUID || data.roomName || data.conversationId);
           if (!callUUID) return;
+          const nativeCallUUID = callKeepService.resolveCallUUID(callUUID);
 
-          if (activeIncomingCallRef.current === callUUID) {
+          if (activeIncomingCallRef.current === nativeCallUUID) {
             console.log('[useNotifications] Ignoring duplicate incoming-call push (already ringing).');
             return;
           }
@@ -186,7 +187,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             return;
           }
 
-          if (activeIncomingCallRef.current && activeIncomingCallRef.current !== callUUID) {
+          if (activeIncomingCallRef.current && activeIncomingCallRef.current !== nativeCallUUID) {
             try {
               callKeepService.endCall(activeIncomingCallRef.current);
             } catch {
@@ -195,8 +196,13 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           }
 
           const handle = String(data.senderName || 'Tincadia');
-          activeIncomingCallRef.current = callUUID;
-          callKeepService.displayIncomingCall(callUUID, handle, handle);
+          activeIncomingCallRef.current = callKeepService.displayIncomingCall(callUUID, handle, handle, {
+            roomName: getStringValue(data.roomName),
+            conversationId: getStringValue(data.conversationId),
+            callSessionId: getStringValue(data.callSessionId),
+            senderId,
+            senderName: handle,
+          });
 
           const convIdStr = getStringValue(data.conversationId);
           if (convIdStr) {
@@ -279,19 +285,60 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
         const data = payload.payload;
         console.log('📡 [useNotifications] Broadcast incoming_call received:', data);
         if (data && data.senderId !== user.id) {
+          if (Platform.OS === 'ios') {
+            // iOS primary path is PushKit/CallKit. This is only a foreground/app-alive fallback:
+            // if the VoIP push is delayed or missing, the user still gets a native incoming UI.
+            setTimeout(() => {
+              const conversationId = getStringValue(data.conversationId);
+              if (CallState.isInsideCallScreen) {
+                console.log('[useNotifications] iOS fallback skipped: already inside CallScreen.');
+                return;
+              }
+              if (conversationId && CallState.hasIncomingCall(conversationId)) {
+                console.log('[useNotifications] iOS fallback skipped: PushKit already registered incoming call.');
+                return;
+              }
+
+              const callUUID = data.nativeCallUUID || data.callUUID || data.uuid || data.roomName || data.conversationId;
+              if (!callUUID) return;
+
+              const nativeCallUUID = callKeepService.resolveCallUUID(String(callUUID));
+              if (activeIncomingCallRef.current === nativeCallUUID) {
+                console.log('[useNotifications] iOS fallback skipped: already ringing.');
+                return;
+              }
+
+              const handle = String(data.senderName || 'Tincadia');
+              activeIncomingCallRef.current = callKeepService.displayIncomingCall(String(callUUID), handle, handle, {
+                roomName: getStringValue(data.roomName),
+                conversationId,
+                callSessionId: getStringValue(data.callSessionId || data.call_session_id),
+                senderId: getStringValue(data.senderId || data.sender_id),
+                senderName: getStringValue(data.senderName),
+              });
+            }, 800);
+            return;
+          }
+
           if (CallState.isInsideCallScreen) {
             console.log('[useNotifications] Ignoring incoming_call broadcast because user is already inside CallScreen.');
             return;
           }
-          const callUUID = data.roomName || data.conversationId;
+          const callUUID = data.callUUID || data.roomName || data.conversationId;
           if (callUUID) {
-            if (activeIncomingCallRef.current === callUUID) {
+            const nativeCallUUID = callKeepService.resolveCallUUID(String(callUUID));
+            if (activeIncomingCallRef.current === nativeCallUUID) {
               console.log('[useNotifications] Ignoring duplicate incoming_call broadcast (already ringing).');
               return;
             }
-            const handle = data.senderName || 'Tincadia';
-            activeIncomingCallRef.current = callUUID;
-            callKeepService.displayIncomingCall(callUUID, handle, handle);
+            const handle = String(data.senderName || 'Tincadia');
+            activeIncomingCallRef.current = callKeepService.displayIncomingCall(String(callUUID), handle, handle, {
+              roomName: getStringValue(data.roomName),
+              conversationId: getStringValue(data.conversationId),
+              callSessionId: getStringValue(data.callSessionId),
+              senderId: getStringValue(data.senderId),
+              senderName: getStringValue(data.senderName),
+            });
           }
         }
       })
@@ -303,6 +350,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             callUUID: sm?.callUUID || sm?.call_uuid,
             conversationId: convId,
             roomName: sm?.roomName || sm?.room_name,
+            callSessionId: sm?.callSessionId || sm?.call_session_id || sm?.metadata?.callSessionId,
           });
 
           const endMsgId = sm?.id || `call_end_local_${Date.now()}`;
@@ -362,7 +410,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   // 6. Handle CallKeep native 'answerCall' event to navigate to CallScreen
   useEffect(() => {
     if (!user) return;
-    const sub = DeviceEventEmitter.addListener('CallKeep_AnswerCall', ({ callUUID }) => {
+    const sub = DeviceEventEmitter.addListener('CallKeep_AnswerCall', ({ callUUID, roomName, conversationId, callSessionId }) => {
       // Limpiar la referencia antes de colgar nativamente para que el evento 'CallKeep_EndCall' no ejecute el rechazo local
       activeIncomingCallRef.current = null;
       
@@ -373,23 +421,32 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
         console.warn('Error terminando llamada nativa al contestar', e);
       }
 
-      const realConvId = callUUID.startsWith('conv_') ? callUUID.replace('conv_', '') : callUUID;
+      const resolvedRoomName = typeof roomName === 'string' && roomName.length > 0 ? roomName : callUUID;
+      const realConvId = typeof conversationId === 'string' && conversationId.length > 0
+        ? conversationId
+        : (resolvedRoomName.startsWith('conv_') ? resolvedRoomName.replace('conv_', '') : resolvedRoomName);
+      CallState.clearIncomingCall(realConvId);
       onNavigateToCall({
-        roomName: callUUID,
+        roomName: resolvedRoomName,
         username: user.firstName || user.email?.split('@')[0] || 'Usuario',
         conversationId: realConvId,
         userId: user.id,
+        callSessionId,
         isIncomingCall: true
       });
     });
 
-    const subEnd = DeviceEventEmitter.addListener('CallKeep_EndCall', ({ callUUID }) => {
+    const subEnd = DeviceEventEmitter.addListener('CallKeep_EndCall', ({ callUUID, roomName, conversationId, callSessionId }) => {
       console.log('Call ended internally via Native UI');
-      if (activeIncomingCallRef.current === callUUID) {
+      if (activeIncomingCallRef.current === callKeepService.resolveCallUUID(callUUID)) {
         activeIncomingCallRef.current = null;
 
         // Extract real conversation ID
-        const realConvId = callUUID.startsWith('conv_') ? callUUID.replace('conv_', '') : callUUID;
+        const resolvedRoomName = typeof roomName === 'string' && roomName.length > 0 ? roomName : callUUID;
+        const realConvId = typeof conversationId === 'string' && conversationId.length > 0
+          ? conversationId
+          : (resolvedRoomName.startsWith('conv_') ? resolvedRoomName.replace('conv_', '') : resolvedRoomName);
+        CallState.clearIncomingCall(realConvId);
 
         // Lookup the latest call message for metadata
         const localMsgs = require('../database/chatDatabase').getMessages(realConvId);
@@ -432,8 +489,8 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
                 senderId: user.id,
                 conversationId: realConvId,
                 createdAt: now,
-                roomName: metadata?.roomName || callUUID,
-                callSessionId: metadata?.callSessionId,
+                roomName: metadata?.roomName || resolvedRoomName,
+                callSessionId: metadata?.callSessionId || callSessionId,
               }
             });
             supabase.removeChannel(channel);
@@ -446,7 +503,10 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           senderId: user.id,
           content: 'Llamada rechazada',
           type: 'call_ended' as any,
-          metadata
+          metadata: metadata || {
+            roomName: resolvedRoomName,
+            callSessionId,
+          }
         }).then(({ message: serverMsg }) => {
           // Eliminar el mensaje optimista (tempId) para evitar duplicados en la UI local
           deleteMessage(tempId);
