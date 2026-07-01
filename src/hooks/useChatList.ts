@@ -9,6 +9,7 @@ import { Conversation } from '../types/chat.types';
 import { appNotificationService } from '../services/appNotification.service';
 import { useContactsSync } from './useContactsSync';
 import { API_URL } from '../config/api.config';
+import { CALL_STATE_CHANGED_EVENT, CallState } from '../lib/callState';
 import {
   getConversations as getLocalConversations,
   getLocalContacts,
@@ -59,6 +60,7 @@ export interface ChatListItem {
   customLastName?: string;
   avatarUrl?: string;
   description?: string;
+  hasActiveIncomingCall?: boolean;
 }
 
 export const useChatList = (userId: string) => {
@@ -135,6 +137,7 @@ export const useChatList = (userId: string) => {
           lastMessageTime: conv.lastMessageAt,
           avatarUrl: normalizeUrl(conv.imageUrl || conv.otherUserAvatar),
           description: conv.description,
+          hasActiveIncomingCall: CallState.hasIncomingCall(conv.id),
         };
       }
 
@@ -169,6 +172,7 @@ export const useChatList = (userId: string) => {
           customFirstName: contact.customFirstName,
           customLastName: contact.customLastName,
           avatarUrl: normalizeUrl(conv.otherUserAvatar),
+          hasActiveIncomingCall: CallState.hasIncomingCall(conv.id),
         };
       } else {
         return {
@@ -182,6 +186,7 @@ export const useChatList = (userId: string) => {
           lastMessage: conv.lastMessage,
           lastMessageTime: conv.lastMessageAt,
           avatarUrl: normalizeUrl(conv.otherUserAvatar),
+          hasActiveIncomingCall: CallState.hasIncomingCall(conv.id),
         };
       }
     });
@@ -409,6 +414,10 @@ export const useChatList = (userId: string) => {
       loadFromLocalCache();
     });
 
+    const callStateSub = DeviceEventEmitter.addListener(CALL_STATE_CHANGED_EVENT, () => {
+      loadFromLocalCache();
+    });
+
     const chatSyncSub = DeviceEventEmitter.addListener('chat_sync_requested', () => {
       console.log('🔄 Reactive refresh: chat_sync_requested (forcing sync)');
       syncFromServer(false, true);
@@ -419,6 +428,7 @@ export const useChatList = (userId: string) => {
       contactsSub.remove();
       convsSub.remove();
       chatLocalSub.remove();
+      callStateSub.remove();
       chatSyncSub.remove();
     };
   }, [loadFromLocalCache, syncFromServer]);

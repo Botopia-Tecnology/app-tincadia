@@ -52,16 +52,22 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
       return <Text style={[styles.lastMessage, { color: colors.textSecondary }]}>{item.phone}</Text>;
     }
 
-    if (item.lastMessage.includes('📞') || item.lastMessage.toLowerCase().includes('llamada')) {
+    if (/\u{1F4DE}/u.test(item.lastMessage) || item.lastMessage.toLowerCase().includes('llamada')) {
       const isEnded = item.lastMessage.toLowerCase().match(/(finalizada|rechazada|perdida)/);
+      const sanitizedCallText = item.lastMessage
+        .replace(/\u{1F4DE}\s?/gu, '')
+        .replace(/\u260E\uFE0F?\s?/g, '')
+        .trim();
       const displayText = isEnded
-        ? item.lastMessage.replace(/📞\s?/g, '').replace(/☎️\s?/g, '')
-        : 'Llamada entrante';
-      const iconColor = isEnded ? '#EF4444' : '#3B82F6';
+        ? sanitizedCallText
+        : item.hasActiveIncomingCall
+          ? 'Llamada entrante'
+          : (sanitizedCallText || 'Llamada');
+      const iconColor = isEnded ? '#EF4444' : item.hasActiveIncomingCall ? '#3B82F6' : colors.textSecondary;
       
       return (
         <View style={previewStyles.row}>
-          <Ionicons name={isEnded ? 'call-outline' : 'call'} size={14} color={iconColor} />
+          <Ionicons name={isEnded || !item.hasActiveIncomingCall ? 'call-outline' : 'call'} size={14} color={iconColor} />
           <Text style={[previewStyles.label, { color: iconColor }]}>{displayText}</Text>
         </View>
       );
@@ -116,7 +122,7 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
             <Text style={[styles.chatName, { color: colors.text }]}>{item.displayName}</Text>
             <Text style={[styles.timestamp, item.type === 'synced' && { color: '#3B82F6' }]}>
               {item.type === 'synced'
-                ? '✓ En Tincadia'
+                ? '\u2713 En Tincadia'
                 : item.lastMessageTime
                   ? formatMessageTime(item.lastMessageTime)
                   : item.type === 'unknown' ? 'Desconocido' : ''}
