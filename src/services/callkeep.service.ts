@@ -64,8 +64,9 @@ class CallKeepService {
   private initialized = false;
   private voipPushInitialized = false;
   private voipTokenHandler?: (token: string) => void;
-  /** Temporarily true while we end/report the native UI ourselves, to suppress the endCall handler */
-  private _suppressNextEndCall = false;
+  /** Native UUIDs ended by app cleanup; only matching endCall events are suppressed. */
+  private suppressedEndCallUUIDs: Set<string> = new Set();
+  private suppressedEndCallTimers: Map<string, NodeJS.Timeout> = new Map();
   private incomingCallTimeouts: Map<string, NodeJS.Timeout> = new Map();
   private nativeCallContexts: Map<string, NativeCallContext> = new Map();
   private nativeCallAliases: Map<string, string> = new Map();
@@ -89,6 +90,37 @@ class CallKeepService {
     return false;
   }
 
+  private getNativeUUIDKey(uuid: string) {
+    return normalizeCallKey(this.resolveCallUUID(uuid));
+  }
+
+  private suppressEndCallOnce(uuid: string) {
+    const nativeUUID = this.resolveCallUUID(uuid);
+    const key = normalizeCallKey(nativeUUID);
+    this.suppressedEndCallUUIDs.add(key);
+
+    const previousTimer = this.suppressedEndCallTimers.get(key);
+    if (previousTimer) clearTimeout(previousTimer);
+
+    const timer = setTimeout(() => {
+      this.suppressedEndCallUUIDs.delete(key);
+      this.suppressedEndCallTimers.delete(key);
+    }, 8000);
+
+    this.suppressedEndCallTimers.set(key, timer);
+  }
+
+  private consumeSuppressedEndCall(uuid: string) {
+    const key = this.getNativeUUIDKey(uuid);
+    if (!this.suppressedEndCallUUIDs.has(key)) return false;
+
+    this.suppressedEndCallUUIDs.delete(key);
+    const timer = this.suppressedEndCallTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.suppressedEndCallTimers.delete(key);
+    return true;
+  }
+
   private clearIncomingCallTimeout(uuid: string) {
     const nativeUUID = this.resolveCallUUID(uuid);
     const timeout = this.incomingCallTimeouts.get(nativeUUID);
@@ -98,15 +130,40 @@ class CallKeepService {
     }
   }
 
+  private forgetNativeCall(uuid: string) {
+    const nativeUUID = this.resolveCallUUID(uuid);
+    const nativeKey = normalizeCallKey(nativeUUID);
+    const context = this.nativeCallContexts.get(nativeKey);
+
+    this.clearIncomingCallTimeout(nativeUUID);
+    this.displayedNativeCallUUIDs.delete(nativeUUID);
+    this.nativeCallContexts.delete(nativeKey);
+
+    for (const [alias, mappedNativeUUID] of Array.from(this.nativeCallAliases.entries())) {
+      if (normalizeCallKey(mappedNativeUUID) === nativeKey || alias === nativeKey) {
+        this.nativeCallAliases.delete(alias);
+      }
+    }
+
+    CallState.clearIncomingCall(context?.conversationId || nativeUUID);
+  }
+
+  private clearNativeCallMemory() {
+    this.incomingCallTimeouts.forEach(clearTimeout);
+    this.incomingCallTimeouts.clear();
+    this.nativeCallAliases.clear();
+    this.nativeCallContexts.clear();
+    this.displayedNativeCallUUIDs.clear();
+    CallState.clearAllIncomingCalls();
+  }
+
   private reportCallEndedSilently(uuid: string, reason: number) {
     const nativeUUID = this.resolveCallUUID(uuid);
-    const context = this.getNativeCallContext(nativeUUID);
     if (!this.canUseNativeUUID(nativeUUID, 'reportEndCallWithUUID')) return;
     this.clearIncomingCallTimeout(nativeUUID);
-    this._suppressNextEndCall = true;
+    this.suppressEndCallOnce(nativeUUID);
     RNCallKeep.reportEndCallWithUUID(nativeUUID, reason);
-    this.displayedNativeCallUUIDs.delete(nativeUUID);
-    CallState.clearIncomingCall(context?.conversationId || nativeUUID);
+    this.forgetNativeCall(nativeUUID);
   }
 
   private rememberNativeCall(nativeUUID: string, requestedUUID: string, context: NativeCallContext = {}) {
@@ -240,9 +297,9 @@ class CallKeepService {
   };
 
   private handleEndCall = async ({ callUUID }: { callUUID: string }) => {
-    if (this._suppressNextEndCall) {
-      console.log('[CallKeep] ⏭️ Suppressing endCall (triggered by internal cleanup).');
-      this._suppressNextEndCall = false;
+    if (this.consumeSuppressedEndCall(callUUID)) {
+      console.log('[CallKeep] Suppressing endCall for UUID ended by internal cleanup:', callUUID);
+      this.forgetNativeCall(callUUID);
       return;
     }
 
@@ -250,6 +307,7 @@ class CallKeepService {
     const context = this.getNativeCallContext(callUUID);
     const wasInsideCallScreen = CallState.isInsideCallScreen;
     CallState.clearIncomingCall(context?.conversationId || callUUID);
+    this.displayedNativeCallUUIDs.delete(this.resolveCallUUID(callUUID));
     DeviceEventEmitter.emit('CallKeep_EndCall', {
       callUUID,
       ...context,
@@ -258,6 +316,7 @@ class CallKeepService {
 
     if (wasInsideCallScreen) {
       console.log('[CallKeep] Native end belongs to an active CallScreen; CallScreen will persist call_ended.');
+      this.forgetNativeCall(callUUID);
       return;
     }
 
@@ -291,6 +350,8 @@ class CallKeepService {
       console.log('[CallKeep] ✅ Successfully notified backend of native rejection.');
     } catch (e) {
       console.log('[CallKeep] 🛑 Failed to report native rejection:', e);
+    } finally {
+      this.forgetNativeCall(callUUID);
     }
   };
 
@@ -338,13 +399,11 @@ class CallKeepService {
 
   endCallSilently(uuid: string) {
     const nativeUUID = this.resolveCallUUID(uuid);
-    const context = this.getNativeCallContext(nativeUUID);
     if (!this.canUseNativeUUID(nativeUUID, 'endCallSilently')) return;
-    this._suppressNextEndCall = true;
+    this.suppressEndCallOnce(nativeUUID);
     this.clearIncomingCallTimeout(nativeUUID);
     RNCallKeep.endCall(nativeUUID);
-    this.displayedNativeCallUUIDs.delete(nativeUUID);
-    CallState.clearIncomingCall(context?.conversationId || nativeUUID);
+    this.forgetNativeCall(nativeUUID);
   }
 
   dismissIncomingCall(uuid: string) {
@@ -366,31 +425,25 @@ class CallKeepService {
   }
 
   endAllCalls() {
-    this.incomingCallTimeouts.forEach(clearTimeout);
-    this.incomingCallTimeouts.clear();
-    this.nativeCallAliases.clear();
-    this.nativeCallContexts.clear();
-    this.displayedNativeCallUUIDs.clear();
-    CallState.clearAllIncomingCalls();
     try {
       RNCallKeep.endAllCalls();
     } catch (error) {
       console.warn('[CallKeep] Failed to end all calls:', error);
+    } finally {
+      this.clearNativeCallMemory();
     }
   }
 
   endAllCallsSilently() {
-    this._suppressNextEndCall = true;
-    this.incomingCallTimeouts.forEach(clearTimeout);
-    this.incomingCallTimeouts.clear();
-    this.nativeCallAliases.clear();
-    this.nativeCallContexts.clear();
-    this.displayedNativeCallUUIDs.clear();
-    CallState.clearAllIncomingCalls();
+    const nativeUUIDs = Array.from(this.displayedNativeCallUUIDs);
+    nativeUUIDs.forEach((nativeUUID) => this.suppressEndCallOnce(nativeUUID));
+
     try {
       RNCallKeep.endAllCalls();
     } catch (error) {
       console.warn('[CallKeep] Failed to silently end all calls:', error);
+    } finally {
+      this.clearNativeCallMemory();
     }
   }
 
