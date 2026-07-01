@@ -19,12 +19,13 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
       "usesAppleSignIn": true,
-      "buildNumber": "1",
+      "buildNumber": "4",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
         "NSLocationWhenInUseUsageDescription": "Tincadia necesita tu ubicación para enviar coordenadas precisas en caso de emergencia SOS.",
         "NSFaceIDUsageDescription": "Tincadia usa Face ID para iniciar sesión de forma rápida y segura.",
+        "NSSpeechRecognitionUsageDescription": "Tincadia necesita acceso al reconocimiento de voz para convertir tu voz en texto.",
         "UIBackgroundModes": [
           "audio",
           "fetch",
@@ -40,7 +41,7 @@
     "android": {
       "package": "com.tincadia.app",
       "usesCleartextTraffic": true,
-      "versionCode": 16,
+      "versionCode": 17,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -150,7 +151,15 @@
       "./plugins/withPictureInPicture",
       "@config-plugins/react-native-callkeep",
       "./plugins/withFirebaseManifestFix",
-      "./plugins/withTabletSupport"
+      "./plugins/withTabletSupport",
+      "./plugins/withVoipAppDelegate",
+      [
+        "@react-native-voice/voice",
+        {
+          "microphonePermission": "Tincadia necesita acceso al micrófono para el dictado por voz en la pizarra.",
+          "speechRecognitionPermission": "Tincadia necesita acceso al reconocimiento de voz para convertir tu voz en texto."
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"

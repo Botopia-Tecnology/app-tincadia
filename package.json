@@ -22,6 +22,7 @@
     "@react-native-firebase/auth": "24.1.1",
     "@react-native-firebase/messaging": "24.1.1",
     "@react-native-google-signin/google-signin": "^16.0.0",
+    "@react-native-voice/voice": "^3.2.4",
     "@sentry/react-native": "^7.8.0",
     "@supabase/supabase-js": "^2.87.1",
     "base64-arraybuffer": "^1.0.2",
