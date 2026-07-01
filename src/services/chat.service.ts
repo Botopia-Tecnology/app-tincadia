@@ -5,7 +5,7 @@
  */
 
 import { apiClient } from '../lib/api-client';
-import { API_ENDPOINTS } from '../config/api.config';
+import { API_ENDPOINTS, API_URL } from '../config/api.config';
 import { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata } from '../types/chat.types';
 
 export type { Message, Conversation, UserProfile, GroupParticipant, MessageMetadata };
