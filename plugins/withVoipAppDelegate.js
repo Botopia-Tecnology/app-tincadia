@@ -29,6 +29,19 @@ import RNCallKeep
 #endif
 
 extension AppDelegate: PKPushRegistryDelegate {
+    private func tincadiaEnsureCallKeepSetup() {
+        #if canImport(RNCallKeep)
+        RNCallKeep.setup([
+            "appName": "Tincadia",
+            "handleType": "generic",
+            "supportsVideo": true,
+            "includesCallsInRecents": true,
+            "maximumCallGroups": 3,
+            "maximumCallsPerCallGroup": 1
+        ])
+        #endif
+    }
+
     public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
         if let managerClass = NSClassFromString("RNVoipPushNotificationManager") as? NSObject.Type {
             let selector = NSSelectorFromString("didUpdatePushCredentials:forType:")
@@ -47,6 +60,8 @@ extension AppDelegate: PKPushRegistryDelegate {
         payloadDict["originalCallUUID"] = rawUUID
         let callerName = (payloadDict["callerName"] as? String) ?? (payloadDict["senderName"] as? String) ?? "Tincadia"
         let handle = (payloadDict["handle"] as? String) ?? (payloadDict["senderName"] as? String) ?? "Tincadia Call"
+
+        tincadiaEnsureCallKeepSetup()
 
         if let managerClass = NSClassFromString("RNVoipPushNotificationManager") as? NSObject.Type {
             let selector = NSSelectorFromString("didReceiveIncomingPushWithPayload:forType:")
@@ -112,6 +127,15 @@ static NSString *TincadiaValidCallUUID(NSDictionary *payload) {
     payloadDict[@"originalCallUUID"] = rawUUID ?: uuid;
     NSString *callerName = payloadDict[@"callerName"] ?: payloadDict[@"senderName"] ?: @"Tincadia";
     NSString *handle = payloadDict[@"handle"] ?: payloadDict[@"senderName"] ?: @"Tincadia Call";
+
+    [RNCallKeep setup:@{
+        @"appName": @"Tincadia",
+        @"handleType": @"generic",
+        @"supportsVideo": @YES,
+        @"includesCallsInRecents": @YES,
+        @"maximumCallGroups": @3,
+        @"maximumCallsPerCallGroup": @1
+    }];
 
     [RNVoipPushNotificationManager didReceiveIncomingPushWithPayload:payload forType:(NSString *)type];
 

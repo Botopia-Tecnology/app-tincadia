@@ -331,9 +331,15 @@ export function ChatView(props: ChatViewProps) {
     const username = currentUser?.firstName || 'Usuario';
     // Just join the existing room. Do NOT send a 'call' message.
     try {
-      callKeepService.endAllCallsSilently();
+      const answeredNativeCall =
+        callKeepService.answerIncomingCallFromApp(roomName) ||
+        callKeepService.answerIncomingCallFromApp(conversationId);
+
+      if (!answeredNativeCall) {
+        callKeepService.endAllCallsSilently();
+      }
     } catch (error) {
-      console.warn('[CALL_DEBUG] Could not clear native call UI before joining call:', error);
+      console.warn('[CALL_DEBUG] Could not synchronize native call UI before joining call:', error);
     }
     onNavigateCall(roomName, username, conversationId, userId, callSessionId);
   };

@@ -10,6 +10,12 @@ function normalizeId(value?: string | null): string | null {
 
 const activeIncomingConversations = new Set<string>();
 const incomingCallByNativeId = new Map<string, string>();
+let activeCallScreenContext: {
+  roomName?: string | null;
+  conversationId?: string | null;
+  callSessionId?: string | null;
+  nativeCallUUID?: string | null;
+} | null = null;
 
 function emitCallStateChanged(conversationId?: string | null) {
   DeviceEventEmitter.emit(CALL_STATE_CHANGED_EVENT, {
@@ -19,6 +25,48 @@ function emitCallStateChanged(conversationId?: string | null) {
 
 export const CallState = {
   isInsideCallScreen: false,
+
+  setActiveCallScreen(context: {
+    roomName?: string | null;
+    conversationId?: string | null;
+    callSessionId?: string | null;
+    nativeCallUUID?: string | null;
+  }) {
+    activeCallScreenContext = {
+      roomName: normalizeId(context.roomName),
+      conversationId: normalizeId(context.conversationId),
+      callSessionId: normalizeId(context.callSessionId),
+      nativeCallUUID: normalizeId(context.nativeCallUUID),
+    };
+    this.isInsideCallScreen = true;
+  },
+
+  clearActiveCallScreen() {
+    activeCallScreenContext = null;
+    this.isInsideCallScreen = false;
+  },
+
+  matchesActiveCallScreen(context: {
+    roomName?: string | null;
+    conversationId?: string | null;
+    callSessionId?: string | null;
+    nativeCallUUID?: string | null;
+    callUUID?: string | null;
+  }): boolean {
+    if (!activeCallScreenContext) return false;
+
+    const roomName = normalizeId(context.roomName);
+    const conversationId = normalizeId(context.conversationId);
+    const callSessionId = normalizeId(context.callSessionId);
+    const nativeCallUUID = normalizeId(context.nativeCallUUID || context.callUUID);
+
+    return Boolean(
+      (callSessionId && activeCallScreenContext.callSessionId === callSessionId) ||
+      (conversationId && activeCallScreenContext.conversationId === conversationId) ||
+      (roomName && activeCallScreenContext.roomName === roomName) ||
+      (nativeCallUUID && activeCallScreenContext.nativeCallUUID === nativeCallUUID)
+    );
+  },
 
   setIncomingCallActive(conversationId?: string | null, nativeCallId?: string | null) {
     const normalizedConversationId = normalizeId(conversationId);
@@ -49,6 +97,15 @@ export const CallState = {
     }
 
     emitCallStateChanged(conversationId);
+  },
+
+  getIncomingCallConversationId(conversationIdOrNativeId?: string | null): string | undefined {
+    const normalizedId = normalizeId(conversationIdOrNativeId);
+    if (!normalizedId) return undefined;
+
+    return incomingCallByNativeId.get(normalizedId) || (
+      activeIncomingConversations.has(normalizedId) ? normalizedId : undefined
+    );
   },
 
   clearAllIncomingCalls() {

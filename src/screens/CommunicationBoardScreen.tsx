@@ -22,6 +22,7 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     isCorrecting,
     isPaused,
     isListening,
+    voiceRecognitionError,
     words,
     currentWordIndex,
     hasNextSentence,
@@ -138,8 +139,8 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
 
               <View style={styles.actionRow}>
                 <TouchableOpacity style={styles.actionButton} onPress={handleStop}>
-                  <Ionicons name="square" size={28} color={colors.textSecondary} />
-                  <Text style={styles.actionText}>Detener</Text>
+                  <Ionicons name="square" size={24} color={colors.textSecondary} />
+                  <Text style={styles.actionText} numberOfLines={2}>Detener</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -150,8 +151,8 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
                   onPress={handleNextSentence}
                   disabled={!hasNextSentence}
                 >
-                  <Ionicons name="play-skip-forward" size={28} color={colors.textSecondary} />
-                  <Text style={styles.actionText}>Avanzar</Text>
+                  <Ionicons name="play-skip-forward" size={24} color={colors.textSecondary} />
+                  <Text style={styles.actionText} numberOfLines={2}>Avanzar</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -170,23 +171,25 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
                 <TouchableOpacity 
                   style={[
                     styles.actionButton, 
-                    isListening && styles.actionButtonActive
+                    isListening && styles.actionButtonActive,
+                    voiceRecognitionError && !isListening && { opacity: 0.45 }
                   ]} 
                   onPress={isListening ? stopListening : startListening}
+                  disabled={Boolean(voiceRecognitionError) && !isListening}
                 >
                   <Ionicons 
-                    name={isListening ? "mic" : "mic-outline"} 
-                    size={28} 
+                    name={voiceRecognitionError && !isListening ? "mic-off-outline" : isListening ? "mic" : "mic-outline"} 
+                    size={24} 
                     color={isListening ? "#EF4444" : colors.textSecondary} 
                   />
-                  <Text style={[styles.actionText, isListening && { color: '#EF4444' }]}>
-                    {isListening ? 'Escuchando' : 'Dictar por Voz'}
+                  <Text style={[styles.actionText, isListening && { color: '#EF4444' }]} numberOfLines={2}>
+                    {isListening ? 'Escuchando' : voiceRecognitionError ? 'Dictado no disponible' : 'Dictar por Voz'}
                   </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.actionButton} onPress={handleClear}>
-                  <Ionicons name="trash-outline" size={28} color={colors.textSecondary} />
-                  <Text style={styles.actionText}>Limpiar Texto</Text>
+                  <Ionicons name="trash-outline" size={24} color={colors.textSecondary} />
+                  <Text style={styles.actionText} numberOfLines={2}>Limpiar Texto</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -198,11 +201,11 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
                   disabled={isCorrecting || !text.trim()}
                 >
                   {isCorrecting ? (
-                    <ActivityIndicator size="small" color="#FF69B4" style={{ height: 28 }} />
+                    <ActivityIndicator size="small" color="#FF69B4" style={{ height: 24 }} />
                   ) : (
-                    <MagicPencilIcon size={28} />
+                    <MagicPencilIcon size={24} />
                   )}
-                  <Text style={styles.actionText}>Corregir Español</Text>
+                  <Text style={styles.actionText} numberOfLines={2}>Corregir Español</Text>
                 </TouchableOpacity>
               </View>
             </>

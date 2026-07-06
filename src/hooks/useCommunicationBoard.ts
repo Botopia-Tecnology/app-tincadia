@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Alert, NativeModules, Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import Voice from '@react-native-voice/voice';
 import { chatService } from '../services/chat.service';
@@ -32,11 +32,19 @@ const tokenizeWords = (inputText: string): WordToken[] => {
   return tokens;
 };
 
+const getNativeVoiceModule = () => NativeModules.Voice || NativeModules.RCTVoice;
+
+const hasNativeVoiceModule = () => {
+  const nativeVoiceModule = getNativeVoiceModule();
+  return Boolean(nativeVoiceModule?.startSpeech);
+};
+
 export const useCommunicationBoard = (onClose?: () => void) => {
   const [text, setText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voiceRecognitionError, setVoiceRecognitionError] = useState<string | null>(null);
 
   // Estados del Karaoke por palabra
   const [words, setWords] = useState<WordToken[]>([]);
@@ -49,6 +57,14 @@ export const useCommunicationBoard = (onClose?: () => void) => {
   const androidTimerRef = useRef<any>(null);
 
   useEffect(() => {
+    if (!hasNativeVoiceModule()) {
+      setVoiceRecognitionError('El dictado por voz no está disponible en esta versión instalada.');
+      console.warn(
+        'Voice recognition native module is unavailable. Expected NativeModules.Voice or NativeModules.RCTVoice.'
+      );
+      return;
+    }
+
     // Configurar listeners de Voice para dictado por voz
     Voice.onSpeechStart = () => setIsListening(true);
     Voice.onSpeechEnd = () => setIsListening(false);
@@ -72,7 +88,13 @@ export const useCommunicationBoard = (onClose?: () => void) => {
         clearTimeout(androidTimerRef.current);
       }
       Speech.stop();
-      Voice.destroy().then(Voice.removeAllListeners);
+      Voice.destroy()
+        .catch((error: unknown) => {
+          console.warn('Failed to destroy voice recognition:', error);
+        })
+        .finally(() => {
+          Voice.removeAllListeners();
+        });
     };
   }, []);
 
@@ -271,9 +293,32 @@ export const useCommunicationBoard = (onClose?: () => void) => {
 
   const startListening = async () => {
     try {
+      if (!hasNativeVoiceModule()) {
+        const message = 'El dictado por voz no está disponible en esta versión instalada.';
+        setVoiceRecognitionError(message);
+        setIsListening(false);
+        console.warn(
+          'Voice recognition native module is unavailable. Expected NativeModules.Voice or NativeModules.RCTVoice.'
+        );
+        Alert.alert('Dictado no disponible', message);
+        return;
+      }
+
       if (isSpeaking) {
         await handleStop();
       }
+
+      const isAvailable = await Voice.isAvailable();
+      if (!isAvailable) {
+        const message = 'Este dispositivo no tiene un servicio de reconocimiento de voz disponible.';
+        setVoiceRecognitionError(message);
+        setIsListening(false);
+        console.warn(message);
+        Alert.alert('Dictado no disponible', message);
+        return;
+      }
+
+      setVoiceRecognitionError(null);
       setIsListening(true);
       await Voice.start('es-ES');
     } catch (e) {
@@ -284,6 +329,11 @@ export const useCommunicationBoard = (onClose?: () => void) => {
 
   const stopListening = async () => {
     try {
+      if (!hasNativeVoiceModule()) {
+        setIsListening(false);
+        return;
+      }
+
       await Voice.stop();
       setIsListening(false);
     } catch (e) {
@@ -350,6 +400,7 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     isCorrecting,
     isPaused,
     isListening,
+    voiceRecognitionError,
     words,
     currentWordIndex,
     hasNextSentence,

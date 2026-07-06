@@ -67,6 +67,9 @@ class CallKeepService {
   /** Native UUIDs ended by app cleanup; only matching endCall events are suppressed. */
   private suppressedEndCallUUIDs: Set<string> = new Set();
   private suppressedEndCallTimers: Map<string, NodeJS.Timeout> = new Map();
+  /** Native UUIDs answered from app UI; suppresses the native answer event to avoid double navigation. */
+  private suppressedAnswerCallUUIDs: Set<string> = new Set();
+  private suppressedAnswerCallTimers: Map<string, NodeJS.Timeout> = new Map();
   private incomingCallTimeouts: Map<string, NodeJS.Timeout> = new Map();
   private nativeCallContexts: Map<string, NativeCallContext> = new Map();
   private nativeCallAliases: Map<string, string> = new Map();
@@ -82,6 +85,11 @@ class CallKeepService {
       this.displayedNativeCallUUIDs.add(nativeUUID);
       CallState.setIncomingCallActive(context.conversationId, nativeUUID);
     }
+  }
+
+  getIncomingCallContext(uuid: string): NativeCallContext | undefined {
+    const context = this.getNativeCallContext(uuid);
+    return context ? { ...context } : undefined;
   }
 
   private canUseNativeUUID(uuid: string, operation: string) {
@@ -121,6 +129,33 @@ class CallKeepService {
     return true;
   }
 
+  private suppressAnswerCallOnce(uuid: string) {
+    const nativeUUID = this.resolveCallUUID(uuid);
+    const key = normalizeCallKey(nativeUUID);
+    this.suppressedAnswerCallUUIDs.add(key);
+
+    const previousTimer = this.suppressedAnswerCallTimers.get(key);
+    if (previousTimer) clearTimeout(previousTimer);
+
+    const timer = setTimeout(() => {
+      this.suppressedAnswerCallUUIDs.delete(key);
+      this.suppressedAnswerCallTimers.delete(key);
+    }, 8000);
+
+    this.suppressedAnswerCallTimers.set(key, timer);
+  }
+
+  private consumeSuppressedAnswerCall(uuid: string) {
+    const key = this.getNativeUUIDKey(uuid);
+    if (!this.suppressedAnswerCallUUIDs.has(key)) return false;
+
+    this.suppressedAnswerCallUUIDs.delete(key);
+    const timer = this.suppressedAnswerCallTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.suppressedAnswerCallTimers.delete(key);
+    return true;
+  }
+
   private clearIncomingCallTimeout(uuid: string) {
     const nativeUUID = this.resolveCallUUID(uuid);
     const timeout = this.incomingCallTimeouts.get(nativeUUID);
@@ -138,6 +173,7 @@ class CallKeepService {
     this.clearIncomingCallTimeout(nativeUUID);
     this.displayedNativeCallUUIDs.delete(nativeUUID);
     this.nativeCallContexts.delete(nativeKey);
+    this.suppressedAnswerCallUUIDs.delete(nativeKey);
 
     for (const [alias, mappedNativeUUID] of Array.from(this.nativeCallAliases.entries())) {
       if (normalizeCallKey(mappedNativeUUID) === nativeKey || alias === nativeKey) {
@@ -154,6 +190,9 @@ class CallKeepService {
     this.nativeCallAliases.clear();
     this.nativeCallContexts.clear();
     this.displayedNativeCallUUIDs.clear();
+    this.suppressedAnswerCallTimers.forEach(clearTimeout);
+    this.suppressedAnswerCallTimers.clear();
+    this.suppressedAnswerCallUUIDs.clear();
     CallState.clearAllIncomingCalls();
   }
 
@@ -281,19 +320,32 @@ class CallKeepService {
   }
 
   private handleAnswerCall = ({ callUUID }: { callUUID: string }) => {
-    console.log('[CallKeep] ✅ Answered call:', callUUID);
+    if (this.consumeSuppressedAnswerCall(callUUID)) {
+      console.log('[CallKeep] Suppressing answerCall for UUID answered by app UI:', callUUID);
+      return;
+    }
+
+    console.log('[CallKeep] Answered call:', callUUID);
     if (Platform.OS === 'android') {
       RNCallKeep.setCurrentCallActive(callUUID);
     }
     this.clearIncomingCallTimeout(callUUID);
     const context = this.getNativeCallContext(callUUID);
+    const fallbackConversationId = CallState.getIncomingCallConversationId(callUUID);
     CallState.clearIncomingCall(context?.conversationId || callUUID);
 
     if (Platform.OS === 'android') {
       RNCallKeep.backToForeground();
     }
 
-    DeviceEventEmitter.emit('CallKeep_AnswerCall', { callUUID, ...context });
+    DeviceEventEmitter.emit('CallKeep_AnswerCall', {
+      callUUID,
+      conversationId: context?.conversationId || fallbackConversationId,
+      roomName: context?.roomName || (fallbackConversationId ? `conv_${fallbackConversationId}` : undefined),
+      callSessionId: context?.callSessionId,
+      senderId: context?.senderId,
+      senderName: context?.senderName,
+    });
   };
 
   private handleEndCall = async ({ callUUID }: { callUUID: string }) => {
@@ -303,14 +355,25 @@ class CallKeepService {
       return;
     }
 
-    console.log('[CallKeep] ❌ Ended call (native event triggered):', callUUID);
+    console.log('[CallKeep] Ended call (native event triggered):', callUUID);
     const context = this.getNativeCallContext(callUUID);
-    const wasInsideCallScreen = CallState.isInsideCallScreen;
-    CallState.clearIncomingCall(context?.conversationId || callUUID);
-    this.displayedNativeCallUUIDs.delete(this.resolveCallUUID(callUUID));
+    const nativeUUID = this.resolveCallUUID(callUUID);
+    const fallbackConversationId = CallState.getIncomingCallConversationId(callUUID);
+    const wasInsideCallScreen =
+      CallState.isInsideCallScreen ||
+      CallState.matchesActiveCallScreen({
+        callUUID: nativeUUID,
+        nativeCallUUID: nativeUUID,
+        roomName: context?.roomName,
+        conversationId: context?.conversationId || fallbackConversationId,
+        callSessionId: context?.callSessionId,
+      });
+    CallState.clearIncomingCall(context?.conversationId || fallbackConversationId || callUUID);
+    this.displayedNativeCallUUIDs.delete(nativeUUID);
     DeviceEventEmitter.emit('CallKeep_EndCall', {
       callUUID,
       ...context,
+      conversationId: context?.conversationId || fallbackConversationId,
       wasInsideCallScreen,
     });
 
@@ -326,14 +389,21 @@ class CallKeepService {
       const userStr = await userStorage.getUser();
 
       if (!userStr) {
-        console.warn('[CallKeep] ⚠️ userStr is empty! Cannot send call_rejected to backend.');
+        console.warn('[CallKeep] userStr is empty! Cannot send call_rejected to backend.');
         return;
       }
 
       const user = JSON.parse(userStr);
       console.log('[CallKeep] User found in MMKV:', user.id);
 
-      const realConvId = context?.conversationId || (callUUID.startsWith('conv_') ? callUUID.replace('conv_', '') : callUUID);
+      const realConvId = context?.conversationId || fallbackConversationId || (callUUID.startsWith('conv_') ? callUUID.replace('conv_', '') : undefined);
+      if (!realConvId) {
+        console.warn('[CallKeep] Cannot send call_rejected without conversation context for native UUID:', callUUID);
+        return;
+      }
+      const rejectedRoomName = context?.roomName && !UUID_REGEX.test(context.roomName)
+        ? context.roomName
+        : `conv_${realConvId}`;
       console.log('[CallKeep] Sending call_rejected for conversation:', realConvId);
 
       const { chatService } = require('./chat.service');
@@ -342,14 +412,14 @@ class CallKeepService {
         senderId: user.id,
         content: 'Llamada rechazada',
         type: 'call_rejected' as any,
-        metadata: context ? {
-          roomName: context.roomName,
-          callSessionId: context.callSessionId,
-        } : undefined,
+        metadata: {
+          roomName: rejectedRoomName,
+          callSessionId: context?.callSessionId,
+        },
       });
-      console.log('[CallKeep] ✅ Successfully notified backend of native rejection.');
+      console.log('[CallKeep] Successfully notified backend of native rejection.');
     } catch (e) {
-      console.log('[CallKeep] 🛑 Failed to report native rejection:', e);
+      console.log('[CallKeep] Failed to report native rejection:', e);
     } finally {
       this.forgetNativeCall(callUUID);
     }
@@ -410,18 +480,41 @@ class CallKeepService {
     this.reportCallEndedSilently(uuid, CONSTANTS.END_CALL_REASONS.REMOTE_ENDED);
   }
 
-  answerIncomingCallFromApp(uuid: string) {
+  answerIncomingCallFromApp(uuid: string): boolean {
     const nativeUUID = this.resolveCallUUID(uuid);
     const context = this.getNativeCallContext(nativeUUID);
-    if (!this.canUseNativeUUID(nativeUUID, 'answerIncomingCall')) return;
+    const hasNativeCallToAnswer = this.displayedNativeCallUUIDs.has(nativeUUID) || Boolean(context);
+    if (!hasNativeCallToAnswer) return false;
+    if (!this.canUseNativeUUID(nativeUUID, 'answerIncomingCall')) return false;
+
     this.clearIncomingCallTimeout(nativeUUID);
-    RNCallKeep.answerIncomingCall(nativeUUID);
     CallState.clearIncomingCall(context?.conversationId || nativeUUID);
+    this.suppressAnswerCallOnce(nativeUUID);
+
+    try {
+      RNCallKeep.answerIncomingCall(nativeUUID);
+    } catch (error) {
+      console.warn('[CallKeep] Failed to answer native incoming call from app UI:', error);
+      return false;
+    }
 
     if (Platform.OS === 'android') {
       RNCallKeep.setCurrentCallActive(nativeUUID);
       RNCallKeep.backToForeground();
     }
+
+    setTimeout(() => {
+      try {
+        // The React Native CallScreen owns the actual LiveKit media session.
+        // After marking the native incoming call as answered, remove the native
+        // call UI without letting CallKit emit a rejection/end side effect.
+        this.endCallSilently(nativeUUID);
+      } catch (error) {
+        console.warn('[CallKeep] Failed to clear native answered call from app UI:', error);
+      }
+    }, Platform.OS === 'ios' ? 250 : 0);
+
+    return true;
   }
 
   endAllCalls() {

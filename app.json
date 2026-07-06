@@ -19,7 +19,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
       "usesAppleSignIn": true,
-      "buildNumber": "4",
+      "buildNumber": "5",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
@@ -41,7 +41,7 @@
     "android": {
       "package": "com.tincadia.app",
       "usesCleartextTraffic": true,
-      "versionCode": 17,
+      "versionCode": 18,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

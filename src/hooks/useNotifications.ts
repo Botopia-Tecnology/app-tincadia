@@ -10,7 +10,7 @@ import { User } from '../types/auth.types';
 import { NavigationParams } from '../types/navigation.types';
 import { callKeepService } from '../services/callkeep.service';
 import { chatService } from '../services/chat.service';
-import { saveMessage, updateConversationPreview, deleteMessage } from '../database/chatDatabase';
+import { saveMessage, updateConversationPreview, deleteMessage, getMessages } from '../database/chatDatabase';
 
 /** Realtime/API payloads may use snake_case or camelCase; UUIDs may differ in casing. */
 function isSameUserId(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -22,6 +22,37 @@ function getStringValue(value: unknown): string | undefined {
   if (value == null) return undefined;
   const text = String(value);
   return text.length > 0 ? text : undefined;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+
+function getConversationIdFromRoomName(roomName?: string): string | undefined {
+  if (!roomName?.startsWith('conv_')) return undefined;
+  const conversationId = roomName.replace(/^conv_/, '');
+  return conversationId.length > 0 ? conversationId : undefined;
+}
+
+function getLatestLocalCallMetadata(conversationId?: string) {
+  if (!conversationId) return undefined;
+
+  try {
+    const localMsgs = getMessages(conversationId);
+    return [...localMsgs]
+      .reverse()
+      .find((message: any) => message.type === 'call')?.metadata as
+      | { roomName?: string; callSessionId?: string; call_session_id?: string }
+      | undefined;
+  } catch (error) {
+    console.warn('[useNotifications] Could not read local call metadata:', error);
+    return undefined;
+  }
+}
+
+function asSafeRoomName(value?: string, nativeCallUUID?: string): string | undefined {
+  if (!value) return undefined;
+  if (UUID_REGEX.test(value)) return undefined;
+  if (nativeCallUUID && value.toLowerCase() === nativeCallUUID.toLowerCase()) return undefined;
+  return value;
 }
 
 export const useNotifications = (user: User | null, onNavigateToChat: (params: NavigationParams) => void, onNavigateToCall: (params: NavigationParams) => void) => {
@@ -36,6 +67,42 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
   const activeCallRef = useRef<string | null>(null);
   const activeIncomingCallRef = useRef<string | null>(null);
+
+  const resolveIncomingCallRouting = (payload: {
+    callUUID?: string;
+    roomName?: string;
+    conversationId?: string;
+    callSessionId?: string;
+  }) => {
+    const nativeCallUUID = payload.callUUID ? callKeepService.resolveCallUUID(payload.callUUID) : undefined;
+    const nativeContext = payload.callUUID ? callKeepService.getIncomingCallContext(payload.callUUID) : undefined;
+    const mappedConversationId = payload.callUUID ? CallState.getIncomingCallConversationId(payload.callUUID) : undefined;
+
+    const conversationId =
+      payload.conversationId ||
+      nativeContext?.conversationId ||
+      mappedConversationId ||
+      getConversationIdFromRoomName(payload.roomName) ||
+      getConversationIdFromRoomName(nativeContext?.roomName);
+
+    const latestCallMetadata = getLatestLocalCallMetadata(conversationId);
+    const roomName =
+      asSafeRoomName(payload.roomName, nativeCallUUID) ||
+      asSafeRoomName(nativeContext?.roomName, nativeCallUUID) ||
+      asSafeRoomName(latestCallMetadata?.roomName, nativeCallUUID) ||
+      (conversationId ? `conv_${conversationId}` : undefined);
+
+    return {
+      nativeCallUUID,
+      conversationId,
+      roomName,
+      callSessionId:
+        payload.callSessionId ||
+        nativeContext?.callSessionId ||
+        latestCallMetadata?.callSessionId ||
+        latestCallMetadata?.call_session_id,
+    };
+  };
 
   const clearNativeCallUi = (payload: Record<string, unknown>) => {
     const callUUID = getStringValue(payload.callUUID);
@@ -411,45 +478,64 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   useEffect(() => {
     if (!user) return;
     const sub = DeviceEventEmitter.addListener('CallKeep_AnswerCall', ({ callUUID, roomName, conversationId, callSessionId }) => {
-      // Limpiar la referencia antes de colgar nativamente para que el evento 'CallKeep_EndCall' no ejecute el rechazo local
+      const routing = resolveIncomingCallRouting({ callUUID, roomName, conversationId, callSessionId });
+
+      if (!routing.roomName || !routing.conversationId) {
+        console.warn('[useNotifications] Refusing to navigate answered native call without canonical room context.', {
+          callUUID,
+          roomName,
+          conversationId,
+          callSessionId,
+          resolved: routing,
+        });
+        return;
+      }
+
+      // Clear the reference before ending native UI so CallKeep_EndCall does not reject the call locally.
       activeIncomingCallRef.current = null;
-      
-      // Cerrar la interfaz nativa ya que la app manejará la videollamada internamente
+
+      // React Native CallScreen owns the video call. Close only the native CallKit UI.
       try {
         callKeepService.endCallSilently(callUUID);
       } catch (e) {
         console.warn('Error terminando llamada nativa al contestar', e);
       }
 
-      const resolvedRoomName = typeof roomName === 'string' && roomName.length > 0 ? roomName : callUUID;
-      const realConvId = typeof conversationId === 'string' && conversationId.length > 0
-        ? conversationId
-        : (resolvedRoomName.startsWith('conv_') ? resolvedRoomName.replace('conv_', '') : resolvedRoomName);
-      CallState.clearIncomingCall(realConvId);
+      CallState.clearIncomingCall(routing.conversationId);
       onNavigateToCall({
-        roomName: resolvedRoomName,
+        roomName: routing.roomName,
         username: user.firstName || user.email?.split('@')[0] || 'Usuario',
-        conversationId: realConvId,
+        conversationId: routing.conversationId,
         userId: user.id,
-        callSessionId,
-        isIncomingCall: true
+        callSessionId: routing.callSessionId,
+        isIncomingCall: true,
+        nativeCallUUID: routing.nativeCallUUID,
       });
     });
 
     const subEnd = DeviceEventEmitter.addListener('CallKeep_EndCall', ({ callUUID, roomName, conversationId, callSessionId }) => {
       console.log('Call ended internally via Native UI');
-      if (activeIncomingCallRef.current === callKeepService.resolveCallUUID(callUUID)) {
+      const routing = resolveIncomingCallRouting({ callUUID, roomName, conversationId, callSessionId });
+      if (activeIncomingCallRef.current === routing.nativeCallUUID) {
         activeIncomingCallRef.current = null;
 
-        // Extract real conversation ID
-        const resolvedRoomName = typeof roomName === 'string' && roomName.length > 0 ? roomName : callUUID;
-        const realConvId = typeof conversationId === 'string' && conversationId.length > 0
-          ? conversationId
-          : (resolvedRoomName.startsWith('conv_') ? resolvedRoomName.replace('conv_', '') : resolvedRoomName);
+        if (!routing.roomName || !routing.conversationId) {
+          console.warn('[useNotifications] Refusing to reject native call without canonical room context.', {
+            callUUID,
+            roomName,
+            conversationId,
+            callSessionId,
+            resolved: routing,
+          });
+          return;
+        }
+
+        const resolvedRoomName = routing.roomName;
+        const realConvId = routing.conversationId;
         CallState.clearIncomingCall(realConvId);
 
         // Lookup the latest call message for metadata
-        const localMsgs = require('../database/chatDatabase').getMessages(realConvId);
+        const localMsgs = getMessages(realConvId);
         const latestCall = [...localMsgs].reverse().find((m: any) => m.type === 'call');
         const metadata = latestCall?.metadata;
 

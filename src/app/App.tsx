@@ -93,7 +93,7 @@ function AppContent() {
   const { colors } = useTheme();
   
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
-  const [callParams, setCallParams] = useState<{ roomName?: string; username?: string; conversationId?: string; userId?: string; callSessionId?: string; isIncomingCall?: boolean } | null>(null);
+  const [callParams, setCallParams] = useState<{ roomName?: string; username?: string; conversationId?: string; userId?: string; callSessionId?: string; isIncomingCall?: boolean; nativeCallUUID?: string } | null>(null);
   const [profileParams, setProfileParams] = useState<{ openManagePlan?: boolean } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string; description?: string } | null>(null);
@@ -308,6 +308,7 @@ function AppContent() {
             userId={callParams?.userId}
             callSessionId={callParams?.callSessionId}
             isIncomingCall={!!callParams?.isIncomingCall}
+            nativeCallUUID={callParams?.nativeCallUUID}
             isManualPipMode={!isCallFullScreen}
             onRestoreFromPip={() => currentScreen !== 'call' && setScreenStack(prev => [...prev, 'call'])}
             onMinimize={() => currentScreen === 'call' && goBack()}

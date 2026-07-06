@@ -165,6 +165,7 @@ export interface CallScreenProps {
     onMinimize?: () => void;
     onNavigate?: (screen: string, params?: any) => void;
     isIncomingCall?: boolean;
+    nativeCallUUID?: string;
 }
 
 import { CallState } from '../lib/callState';
@@ -180,7 +181,8 @@ export const CallScreen = ({
     onRestoreFromPip,
     onMinimize,
     onNavigate,
-    isIncomingCall = false
+    isIncomingCall = false,
+    nativeCallUUID
 }: CallScreenProps) => {
     const [token, setToken] = useState<string | null>(null);
     const [url, setUrl] = useState<string | null>(null);
@@ -195,9 +197,14 @@ export const CallScreen = ({
 
     useEffect(() => {
         Keyboard.dismiss();
-        CallState.isInsideCallScreen = true;
+        CallState.setActiveCallScreen({
+            roomName,
+            conversationId,
+            callSessionId,
+            nativeCallUUID,
+        });
         return () => {
-            CallState.isInsideCallScreen = false;
+            CallState.clearActiveCallScreen();
             // Garantizar que la llamada nativa muera cuando salimos de la pantalla (evita que se quede atascada)
             try {
                 callKeepService.endAllCallsSilently();
@@ -205,7 +212,7 @@ export const CallScreen = ({
                 console.warn('[CallScreen] Error ending native call on unmount:', e);
             }
         };
-    }, []);
+    }, [roomName, conversationId, callSessionId, nativeCallUUID]);
 
     useEffect(() => {
         Keyboard.dismiss();
@@ -624,10 +631,7 @@ export const CallScreen = ({
         return (
             <View style={styles.container}>
                 <ActivityIndicator size="large" color="#7C3AED" />
-                <Text style={styles.text}>Conectando...</Text>
-                <TouchableOpacity style={[styles.loadingHangupButton, { marginTop: 24 }]} onPress={safeOnBack}>
-                    <PhoneIcon size={28} color="#fff" />
-                </TouchableOpacity>
+                <Text style={styles.text}>Conectando a la sala...</Text>
             </View>
         );
     }
@@ -650,9 +654,6 @@ export const CallScreen = ({
                     <View style={styles.connectingOverlay}>
                         <ActivityIndicator size="large" color="#7C3AED" />
                         <Text style={styles.text}>Conectando a la sala...</Text>
-                        <TouchableOpacity style={[styles.loadingHangupButton, { marginTop: 24 }]} onPress={safeOnBack}>
-                            <PhoneIcon size={28} color="#fff" />
-                        </TouchableOpacity>
                     </View>
                 ) : (
                     <>
@@ -1120,6 +1121,7 @@ function ControlsView({
     const { canUseInterpreter } = useSubscription(userId);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const insets = useSafeAreaInsets();
+    const hasDisconnectedRef = useRef(false);
 
     const toggleMic = async () => {
         const enabled = !isMicrophoneEnabled;
@@ -1147,6 +1149,9 @@ function ControlsView({
     };
 
     const handleDisconnect = useCallback(() => {
+        if (hasDisconnectedRef.current) return;
+        hasDisconnectedRef.current = true;
+
         console.log('[CALL_DEBUG] CallScreen.handleDisconnect.start', {
             conversationId,
             userId,
@@ -1440,14 +1445,6 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 15,
         fontWeight: '700',
-    },
-    loadingHangupButton: {
-        width: 58,
-        height: 58,
-        borderRadius: 29,
-        backgroundColor: '#dc2626',
-        justifyContent: 'center',
-        alignItems: 'center',
     },
     connectingOverlay: {
         ...StyleSheet.absoluteFillObject,

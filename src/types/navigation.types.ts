@@ -26,6 +26,7 @@ export interface NavigationParams {
     userId?: string;
     callSessionId?: string;
     isIncomingCall?: boolean;
+    nativeCallUUID?: string;
     [key: string]: unknown;
 }
 
