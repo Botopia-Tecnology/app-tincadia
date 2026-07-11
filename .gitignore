@@ -45,7 +45,7 @@ yarn-error.*
 .env.local
 
 # Firebase configuration files
-#GoogleService-Info.plist
-#google-services.json
+GoogleService-Info.plist
+google-services.json
 
 #eas.json
