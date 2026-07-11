@@ -42,7 +42,11 @@ function asPayloadObject(value: unknown): Record<string, any> {
 const options = {
   ios: {
     appName: 'Tincadia',
+    handleType: 'generic',
+    supportsVideo: true,
     includesCallsInRecents: true,
+    maximumCallGroups: '2',
+    maximumCallsPerCallGroup: '1',
   },
   android: {
     alertTitle: 'Permisos requeridos',

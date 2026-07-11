@@ -36,7 +36,7 @@ extension AppDelegate: PKPushRegistryDelegate {
             "handleType": "generic",
             "supportsVideo": true,
             "includesCallsInRecents": true,
-            "maximumCallGroups": 3,
+            "maximumCallGroups": 2,
             "maximumCallsPerCallGroup": 1
         ])
         #endif
@@ -133,7 +133,7 @@ static NSString *TincadiaValidCallUUID(NSDictionary *payload) {
         @"handleType": @"generic",
         @"supportsVideo": @YES,
         @"includesCallsInRecents": @YES,
-        @"maximumCallGroups": @3,
+        @"maximumCallGroups": @2,
         @"maximumCallsPerCallGroup": @1
     }];
 

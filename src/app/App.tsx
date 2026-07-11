@@ -132,7 +132,7 @@ function AppContent() {
     (params) => {
       Keyboard.dismiss();
       setCallParams(params);
-      setScreenStack(prev => [...prev, 'call']);
+      setScreenStack(prev => prev[prev.length - 1] === 'call' ? prev : [...prev, 'call']);
     }
   );
 
@@ -175,7 +175,7 @@ function AppContent() {
       userId: user.id
     });
     setInterpreterInvite(null);
-    setScreenStack(prev => [...prev, 'call']);
+    setScreenStack(prev => prev[prev.length - 1] === 'call' ? prev : [...prev, 'call']);
   };
 
   useEffect(() => {
@@ -310,7 +310,7 @@ function AppContent() {
             isIncomingCall={!!callParams?.isIncomingCall}
             nativeCallUUID={callParams?.nativeCallUUID}
             isManualPipMode={!isCallFullScreen}
-            onRestoreFromPip={() => currentScreen !== 'call' && setScreenStack(prev => [...prev, 'call'])}
+            onRestoreFromPip={() => currentScreen !== 'call' && setScreenStack(prev => prev[prev.length - 1] === 'call' ? prev : [...prev, 'call'])}
             onMinimize={() => currentScreen === 'call' && goBack()}
             onBack={() => { setCallParams(null); currentScreen === 'call' && goBack(); }}
             onNavigate={navigate}

@@ -1,6 +1,7 @@
 import { DeviceEventEmitter } from 'react-native';
 
 export const CALL_STATE_CHANGED_EVENT = 'call_state_changed';
+export const HANDOFF_ACTIVE_CALL_EVENT = 'handoff_active_call_to_incoming';
 
 function normalizeId(value?: string | null): string | null {
   if (!value) return null;

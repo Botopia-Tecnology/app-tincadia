@@ -4,7 +4,7 @@
  * Container for the chat interface, orchestrating sub-components and useChat hook.
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Alert, Animated, Easing, Keyboard, Vibration } from 'react-native';
+import { View, Alert, Animated, Easing, Keyboard, Vibration, DeviceEventEmitter } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useChat } from '../../hooks/useChat';
@@ -35,6 +35,7 @@ import { User } from '../../types/auth.types';
 import { MessageActionSheet } from './components/MessageActionSheet';
 import { APP_TIERS } from '../../config/revenuecat.config';
 import { NavigateFunction } from '../../types/navigation.types';
+import { CallState, HANDOFF_ACTIVE_CALL_EVENT } from '../../lib/callState';
 
 interface ChatViewProps {
   conversationId: string;
@@ -341,6 +342,32 @@ export function ChatView(props: ChatViewProps) {
     } catch (error) {
       console.warn('[CALL_DEBUG] Could not synchronize native call UI before joining call:', error);
     }
+
+    const shouldHandoffActiveCall =
+      CallState.isInsideCallScreen &&
+      !CallState.matchesActiveCallScreen({
+        roomName,
+        conversationId,
+        callSessionId,
+      });
+
+    if (shouldHandoffActiveCall) {
+      console.log('[CALL_DEBUG] Join call requested while another call is active; hanging up current call first.', {
+        nextRoomName: roomName,
+        nextConversationId: conversationId,
+        nextCallSessionId: callSessionId,
+      });
+      DeviceEventEmitter.emit(HANDOFF_ACTIVE_CALL_EVENT, {
+        roomName,
+        conversationId,
+        callSessionId,
+      });
+      setTimeout(() => {
+        onNavigateCall(roomName, username, conversationId, userId, callSessionId);
+      }, 450);
+      return;
+    }
+
     onNavigateCall(roomName, username, conversationId, userId, callSessionId);
   };
 

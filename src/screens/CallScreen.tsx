@@ -168,7 +168,7 @@ export interface CallScreenProps {
     nativeCallUUID?: string;
 }
 
-import { CallState } from '../lib/callState';
+import { CallState, HANDOFF_ACTIVE_CALL_EVENT } from '../lib/callState';
 
 export const CallScreen = ({
     roomName,
@@ -1287,6 +1287,40 @@ function ControlsView({
             }
 
             console.log('[CALL_DEBUG] Native CallKeep end matched active CallScreen; hanging up app call.');
+            handleDisconnect();
+        });
+
+        return () => sub.remove();
+    }, [conversationId, roomName, callSessionId, handleDisconnect]);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener(HANDOFF_ACTIVE_CALL_EVENT, (data) => {
+            const eventCallSessionId = getCallSessionIdFromPayload(data);
+            const eventConversationId = asOptionalString(data?.conversationId || data?.conversation_id);
+            const eventRoomName = asOptionalString(data?.roomName || data?.room_name);
+            const isSameCall = Boolean(
+                (eventCallSessionId && callSessionId && eventCallSessionId === callSessionId) ||
+                (eventConversationId && conversationId && eventConversationId.toLowerCase() === conversationId.toLowerCase()) ||
+                (eventRoomName && eventRoomName === roomName)
+            );
+
+            if (isSameCall) {
+                console.log('[CALL_DEBUG] Ignoring handoff event for the current active call.', {
+                    conversationId,
+                    roomName,
+                    callSessionId,
+                });
+                return;
+            }
+
+            console.log('[CALL_DEBUG] Handoff requested; hanging up current CallScreen before joining incoming call.', {
+                currentConversationId: conversationId,
+                currentRoomName: roomName,
+                currentCallSessionId: callSessionId,
+                nextConversationId: eventConversationId,
+                nextRoomName: eventRoomName,
+                nextCallSessionId: eventCallSessionId,
+            });
             handleDisconnect();
         });
 

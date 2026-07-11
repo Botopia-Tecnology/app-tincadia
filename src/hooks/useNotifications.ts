@@ -3,7 +3,7 @@ import { Platform, DeviceEventEmitter, AppState, AppStateStatus } from 'react-na
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import messaging from '@react-native-firebase/messaging';
-import { CallState } from '../lib/callState';
+import { CallState, HANDOFF_ACTIVE_CALL_EVENT } from '../lib/callState';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { User } from '../types/auth.types';
@@ -102,6 +102,79 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
         latestCallMetadata?.callSessionId ||
         latestCallMetadata?.call_session_id,
     };
+  };
+
+  const isIncomingForCurrentActiveCall = (payload: {
+    callUUID?: unknown;
+    nativeCallUUID?: unknown;
+    roomName?: unknown;
+    conversationId?: unknown;
+    callSessionId?: unknown;
+    call_session_id?: unknown;
+  }) => {
+    const conversationId = getStringValue(payload.conversationId);
+    const roomName = getStringValue(payload.roomName);
+    const callSessionId = getStringValue(payload.callSessionId || payload.call_session_id);
+    const callUUID = getStringValue(payload.callUUID || payload.nativeCallUUID);
+    const activeConversationId = activeCallRef.current;
+
+    return Boolean(
+      (activeConversationId && conversationId && activeConversationId.toLowerCase() === conversationId.toLowerCase()) ||
+      CallState.matchesActiveCallScreen({
+        callUUID,
+        nativeCallUUID: callUUID,
+        roomName,
+        conversationId,
+        callSessionId,
+      })
+    );
+  };
+
+  const navigateToAnsweredIncomingCall = (routing: ReturnType<typeof resolveIncomingCallRouting>) => {
+    const params = {
+      roomName: routing.roomName,
+      username: user?.firstName || user?.email?.split('@')[0] || 'Usuario',
+      conversationId: routing.conversationId,
+      userId: user?.id,
+      callSessionId: routing.callSessionId,
+      isIncomingCall: true,
+      nativeCallUUID: routing.nativeCallUUID,
+    };
+
+    const isDifferentFromActiveCall =
+      !CallState.matchesActiveCallScreen({
+        roomName: routing.roomName,
+        conversationId: routing.conversationId,
+        callSessionId: routing.callSessionId,
+        nativeCallUUID: routing.nativeCallUUID,
+      }) &&
+      Boolean(
+        CallState.isInsideCallScreen ||
+        (activeCallRef.current && routing.conversationId && activeCallRef.current.toLowerCase() !== routing.conversationId.toLowerCase())
+      );
+
+    if (!isDifferentFromActiveCall) {
+      onNavigateToCall(params);
+      return;
+    }
+
+    console.log('[useNotifications] Handoff requested: ending active app call before joining answered incoming call.', {
+      currentConversationId: activeCallRef.current,
+      nextConversationId: routing.conversationId,
+      nextRoomName: routing.roomName,
+      nextCallSessionId: routing.callSessionId,
+    });
+
+    DeviceEventEmitter.emit(HANDOFF_ACTIVE_CALL_EVENT, {
+      roomName: routing.roomName,
+      conversationId: routing.conversationId,
+      callSessionId: routing.callSessionId,
+      nativeCallUUID: routing.nativeCallUUID,
+    });
+
+    setTimeout(() => {
+      onNavigateToCall(params);
+    }, 450);
   };
 
   const clearNativeCallUi = (payload: Record<string, unknown>) => {
@@ -243,14 +316,8 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             return;
           }
 
-          if (activeCallRef.current) {
-            console.log('[useNotifications] Ignoring incoming-call push while already in a call:', activeCallRef.current);
-            clearNativeCallUi(data);
-            return;
-          }
-
-          if (CallState.isInsideCallScreen) {
-            console.log('[useNotifications] Ignoring incoming-call push because user is already inside CallScreen.');
+          if (isIncomingForCurrentActiveCall(data)) {
+            console.log('[useNotifications] Ignoring incoming-call push for the active call.');
             return;
           }
 
@@ -357,8 +424,8 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             // if the VoIP push is delayed or missing, the user still gets a native incoming UI.
             setTimeout(() => {
               const conversationId = getStringValue(data.conversationId);
-              if (CallState.isInsideCallScreen) {
-                console.log('[useNotifications] iOS fallback skipped: already inside CallScreen.');
+              if (isIncomingForCurrentActiveCall(data)) {
+                console.log('[useNotifications] iOS fallback skipped: incoming call already matches active CallScreen.');
                 return;
               }
               if (conversationId && CallState.hasIncomingCall(conversationId)) {
@@ -374,6 +441,13 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
                 console.log('[useNotifications] iOS fallback skipped: already ringing.');
                 return;
               }
+              if (activeIncomingCallRef.current && activeIncomingCallRef.current !== nativeCallUUID) {
+                try {
+                  callKeepService.endCall(activeIncomingCallRef.current);
+                } catch {
+                  // The previous native call UI may already be gone.
+                }
+              }
 
               const handle = String(data.senderName || 'Tincadia');
               activeIncomingCallRef.current = callKeepService.displayIncomingCall(String(callUUID), handle, handle, {
@@ -387,8 +461,8 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             return;
           }
 
-          if (CallState.isInsideCallScreen) {
-            console.log('[useNotifications] Ignoring incoming_call broadcast because user is already inside CallScreen.');
+          if (isIncomingForCurrentActiveCall(data)) {
+            console.log('[useNotifications] Ignoring incoming_call broadcast for the active call.');
             return;
           }
           const callUUID = data.callUUID || data.roomName || data.conversationId;
@@ -397,6 +471,13 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             if (activeIncomingCallRef.current === nativeCallUUID) {
               console.log('[useNotifications] Ignoring duplicate incoming_call broadcast (already ringing).');
               return;
+            }
+            if (activeIncomingCallRef.current && activeIncomingCallRef.current !== nativeCallUUID) {
+              try {
+                callKeepService.endCall(activeIncomingCallRef.current);
+              } catch {
+                // The previous native call UI may already be gone.
+              }
             }
             const handle = String(data.senderName || 'Tincadia');
             activeIncomingCallRef.current = callKeepService.displayIncomingCall(String(callUUID), handle, handle, {
@@ -502,15 +583,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       }
 
       CallState.clearIncomingCall(routing.conversationId);
-      onNavigateToCall({
-        roomName: routing.roomName,
-        username: user.firstName || user.email?.split('@')[0] || 'Usuario',
-        conversationId: routing.conversationId,
-        userId: user.id,
-        callSessionId: routing.callSessionId,
-        isIncomingCall: true,
-        nativeCallUUID: routing.nativeCallUUID,
-      });
+      navigateToAnsweredIncomingCall(routing);
     });
 
     const subEnd = DeviceEventEmitter.addListener('CallKeep_EndCall', ({ callUUID, roomName, conversationId, callSessionId }) => {
