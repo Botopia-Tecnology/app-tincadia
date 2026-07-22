@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Platform, DeviceEventEmitter, AppState, AppStateStatus } from 'react-native';
+import { Platform, DeviceEventEmitter, AppState, AppStateStatus, Keyboard } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import messaging from '@react-native-firebase/messaging';
@@ -24,7 +24,7 @@ function getStringValue(value: unknown): string | undefined {
   return text.length > 0 ? text : undefined;
 }
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function getConversationIdFromRoomName(roomName?: string): string | undefined {
   if (!roomName?.startsWith('conv_')) return undefined;
@@ -555,7 +555,43 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     };
   }, [user]);
 
-  // 6. Handle CallKeep native 'answerCall' event to navigate to CallScreen
+  // 6. Reconcile state when returning to foreground. Supabase sockets and JS
+  // timers die in background, so terminal call events can be lost entirely;
+  // pushes only clean the native UI, never the local data state.
+  useEffect(() => {
+    if (!user) return;
+
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state !== 'active') return;
+
+      // Keyboard.dismiss() calls made while the CallKit UI had the app
+      // inactive are no-ops; iOS restores the keyboard on return to active.
+      if (CallState.isInsideCallScreen) {
+        Keyboard.dismiss();
+      }
+
+      // Drop "incoming call" markers older than any possible ring window.
+      // Also dismiss the native side: stale CallKeep aliases/displayed UUIDs
+      // make displayIncomingCall silently skip every future call in the
+      // conversation ("Ignoring duplicate displayIncomingCall").
+      CallState.getStaleIncomingConversationIds().forEach((conversationId) => {
+        console.log('[useNotifications] Clearing stale incoming-call marker for conversation:', conversationId);
+        try {
+          callKeepService.dismissIncomingCall(conversationId);
+        } catch {
+          // No native call left for this conversation.
+        }
+        CallState.clearIncomingCall(conversationId);
+      });
+
+      // Pull anything missed while the realtime socket was suspended.
+      DeviceEventEmitter.emit('chat_sync_requested');
+    });
+
+    return () => sub.remove();
+  }, [user]);
+
+  // 7. Handle CallKeep native 'answerCall' event to navigate to CallScreen
   useEffect(() => {
     if (!user) return;
     const sub = DeviceEventEmitter.addListener('CallKeep_AnswerCall', ({ callUUID, roomName, conversationId, callSessionId }) => {

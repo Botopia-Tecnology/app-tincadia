@@ -351,8 +351,10 @@ export function useChat(
             }
         });
 
+        // Sin conversationId en el payload = "sincroniza la conversación abierta"
+        // (lo emite así el reconciliador de foreground de useNotifications).
         const subSync = DeviceEventEmitter.addListener('chat_sync_requested', (syncConvId) => {
-            if (syncConvId === conversationId) {
+            if (!syncConvId || syncConvId === conversationId) {
                 console.log(`🔄 Sync requested from Push Notification for ${conversationId}`);
                 syncFromServer();
             }

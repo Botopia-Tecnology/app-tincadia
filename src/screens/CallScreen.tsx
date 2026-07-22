@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, Alert, Image, Dimensions, DeviceEventEmitter, ScrollView, Keyboard, type DimensionValue } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, Alert, Image, Dimensions, DeviceEventEmitter, Platform, ScrollView, Keyboard, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+    AudioSession,
     LiveKitRoom,
     useTracks,
     VideoTrack,
@@ -224,6 +225,49 @@ export const CallScreen = ({
         onBack();
     }, [onBack]);
 
+    const hasSavedRemoteEndRef = useRef(false);
+    // When the remote side ends the call, the terminal message travels from the
+    // other device's JS (which iOS may kill mid-flight). Persist a local marker
+    // so this side's "Unirse ahora" card always dies even if that message is lost.
+    const persistRemoteEndLocally = useCallback((messageType?: string) => {
+        if (hasSavedRemoteEndRef.current || !conversationId) return;
+        hasSavedRemoteEndRef.current = true;
+
+        let content = 'Llamada finalizada';
+        if (messageType === 'call_rejected') content = 'Llamada rechazada';
+        if (messageType === 'call_missed') content = 'Llamada perdida';
+
+        const localMsgs = require('../database/chatDatabase').getMessages(conversationId);
+        const latestCall = [...localMsgs].reverse().find((m: any) => m.type === 'call');
+        let markerTime = Date.now();
+        if (latestCall?.createdAt) {
+            const callTimeMs = new Date(String(latestCall.createdAt).replace(' ', 'T')).getTime();
+            if (markerTime <= callTimeMs) markerTime = callTimeMs + 1000;
+        }
+        const now = new Date(markerTime).toISOString();
+        const markerId = `call_remote_end_${Date.now()}`;
+
+        saveMessage({
+            id: markerId,
+            serverId: markerId,
+            conversationId,
+            senderId: 'system',
+            content,
+            type: 'call_ended',
+            status: 'sent',
+            createdAt: now,
+            updatedAt: now,
+            isMine: false,
+            metadata: {
+                roomName,
+                callSessionId,
+            },
+        });
+        updateConversationPreview(conversationId, content, now, false);
+        DeviceEventEmitter.emit('chat_local_update', conversationId);
+        DeviceEventEmitter.emit('conversations_updated');
+    }, [conversationId, roomName, callSessionId]);
+
     const retryRoomConnection = useCallback(() => {
         setConnectionError(null);
         setIsRoomConnected(false);
@@ -238,6 +282,11 @@ export const CallScreen = ({
         reconnectAttemptsRef.current = 0;
         setConnectionError(null);
         setIsRoomConnected(true);
+        // El backend crea el mensaje 'call' al iniciar la sesión; sin este sync
+        // el chat abierto debajo no muestra la cajita de llamada en vivo.
+        if (conversationId) {
+            DeviceEventEmitter.emit('chat_sync_requested', conversationId);
+        }
     }, [roomName, conversationId, callSessionId]);
 
     const handleRoomDisconnected = useCallback(() => {
@@ -302,6 +351,7 @@ export const CallScreen = ({
 
                 if (data.senderId !== userId && (data.roomName === roomName || data.conversationId === conversationId)) {
                     console.log('[CALL_DEBUG] Fast Broadcast remote call end detected, terminating local call...');
+                    persistRemoteEndLocally(asOptionalString(data?.type));
                     safeOnBack();
                 }
             })
@@ -310,7 +360,7 @@ export const CallScreen = ({
         return () => {
             void supabase.removeChannel(channel);
         };
-    }, [conversationId, roomName, userId, callSessionId, safeOnBack]);
+    }, [conversationId, roomName, userId, callSessionId, safeOnBack, persistRemoteEndLocally]);
 
     const handleCallTimeout = useCallback(() => {
         console.log('Call timed out after 30s. Disconnecting...');
@@ -478,11 +528,12 @@ export const CallScreen = ({
 
             if (data.conversationId === conversationId || data.roomName === roomName) {
                 console.log('[CALL_DEBUG] Remote call end detected, terminating local call...');
+                persistRemoteEndLocally(asOptionalString(data?.type));
                 safeOnBack();
             }
         });
         return () => sub.remove();
-    }, [conversationId, roomName, callSessionId, safeOnBack]);
+    }, [conversationId, roomName, callSessionId, safeOnBack, persistRemoteEndLocally]);
 
     useEffect(() => {
         if (!conversationId) return;
@@ -545,6 +596,7 @@ export const CallScreen = ({
                     messageSenderId,
                     messageRoomName,
                 });
+                persistRemoteEndLocally(messageType);
                 safeOnBack();
             })
             .subscribe();
@@ -552,7 +604,7 @@ export const CallScreen = ({
         return () => {
             void supabase.removeChannel(activeCallChannel);
         };
-    }, [conversationId, roomName, userId, callSessionId, safeOnBack]);
+    }, [conversationId, roomName, userId, callSessionId, safeOnBack, persistRemoteEndLocally]);
 
     // Do not save a generic call_ended marker on every unmount.
     // Hangup and remote-end flows already emit/persist terminal events; doing it here
@@ -650,6 +702,10 @@ export const CallScreen = ({
                 onDisconnected={handleRoomDisconnected}
                 onError={handleRoomError}
             >
+                {/* Montado desde el primer render de la sala: el timbre debe sonar
+                    también durante la negociación de conexión, no solo tras
+                    onConnected. El receptor no timbra pero conserva el timeout. */}
+                <RingingSoundManager onTimeout={handleCallTimeout} shouldRing={!isIncomingCall} />
                 {!isRoomConnected ? (
                     <View style={styles.connectingOverlay}>
                         <ActivityIndicator size="large" color="#7C3AED" />
@@ -657,7 +713,6 @@ export const CallScreen = ({
                     </View>
                 ) : (
                     <>
-                        <RingingSoundManager onTimeout={handleCallTimeout} />
                         <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
                         <ControlsView
                             onHangup={safeOnBack}
@@ -848,7 +903,7 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
     return null;
 }
 
-function RingingSoundManager({ onTimeout }: { onTimeout?: () => void }) {
+function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () => void; shouldRing?: boolean }) {
     const participants = useParticipants();
     const room = useRoomContext();
     const soundRef = useRef<Audio.Sound | null>(null);
@@ -878,13 +933,20 @@ function RingingSoundManager({ onTimeout }: { onTimeout?: () => void }) {
                         }, 30000);
                     }
 
-                    if (!soundRef.current) {
+                    if (!soundRef.current && shouldRing) {
                         const { sound } = await Audio.Sound.createAsync(
                             require('../../assets/ringing.wav'),
                             { shouldPlay: true, isLooping: true }
                         );
                         if (isMounted) {
                             soundRef.current = sound;
+                            // expo-av re-aplica PlayAndRecord sin .defaultToSpeaker
+                            // (allowsRecordingIOS) y iOS enruta al auricular, donde
+                            // el timbre es inaudible. Forzar altavoz explícitamente;
+                            // en una videollamada es la ruta esperada de todos modos.
+                            if (Platform.OS === 'ios') {
+                                AudioSession.selectAudioOutput('force_speaker').catch(() => undefined);
+                            }
                         } else {
                             sound.unloadAsync();
                         }
@@ -911,7 +973,7 @@ function RingingSoundManager({ onTimeout }: { onTimeout?: () => void }) {
         return () => {
             isMounted = false;
         };
-    }, [humanCount, room]);
+    }, [humanCount, room, shouldRing]);
 
     useEffect(() => {
         return () => {

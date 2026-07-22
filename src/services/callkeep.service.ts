@@ -273,13 +273,22 @@ class CallKeepService {
     const completionUUID = getStringValue(notification.nativeCallUUID || notification.callUUID || notification.uuid || callUUID);
 
     if (notificationType === 'call_ended' || notificationType === 'call_missed' || notificationType === 'call_rejected') {
-      if (callUUID) {
+      // Dismiss by every known identifier: with legacy pushes the terminal push
+      // carries a different random UUID than the original ringing call, so the
+      // conversation/room aliases are the only reliable way to reach it.
+      const terminalIds = Array.from(new Set([
+        callUUID,
+        getStringValue(notification.conversationId),
+        getStringValue(notification.roomName),
+      ].filter(Boolean))) as string[];
+
+      terminalIds.forEach((id) => {
         try {
-          this.dismissIncomingCall(callUUID);
+          this.dismissIncomingCall(id);
         } catch (error) {
           console.warn('[VoIP Push] Could not dismiss terminal call notification:', error);
         }
-      }
+      });
       if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
         VoipPushNotification.onVoipNotificationCompleted(completionUUID);
       }
@@ -432,6 +441,15 @@ class CallKeepService {
   private handleDidDisplayIncomingCall = ({ error, callUUID, handle, localizedCallerName, payload }: any) => {
     console.log('[CallKeep] didDisplayIncomingCall', callUUID, handle, localizedCallerName, error, payload);
     if (error || !callUUID) return;
+
+    // Terminal VoIP pushes are reported to CallKit only for PushKit compliance
+    // (iOS requires every VoIP push to report a call). Never register them as an
+    // active incoming call: dismiss immediately so CallState stays clean.
+    const payloadType = getStringValue(asPayloadObject(payload).type);
+    if (payloadType === 'call_ended' || payloadType === 'call_missed' || payloadType === 'call_rejected') {
+      this.reportCallEndedSilently(callUUID, CONSTANTS.END_CALL_REASONS.REMOTE_ENDED);
+      return;
+    }
 
     this.rememberDisplayedCallFromPayload(callUUID, payload, {
       senderName: getStringValue(localizedCallerName || handle),

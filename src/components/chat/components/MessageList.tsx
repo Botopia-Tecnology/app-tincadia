@@ -67,6 +67,16 @@ export const MessageList = ({
     return endedSessions;
   }, [messages, terminalCallTypes]);
 
+  // Only one call can be active/pending per conversation: any 'call' message
+  // older than the latest one renders as ended even if its terminal event was
+  // lost (e.g. while the app was in background).
+  const latestCallMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].type === 'call') return messages[i].id;
+    }
+    return undefined;
+  }, [messages]);
+
   const renderMessageItem = ({ item }: { item: Message | UploadingMessage }) => {
     if ('status' in item && item.status === 'uploading') {
       const uploader = item as UploadingMessage;
@@ -128,7 +138,7 @@ export const MessageList = ({
         return true;
       });
 
-      const hasEnded = isExpired || hasEndedBySession || hasEndedByLegacyFallback;
+      const hasEnded = isExpired || hasEndedBySession || hasEndedByLegacyFallback || msg.id !== latestCallMessageId;
 
       if (hasEnded) {
         return (
