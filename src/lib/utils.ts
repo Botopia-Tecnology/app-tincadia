@@ -45,6 +45,16 @@ export function isValidPhone(phone: string): boolean {
 }
 
 /**
+ * Valida un número local según el país seleccionado: Colombia exige 10 dígitos;
+ * para el resto solo se comprueba un largo plausible (E.164 permite 7-15).
+ */
+export function isValidPhoneForCountry(phone: string, dialCode?: string): boolean {
+  const digits = phone.replace(/\D/g, '');
+  if (dialCode === '+57') return isValidPhone(digits);
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+/**
  * Trunca un texto a una longitud máxima
  */
 export function truncateText(text: string, maxLength: number): string {

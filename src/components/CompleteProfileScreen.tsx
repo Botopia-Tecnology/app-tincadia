@@ -23,6 +23,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DOCUMENT_TYPE_MAP } from '../types/auth.types';
 import { completeProfileStyles as styles } from '../styles/CompleteProfileScreen.styles';
 import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
+import { isValidPhoneForCountry } from '../lib/utils';
 
 // Phone OTP verification temporarily disabled
 // import { PhoneVerificationModal } from './auth/PhoneVerificationModal';
@@ -37,6 +38,7 @@ export function CompleteProfileScreen() {
     const [phone, setPhone] = useState('');
     const [selectedCountry, setSelectedCountry] = useState(defaultCountry);
     const [modalVisible, setModalVisible] = useState(false);
+    const [validationError, setValidationError] = useState<string | null>(null);
 
     // Verification State (OTP temporarily disabled)
     // const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
@@ -70,14 +72,23 @@ export function CompleteProfileScreen() {
     }, [user]);
 
     const handleSubmit = async () => {
+        // Esta pantalla es la ruta de registro de Apple/Google Sign-In: sin estos
+        // mensajes el usuario no recibía ningún feedback (return silencioso).
         if (!documentType || !documentNumber || !phone) {
+            setValidationError('Completa todos los campos para continuar');
+            return;
+        }
+        if (!isValidPhoneForCountry(phone, selectedCountry.dialCode)) {
+            setValidationError('Por favor ingresa un número de teléfono válido');
             return;
         }
 
         const documentTypeId = DOCUMENT_TYPE_MAP[documentType];
         if (!documentTypeId) {
+            setValidationError('Selecciona un tipo de documento válido');
             return;
         }
+        setValidationError(null);
 
         try {
             await updateProfile({
@@ -92,7 +103,8 @@ export function CompleteProfileScreen() {
 
 
 
-    const isFormValid = documentType && documentNumber.length >= 5 && phone.length >= 7;
+    const isPhoneValid = isValidPhoneForCountry(phone, selectedCountry.dialCode);
+    const isFormValid = documentType && documentNumber.length >= 5 && isPhoneValid;
 
 
 
@@ -163,13 +175,27 @@ export function CompleteProfileScreen() {
                             keyboardType="phone-pad"
                         />
                         {/* Phone verification temporarily disabled */}
-                        {phone.length > 7 && (
+                        {isPhoneValid && (
                             <View style={{ justifyContent: 'center', alignItems: 'center', padding: 10 }}>
                                 <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>✓</Text>
                             </View>
                         )}
                     </View>
+                    {phone.length > 0 && !isPhoneValid && (
+                        <Text style={{ color: '#DC2626', fontSize: 13, marginTop: -12, marginBottom: 20 }}>
+                            {selectedCountry.dialCode === '+57'
+                                ? 'El número debe tener 10 dígitos'
+                                : 'Ingresa un número de teléfono válido'}
+                        </Text>
+                    )}
                 </View>
+
+                {/* Validation feedback */}
+                {validationError && (
+                    <Text style={{ color: '#DC2626', fontSize: 14, textAlign: 'center', marginBottom: 12 }}>
+                        {validationError}
+                    </Text>
+                )}
 
                 {/* Submit Button */}
                 <TouchableOpacity

@@ -18,10 +18,8 @@ import {
   Animated,
   StyleSheet,
   useWindowDimensions,
-  Platform,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tourStyles as styles } from './ProductTour.styles';
 import type { TourStep, TargetLayout } from '../../types/tour.types';
 
@@ -105,7 +103,6 @@ export function ProductTourOverlay({
   const { width: screenW, height: screenH } = useWindowDimensions();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const overlayRef = useRef<View>(null);
-  const insets = useSafeAreaInsets();
   const [tooltipHeight, setTooltipHeight] = useState(180);
   const [overlayOffset, setOverlayOffset] = useState({ x: 0, y: 0 });
 
@@ -114,15 +111,12 @@ export function ProductTourOverlay({
   const isFirst = currentStep === 0;
   const isLast = currentStep === steps.length - 1;
 
-  // En Android a veces StatusBar.currentHeight devuelve 0 o falla, pero el SVG se desfasa.
-  // Usamos insets.top de react-native-safe-area-context que es mucho más confiable.
-  // Ajuste fino: si insets.top lo sube DEMASIADO, lo bajamos un poco sumándole 15px.
-  const topOffset = Platform.OS === 'android' ? insets.top : 0;
-
+  // measureInWindow del target y del overlay comparten origen de coordenadas en
+  // ambas plataformas; restar overlayOffset ya normaliza cualquier diferencia.
   const target = rawTarget ? {
     ...rawTarget,
     x: rawTarget.x - overlayOffset.x,
-    y: rawTarget.y - overlayOffset.y - topOffset + 25 + (step.yOffset || 0)
+    y: rawTarget.y - overlayOffset.y + (step.yOffset || 0)
   } : null;
 
   // Fade-in animation on each step change

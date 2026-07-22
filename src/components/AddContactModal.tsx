@@ -13,6 +13,7 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     ScrollView,
+    KeyboardAvoidingView,
     Platform,
     Alert,
 } from 'react-native';
@@ -20,7 +21,6 @@ import * as Contacts from 'expo-contacts';
 import { contactService, Contact } from '../services/contact.service';
 import { addContactModalStyles as styles } from '../styles/AddContactModal.styles';
 import { showAlert } from './common/CustomAlert';
-import KeyboardSafeView from './common/KeyboardSafeView';
 
 import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
 import { SyncIcon } from './icons/NavigationIcons';
@@ -260,7 +260,15 @@ export function AddContactModal({
                 onPress={handleClose}
             />
 
-            <View style={[styles.container, { backgroundColor: colors.surface }]}>
+            {/* En iOS la ventana no se redimensiona con el teclado (a diferencia de
+                adjustResize en Android): sin este KAV en flujo normal, el sheet
+                queda anclado al borde físico y el teclado tapa teléfono y Guardar.
+                El padding de un KAV ancestro no desplaza este overlay absoluto. */}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={styles.keyboardAvoider}
+            >
+                <View style={[styles.container, { backgroundColor: colors.surface }]}>
                     {/* Handle bar */}
                     <View style={styles.handleContainer}>
                         <View style={[styles.handle, { backgroundColor: colors.border }]} />
@@ -374,7 +382,8 @@ export function AddContactModal({
                             <Text style={styles.saveButtonText}>Guardar</Text>
                         )}
                     </TouchableOpacity>
-                    </View>
-            </View>
+                </View>
+            </KeyboardAvoidingView>
+        </View>
     );
 }

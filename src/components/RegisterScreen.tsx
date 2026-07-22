@@ -12,6 +12,7 @@ import {
   FlatList,
   ActivityIndicator,
   BackHandler,
+  Keyboard,
   Linking,
   // KeyboardAvoidingView, // Replaced by KeyboardSafeView
 } from 'react-native';
@@ -27,6 +28,7 @@ import { useAppleAuth } from '../hooks/useAppleAuth';
 import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
 import { registerScreenStyles as styles } from '../styles/RegisterScreen.styles';
 import { getDocumentTypeId } from '../types/auth.types';
+import { isValidPhoneForCountry } from '../lib/utils';
 import Svg, { Circle } from 'react-native-svg';
 import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
 
@@ -70,6 +72,10 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
   const [documentNumber, setDocumentNumber] = useState('');
   const [phone, setPhone] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(defaultCountry);
+  // Un solo criterio para el check verde, el hint y validateStep2: antes el
+  // check exigía > 7 dígitos mientras la validación aceptaba 7, y un número
+  // "válido" podía no mostrar nunca feedback positivo.
+  const isPhoneValid = isValidPhoneForCountry(phone, selectedCountry.dialCode);
 
   // Verification State (OTP temporarily disabled - auto-verify when phone is valid)
   // const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
@@ -112,7 +118,7 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
       setValidationError('Por favor selecciona el tipo e ingresa el número de documento');
       return false;
     }
-    if (!phone || phone.length < 7) {
+    if (!phone || !isValidPhoneForCountry(phone, selectedCountry.dialCode)) {
       setValidationError('Por favor ingresa un número de teléfono válido');
       return false;
     }
@@ -126,6 +132,9 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
   };
 
   const handleNext = () => {
+    // Sin esto, en iOS el teclado sigue abierto tras tocar el botón y el banner
+    // de error (arriba del formulario) queda fuera del área visible.
+    Keyboard.dismiss();
     if (step === 1 && validateStep1()) {
       setStep(2);
     } else if (step === 2) {
@@ -443,12 +452,19 @@ export function RegisterScreen({ onBack, onRegisterSuccess }: RegisterScreenProp
                   autoComplete="tel"
                 />
                 {/* Phone verification temporarily disabled - just show check if phone is valid */}
-                {phone.length > 7 && (
+                {isPhoneValid && (
                   <View style={{ justifyContent: 'center', alignItems: 'center', padding: 10 }}>
                     <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>✓</Text>
                   </View>
                 )}
               </View>
+              {phone.length > 0 && !isPhoneValid && (
+                <Text style={{ color: '#DC2626', fontSize: 13, marginTop: -10, marginBottom: 15 }}>
+                  {selectedCountry.dialCode === '+57'
+                    ? 'El número debe tener 10 dígitos'
+                    : 'Ingresa un número de teléfono válido'}
+                </Text>
+              )}
             </>
           )}
         </View>

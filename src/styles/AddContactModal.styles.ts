@@ -23,6 +23,9 @@ export const addContactModalStyles = StyleSheet.create({
         bottom: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
     },
+    keyboardAvoider: {
+        maxHeight: '100%',
+    },
     container: {
         backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 24,
@@ -30,6 +33,9 @@ export const addContactModalStyles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingBottom: Platform.OS === 'ios' ? 40 : 24,
         maxHeight: SCREEN_HEIGHT * 0.85,
+        // Permite que el sheet se encoja (el ScrollView interno absorbe el alto)
+        // cuando el teclado reduce el espacio disponible en pantallas pequeñas.
+        flexShrink: 1,
     },
     handleContainer: {
         alignItems: 'center',
