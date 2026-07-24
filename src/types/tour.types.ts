@@ -13,8 +13,6 @@ export interface TourStep {
   title: string;
   /** Descriptive text explaining the feature */
   description: string;
-  /** Optional manual Y offset to fine-tune the spotlight position (negative pushes UP) */
-  yOffset?: number;
 }
 
 /** Absolute screen-space layout of a registered target element */

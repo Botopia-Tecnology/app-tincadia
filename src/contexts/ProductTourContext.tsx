@@ -48,6 +48,8 @@ interface ProductTourContextValue {
   registerTarget: <T extends MeasurableTarget>(key: string) => (ref: T | null) => void;
   /** Clear the "completed" flag so the tour shows again */
   resetTour: (tourId?: string) => Promise<void>;
+  /** Re-measure a target's live position on screen (null if not measurable) */
+  measureTarget: (key: string) => Promise<TargetLayout | null>;
 }
 
 const STORAGE_PREFIX = '@tincadia/tour_';
@@ -75,6 +77,25 @@ export function ProductTourProvider({ children }: { children: React.ReactNode })
   const [targetLayouts, setTargetLayouts] = useState<Record<string, TargetLayout>>({});
   const activeTourId = useRef('default');
   const targetRefs = useRef<Map<string, MeasurableTarget>>(new Map());
+
+  // Re-measure a single target on demand (used by the overlay every step so the
+  // spotlight tracks the real element position instead of a cached snapshot).
+  const measureTarget = useCallback(
+    (key: string): Promise<TargetLayout | null> => {
+      const ref = targetRefs.current.get(key);
+      if (!ref) return Promise.resolve(null);
+      return new Promise<TargetLayout | null>((resolve) => {
+        try {
+          ref.measureInWindow((x, y, width, height) => {
+            resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+          });
+        } catch {
+          resolve(null);
+        }
+      });
+    },
+    [],
+  );
 
   // ── Target registration ──
 
@@ -202,6 +223,7 @@ export function ProductTourProvider({ children }: { children: React.ReactNode })
     skipTour,
     registerTarget,
     resetTour,
+    measureTarget,
   };
 
   return (
@@ -212,6 +234,7 @@ export function ProductTourProvider({ children }: { children: React.ReactNode })
           steps={steps}
           currentStep={currentStep}
           targetLayouts={targetLayouts}
+          measureTarget={measureTarget}
           onNext={nextStep}
           onPrev={prevStep}
           onSkip={skipTour}

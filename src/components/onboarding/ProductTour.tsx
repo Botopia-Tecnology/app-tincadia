@@ -27,10 +27,25 @@ import type { TourStep, TargetLayout } from '../../types/tour.types';
 // Constants
 // ────────────────────────────────────────────────────
 
-const SPOTLIGHT_PADDING = 8;
-const SPOTLIGHT_RADIUS = 12;
+// Padding proporcional al tamaño del botón, con un piso generoso: da margen
+// suficiente para que el recuadro rodee el botón aunque queden 1-2px de
+// desfase de medición, sin depender de constantes calibradas por dispositivo.
+const SPOTLIGHT_PADDING_MIN = 14;
+const SPOTLIGHT_PADDING_RATIO = 0.35; // 35% del lado más corto del botón
+const SPOTLIGHT_PADDING_MAX = 28;
+const SPOTLIGHT_RADIUS = 16;
 const TOOLTIP_GAP = 16; // vertical gap between spotlight edge and tooltip
 const OVERLAY_COLOR = 'rgba(0, 0, 0, 0.75)';
+
+function getSpotlightPadding(target: TargetLayout): number {
+  const shortSide = Math.min(target.width, target.height);
+  return Math.round(
+    Math.min(
+      SPOTLIGHT_PADDING_MAX,
+      Math.max(SPOTLIGHT_PADDING_MIN, shortSide * SPOTLIGHT_PADDING_RATIO),
+    ),
+  );
+}
 
 // ────────────────────────────────────────────────────
 // Props
@@ -40,6 +55,8 @@ export interface ProductTourOverlayProps {
   steps: TourStep[];
   currentStep: number;
   targetLayouts: Record<string, TargetLayout>;
+  /** Live re-measure of a target by key; keeps the spotlight glued to the real element */
+  measureTarget: (key: string) => Promise<TargetLayout | null>;
   onNext: () => void;
   onPrev: () => void;
   onSkip: () => void;
@@ -96,6 +113,7 @@ export function ProductTourOverlay({
   steps,
   currentStep,
   targetLayouts,
+  measureTarget,
   onNext,
   onPrev,
   onSkip,
@@ -104,19 +122,65 @@ export function ProductTourOverlay({
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const overlayRef = useRef<View>(null);
   const [tooltipHeight, setTooltipHeight] = useState(180);
-  const [overlayOffset, setOverlayOffset] = useState({ x: 0, y: 0 });
+  // null hasta que el overlay se mide a sí mismo: evita dibujar el spotlight con
+  // un offset {0,0} provisional en el primer frame (causa de saltos por device).
+  const [overlayOffset, setOverlayOffset] = useState<{ x: number; y: number } | null>(null);
 
   const step = steps[currentStep];
-  const rawTarget = step ? targetLayouts[step.targetKey] : null;
+  // Posición real del target del paso actual: sembrada con el layout cacheado y
+  // refrescada con una medición en vivo (ver efecto abajo) para seguir al botón.
+  const [liveTarget, setLiveTarget] = useState<TargetLayout | null>(null);
   const isFirst = currentStep === 0;
   const isLast = currentStep === steps.length - 1;
 
+  // ── Re-medición en vivo del target de cada paso ──
+  // Reintenta hasta obtener dos mediciones consecutivas iguales (posición
+  // asentada), así nunca captura coordenadas de un frame de transición.
+  useEffect(() => {
+    if (!step) return;
+    let cancelled = false;
+
+    // Arranca desde el layout cacheado de ESTE paso (o nada) para no mostrar por
+    // un frame la posición del target anterior mientras llega la medición viva.
+    setLiveTarget(targetLayouts[step.targetKey] ?? null);
+
+    const measureUntilStable = async () => {
+      let previous: TargetLayout | null = null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const layout = await measureTarget(step.targetKey);
+        if (cancelled) return;
+
+        if (layout) {
+          const settled =
+            previous &&
+            Math.abs(previous.x - layout.x) < 1 &&
+            Math.abs(previous.y - layout.y) < 1 &&
+            Math.abs(previous.width - layout.width) < 1 &&
+            Math.abs(previous.height - layout.height) < 1;
+
+          setLiveTarget(layout);
+          if (settled) return; // posición estable → listo
+          previous = layout;
+        }
+        // Espera un frame de layout antes de reintentar.
+        await new Promise((r) => setTimeout(r, 60));
+      }
+    };
+
+    void measureUntilStable();
+    return () => {
+      cancelled = true;
+    };
+  }, [step, currentStep, measureTarget, targetLayouts]);
+
   // measureInWindow del target y del overlay comparten origen de coordenadas en
-  // ambas plataformas; restar overlayOffset ya normaliza cualquier diferencia.
-  const target = rawTarget ? {
+  // ambas plataformas; restar overlayOffset ya normaliza cualquier diferencia
+  // (barras de estado, safe areas, headers) sin constantes por dispositivo.
+  const rawTarget = liveTarget;
+  const target = rawTarget && overlayOffset ? {
     ...rawTarget,
     x: rawTarget.x - overlayOffset.x,
-    y: rawTarget.y - overlayOffset.y + (step.yOffset || 0)
+    y: rawTarget.y - overlayOffset.y,
   } : null;
 
   // Fade-in animation on each step change
@@ -129,15 +193,35 @@ export function ProductTourOverlay({
     }).start();
   }, [currentStep, fadeAnim]);
 
-  if (!step || !target) return null;
+  // No dibujar hasta tener target medido Y offset del overlay resuelto: así el
+  // recuadro aparece ya en su sitio, nunca en una posición provisional.
+  if (!step || !target) {
+    return (
+      <View
+        ref={overlayRef}
+        style={styles.container}
+        onLayout={() => {
+          overlayRef.current?.measureInWindow((x, y) => {
+            setOverlayOffset((prev) =>
+              prev && prev.x === x && prev.y === y ? prev : { x, y },
+            );
+          });
+        }}
+      >
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: OVERLAY_COLOR }]} pointerEvents="auto" />
+      </View>
+    );
+  }
+
+  const spotlightPadding = getSpotlightPadding(target);
 
   // ── Tooltip positioning ──
   const targetCenterY = target.y + target.height / 2;
   const showAbove = targetCenterY > screenH * 0.5;
 
   const rawTop = showAbove
-    ? target.y - SPOTLIGHT_PADDING - TOOLTIP_GAP - tooltipHeight
-    : target.y + target.height + SPOTLIGHT_PADDING + TOOLTIP_GAP;
+    ? target.y - spotlightPadding - TOOLTIP_GAP - tooltipHeight
+    : target.y + target.height + spotlightPadding + TOOLTIP_GAP;
 
   // Clamp so the tooltip never goes off-screen
   const tooltipTop = Math.max(20, Math.min(screenH - tooltipHeight - 20, rawTop));
@@ -149,7 +233,7 @@ export function ProductTourOverlay({
   const arrowLeft = Math.max(24, Math.min(targetCenterX - tooltipLeft - 7, tooltipWidth - 38));
 
   // ── SVG path ──
-  const svgPath = createSpotlightPath(screenW, screenH, target, SPOTLIGHT_PADDING, SPOTLIGHT_RADIUS);
+  const svgPath = createSpotlightPath(screenW, screenH, target, spotlightPadding, SPOTLIGHT_RADIUS);
 
   return (
     <View
@@ -157,9 +241,9 @@ export function ProductTourOverlay({
       style={styles.container}
       onLayout={() => {
         overlayRef.current?.measureInWindow((x, y) => {
-          if (x !== overlayOffset.x || y !== overlayOffset.y) {
-            setOverlayOffset({ x, y });
-          }
+          setOverlayOffset((prev) =>
+            prev && prev.x === x && prev.y === y ? prev : { x, y },
+          );
         });
       }}
     >
