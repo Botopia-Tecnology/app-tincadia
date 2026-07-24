@@ -865,40 +865,78 @@ function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 3
     );
 }
 
+// Periodo de gracia tras conectar para que el otro participante aparezca (la
+// negociación WebRTC no es instantánea). Si nunca llega, el otro colgó durante
+// la conexión y hay que salir de inmediato, no esperar el timeout de 30s.
+const EMPTY_ROOM_GRACE_MS = 3500;
+
+function isHumanParticipant(participant: RemoteParticipant): boolean {
+    const identity = participant.identity.toLowerCase();
+    return !participant.isAgent &&
+        !identity.includes('agent') &&
+        !identity.includes('bot') &&
+        !identity.includes('transcriber');
+}
+
 function RoomEvents({ onLeave }: { onLeave: () => void }) {
     const room = useRoomContext();
 
+    const countRemoteHumans = useCallback(() => {
+        if (!room) return 0;
+        let count = 0;
+        room.remoteParticipants.forEach((p) => {
+            if (isHumanParticipant(p)) count++;
+        });
+        return count;
+    }, [room]);
+
+    // 1. Cierre cuando el otro humano se desconecta de la sala (caso normal).
     useEffect(() => {
         if (!room) return;
 
         const onParticipantDisconnected = (participant: RemoteParticipant) => {
-            if (!participant) return;
-
-            const isAgent = participant.isAgent ||
-                participant.identity.toLowerCase().includes('agent') ||
-                participant.identity.toLowerCase().includes('bot') ||
-                participant.identity.toLowerCase().includes('transcriber');
-
-            if (isAgent) return;
-
-            let remoteHumanCount = 0;
-            room.remoteParticipants.forEach((p) => {
-                if (!p.isAgent && !p.identity.toLowerCase().includes('agent') && !p.identity.toLowerCase().includes('bot') && !p.identity.toLowerCase().includes('transcriber')) {
-                    remoteHumanCount++;
-                }
-            });
-
-            if (remoteHumanCount === 0) {
+            if (!participant || !isHumanParticipant(participant)) return;
+            if (countRemoteHumans() === 0) {
                 onLeave();
             }
         };
 
         room.on('participantDisconnected', onParticipantDisconnected);
-
         return () => {
             room.off('participantDisconnected', onParticipantDisconnected);
         };
-    }, [room, onLeave]);
+    }, [room, onLeave, countRemoteHumans]);
+
+    // 2. Carrera "el receptor entra justo cuando el llamante cuelga": el otro
+    // pudo colgar antes de aparecer en la sala, así que participantDisconnected
+    // nunca dispara. Si tras un periodo de gracia sigue sin haber otro humano,
+    // salir de inmediato en vez de quedar 30s en una llamada fantasma.
+    useEffect(() => {
+        if (!room) return;
+
+        // Ya hay alguien: no aplica la salida por sala vacía.
+        if (countRemoteHumans() > 0) return;
+
+        const graceTimer = setTimeout(() => {
+            if (countRemoteHumans() === 0) {
+                console.log('[CALL_DEBUG] Room still empty after grace period; the other party hung up during connect. Leaving.');
+                onLeave();
+            }
+        }, EMPTY_ROOM_GRACE_MS);
+
+        // Si el otro llega dentro del periodo de gracia, cancelar la salida.
+        const onParticipantConnected = (participant: RemoteParticipant) => {
+            if (participant && isHumanParticipant(participant)) {
+                clearTimeout(graceTimer);
+            }
+        };
+        room.on('participantConnected', onParticipantConnected);
+
+        return () => {
+            clearTimeout(graceTimer);
+            room.off('participantConnected', onParticipantConnected);
+        };
+    }, [room, onLeave, countRemoteHumans]);
 
     return null;
 }
