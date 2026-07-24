@@ -21,12 +21,58 @@ module.exports = function withVoipAppDelegate(config) {
         '\n'
       );
 
+      // ── COLD-START REGISTRO NATIVO DEL PKPushRegistry ──
+      // Sin esto, el registry solo se crea desde JS (registerVoipToken), que no
+      // corre con la app terminada: iOS no tiene delegate al que entregar el push
+      // VoIP en frío, así que la llamada solo entra con la app abierta. Registrar
+      // el registry en didFinishLaunching hace que iOS despierte la app cerrada.
+      // Idempotente con el registro JS (mismo delegate, mismo token).
+      // Quita cualquier llamada de registro inyectada por una pasada anterior
+      // (prebuilds que reusan ios/), para no duplicarla al reinsertar.
+      contents = contents.replace(
+        /\n[ \t]*TincadiaVoipRegistry\.shared\.register\(delegate: self\)/g,
+        ''
+      );
+
+      // Inserta el registro ANTES del `return super.application(...)` de la
+      // plantilla de Expo (SDK 54): esa línea retorna, así que insertar después
+      // sería código muerto. Si la firma cambiara, el replace no aplica y se
+      // registra un aviso en el build, pero nunca rompe la compilación.
+      const didFinishReturnRegex =
+        /(\n[ \t]*)(return super\.application\(application, didFinishLaunchingWithOptions: launchOptions\))/;
+      if (didFinishReturnRegex.test(contents)) {
+        contents = contents.replace(
+          didFinishReturnRegex,
+          `$1TincadiaVoipRegistry.shared.register(delegate: self)$1$2`
+        );
+      } else {
+        console.warn(
+          '[withVoipAppDelegate] No se encontró el return super.application(didFinishLaunchingWithOptions) esperado; ' +
+          'el registro nativo de PushKit en cold-start NO se inyectó. Revisa la plantilla del AppDelegate de este SDK.'
+        );
+      }
+
       const swiftExtension = `
 #if canImport(PushKit)
 import PushKit
 #if canImport(RNCallKeep)
 import RNCallKeep
 #endif
+
+// Retiene el PKPushRegistry a nivel de proceso: si se libera, iOS deja de
+// entregar pushes VoIP. Registra el delegate en el arranque nativo (cold start).
+final class TincadiaVoipRegistry {
+    static let shared = TincadiaVoipRegistry()
+    private var registry: PKPushRegistry?
+
+    func register(delegate: PKPushRegistryDelegate) {
+        if registry != nil { return }
+        let reg = PKPushRegistry(queue: .main)
+        reg.delegate = delegate
+        reg.desiredPushTypes = [.voIP]
+        registry = reg
+    }
+}
 
 extension AppDelegate: PKPushRegistryDelegate {
     private func tincadiaEnsureCallKeepSetup() {
@@ -155,6 +201,27 @@ static NSString *TincadiaValidCallUUID(NSDictionary *payload) {
 
 `;
         contents = contents.slice(0, lastEndIndex) + objcImplementation + contents.slice(lastEndIndex);
+      }
+
+      // Quita cualquier llamada previa antes de reinsertar (idempotencia).
+      contents = contents.replace(
+        /\n[ \t]*\[RNVoipPushNotificationManager voipRegistration\];/g,
+        ''
+      );
+
+      // Registro nativo del PKPushRegistry en cold start (rama ObjC): la librería
+      // ya expone voipRegistration, que crea el registry y asigna el delegate al
+      // AppDelegate. Sin esto, con la app terminada no hay delegate para el push.
+      const objcColdStart = '\n    [RNVoipPushNotificationManager voipRegistration];\n';
+      const objcDidFinishRegex =
+        /(-\s*\(BOOL\)application:\(UIApplication \*\)application didFinishLaunchingWithOptions:\(NSDictionary \*\)launchOptions\s*\{\n)/;
+      if (objcDidFinishRegex.test(contents)) {
+        contents = contents.replace(objcDidFinishRegex, `$1${objcColdStart}`);
+      } else {
+        console.warn(
+          '[withVoipAppDelegate] (objc) No se encontró didFinishLaunchingWithOptions; ' +
+          'el registro nativo de PushKit en cold-start NO se inyectó.'
+        );
       }
     }
 
