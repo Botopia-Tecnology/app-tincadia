@@ -489,7 +489,7 @@ export function SOSScreen({
                                     </Text>
                         </View>
                         <Text style={[styles.activeHint, { color: colors.textMuted }]}>
-                            El operador escuchará esto: "Soy una persona sorda, necesito ayuda..."
+                            El operador escuchará esto: &ldquo;Soy una persona sorda, necesito ayuda...&rdquo;
                         </Text>
                     </View>
                 )}
