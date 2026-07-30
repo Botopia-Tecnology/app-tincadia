@@ -11,9 +11,6 @@ import {
     useRoomContext,
     useParticipants,
 } from '@livekit/react-native';
-
-// Initialize WebRTC
-registerGlobals();
 import { Track, RoomEvent, ConnectionState, type RemoteParticipant } from 'livekit-client';
 import { Audio } from 'expo-av';
 import { API_URL } from '../config/api.config';
@@ -27,6 +24,10 @@ import { UpgradeModal } from '../components/UpgradeModal';
 import { supabase } from '../lib/supabase';
 import { callKeepService } from '../services/callkeep.service';
 import { callScreenStyles as styles } from '../styles/CallScreen.styles';
+import { CallState, HANDOFF_ACTIVE_CALL_EVENT } from '../lib/callState';
+
+// Initialize WebRTC
+registerGlobals();
 
 type LayoutMode = 'grid' | 'interpreter';
 
@@ -169,8 +170,6 @@ export interface CallScreenProps {
     isIncomingCall?: boolean;
     nativeCallUUID?: string;
 }
-
-import { CallState, HANDOFF_ACTIVE_CALL_EVENT } from '../lib/callState';
 
 export const CallScreen = ({
     roomName,
