@@ -19,7 +19,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { appNotificationService, AppNotification, NotificationType } from '../services/appNotification.service';
 import { notificationsStyles as styles } from '../styles/Notifications.styles';
-import { BackArrowIcon } from './icons/NavigationIcons';
+import { BackArrowIcon } from '../components/icons/NavigationIcons';
 
 interface NotificationsScreenProps {
     userId: string;

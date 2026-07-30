@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Alert, Button } from 'react-native';
 import { Camera, CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
-import { BackArrowIcon } from './icons/NavigationIcons';
+import { BackArrowIcon } from '../components/icons/NavigationIcons';
 
 interface QRScannerScreenProps {
     onClose: () => void;

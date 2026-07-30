@@ -16,7 +16,7 @@ import {
   Linking,
   // KeyboardAvoidingView, // Replaced by KeyboardSafeView
 } from 'react-native';
-import { KeyboardSafeView } from './common/KeyboardSafeView';
+import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 // import { SafeAreaView } from 'react-native-safe-area-context'; // Managed by KeyboardSafeView
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,15 +25,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import { useAppleAuth } from '../hooks/useAppleAuth';
-import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
+import { GoogleIcon, AppleIcon } from '../components/icons/SocialIcons';
 import { registerScreenStyles as styles } from '../styles/RegisterScreen.styles';
 import { getDocumentTypeId } from '../types/auth.types';
 import { isValidPhoneForCountry } from '../lib/utils';
 import Svg, { Circle } from 'react-native-svg';
-import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
+import { CountryCodePicker, defaultCountry } from '../components/common/CountryCodePicker';
 
 // Phone OTP verification temporarily disabled
-// import { PhoneVerificationModal } from './auth/PhoneVerificationModal';
+// import { PhoneVerificationModal } from '../components/auth/PhoneVerificationModal';
 
 interface RegisterScreenProps {
   onBack: () => void;

@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Image, FlatList, TextInput, Alert } from 'react-native';
-import { KeyboardSafeView } from './common/KeyboardSafeView';
+import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { coursesScreenStyles as styles } from '../styles/CoursesScreen.styles';
-import { BottomNavigation } from './BottomNavigation';
-import { NotificationBell } from './NotificationBell';
-import { SearchIcon } from './icons/NavigationIcons';
+import { BottomNavigation } from '../components/BottomNavigation';
+import { NotificationBell } from '../components/NotificationBell';
+import { SearchIcon } from '../components/icons/NavigationIcons';
 import { contentService, Course } from '../services/content.service';
 import { paymentsService } from '../services/payments.service';
 import { useCourses } from '../hooks/useCourses';

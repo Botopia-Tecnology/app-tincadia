@@ -5,15 +5,15 @@ import * as Speech from 'expo-speech';
 import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
 import * as Clipboard from 'expo-clipboard';
-import { KeyboardSafeView } from './common/KeyboardSafeView';
+import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { sosScreenStyles as styles } from '../styles/SOSScreen.styles';
-import { BottomNavigation } from './BottomNavigation';
-import { NotificationBell } from './NotificationBell';
+import { BottomNavigation } from '../components/BottomNavigation';
+import { NotificationBell } from '../components/NotificationBell';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useSubscription } from '../hooks/useSubscription';
-import { UpgradeModal } from './UpgradeModal';
+import { UpgradeModal } from '../components/UpgradeModal';
 import { chatService } from '../services/chat.service';
 import {
     Siren,
@@ -30,7 +30,7 @@ import {
     Search,
     Video
 } from 'lucide-react-native';
-import { SearchIcon } from './icons/NavigationIcons';
+import { SearchIcon } from '../components/icons/NavigationIcons';
 import { NavigateFunction } from '../types/navigation.types';
 
 interface EmergencyType {

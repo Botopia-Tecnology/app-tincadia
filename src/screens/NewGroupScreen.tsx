@@ -17,7 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { chatService } from '../services/chat.service';
 import { saveConversation } from '../database/chatDatabase';
 import { contactService, Contact } from '../services/contact.service';
-import { BackArrowIcon, CheckIcon } from './icons/NavigationIcons';
+import { BackArrowIcon, CheckIcon } from '../components/icons/NavigationIcons';
 import { useAlert } from '../components/common/CustomAlert';
 import { useAppContacts } from '../hooks/useAppContacts';
 import * as ImagePicker from 'expo-image-picker';

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share, Switch, RefreshControl } from 'react-native';
 import { Settings, Moon, Sun } from 'lucide-react-native';
-import { KeyboardSafeView } from './common/KeyboardSafeView';
+import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { profileScreenStyles as styles } from '../styles/ProfileScreen.styles';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme, ThemeMode } from '../contexts/ThemeContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { API_URL } from '../config/api.config';
-import { useAlert } from './common/CustomAlert';
+import { useAlert } from '../components/common/CustomAlert';
 import {
     ChatIcon,
     ProfileIcon,
@@ -19,16 +19,16 @@ import {
     ChevronRightIcon,
     CameraIcon,
     EmergencyContactIcon,
-} from './icons/NavigationIcons';
-import { ManagePlanModal } from './ManagePlanModal';
-import { BottomNavigation } from './BottomNavigation';
-import { NotificationBell } from './NotificationBell';
+} from '../components/icons/NavigationIcons';
+import { ManagePlanModal } from '../components/ManagePlanModal';
+import { BottomNavigation } from '../components/BottomNavigation';
+import { NotificationBell } from '../components/NotificationBell';
 import { NavigateFunction } from '../types/navigation.types';
 import { APP_TIERS, BACKEND_PLAN_TYPES } from '../config/revenuecat.config';
 
-import { EditProfileScreen } from './profile/EditProfileScreen';
-import { PrivacyScreen } from './profile/PrivacyScreen';
-import { EmergencyContactsScreen } from './profile/EmergencyContactsScreen';
+import { EditProfileScreen } from '../components/profile/EditProfileScreen';
+import { PrivacyScreen } from '../components/profile/PrivacyScreen';
+import { EmergencyContactsScreen } from '../components/profile/EmergencyContactsScreen';
 
 interface ProfileScreenProps {
     onNavigate: NavigateFunction;

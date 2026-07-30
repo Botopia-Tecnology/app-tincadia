@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import { contentService, Course, Module, Lesson } from '../services/content.service';
-import { PlayIcon, PauseIcon, SkipForwardIcon, SkipBackwardIcon, FullscreenIcon } from './icons/NavigationIcons';
+import { PlayIcon, PauseIcon, SkipForwardIcon, SkipBackwardIcon, FullscreenIcon } from '../components/icons/NavigationIcons';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface CoursePlayerScreenProps {

@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { KeyboardSafeView } from './common/KeyboardSafeView';
+import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
@@ -33,13 +33,13 @@ import { NavigateFunction } from '../types/navigation.types';
 import { useAutoStartTour, MAIN_TOUR_STEPS } from '../hooks/useProductTour';
 
 // Components
-import { BottomNavigation } from './BottomNavigation';
-import { ChatView } from './chat/ChatView';
+import { BottomNavigation } from '../components/BottomNavigation';
+import { ChatView } from '../components/chat/ChatView';
 import { NotificationsScreen } from './NotificationsScreen';
-import { AddContactModal } from './AddContactModal';
-import { ChatListItem } from './chat/components/ChatListItem';
-import { ChatsHeader } from './chat/components/ChatsHeader';
-import { PlusIcon, InviteIcon, AccountIcon } from './icons/NavigationIcons';
+import { AddContactModal } from '../components/AddContactModal';
+import { ChatListItem } from '../components/chat/components/ChatListItem';
+import { ChatsHeader } from '../components/chat/components/ChatsHeader';
+import { PlusIcon, InviteIcon, AccountIcon } from '../components/icons/NavigationIcons';
 
 interface ChatsScreenProps {
   onNavigate: NavigateFunction;

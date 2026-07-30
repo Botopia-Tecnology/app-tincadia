@@ -18,15 +18,15 @@ import {
     ScrollView,
 } from 'react-native';
 // import { SafeAreaView } from 'react-native-safe-area-context'; // Managed by KeyboardSafeView
-import { KeyboardSafeView } from './common/KeyboardSafeView';
+import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 import { useAuth } from '../contexts/AuthContext';
 import { DOCUMENT_TYPE_MAP } from '../types/auth.types';
 import { completeProfileStyles as styles } from '../styles/CompleteProfileScreen.styles';
-import { CountryCodePicker, defaultCountry } from './common/CountryCodePicker';
+import { CountryCodePicker, defaultCountry } from '../components/common/CountryCodePicker';
 import { isValidPhoneForCountry } from '../lib/utils';
 
 // Phone OTP verification temporarily disabled
-// import { PhoneVerificationModal } from './auth/PhoneVerificationModal';
+// import { PhoneVerificationModal } from '../components/auth/PhoneVerificationModal';
 
 const DOCUMENT_TYPES = Object.keys(DOCUMENT_TYPE_MAP);
 

@@ -10,7 +10,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { KeyboardSafeView } from './common/KeyboardSafeView';
+import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../hooks/useTranslation';
@@ -18,8 +18,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import { useAppleAuth } from '../hooks/useAppleAuth';
-import { GoogleIcon, AppleIcon } from './icons/SocialIcons';
-import { FaceIdIcon, FingerprintIcon } from './icons/NavigationIcons';
+import { GoogleIcon, AppleIcon } from '../components/icons/SocialIcons';
+import { FaceIdIcon, FingerprintIcon } from '../components/icons/NavigationIcons';
 import { RegisterScreen } from './RegisterScreen';
 import { ForgotPasswordScreen } from './ForgotPasswordScreen';
 import { loginScreenStyles as styles } from '../styles/LoginScreen.styles';

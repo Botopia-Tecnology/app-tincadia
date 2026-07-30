@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { contentService, Course } from '../services/content.service';
 import { paymentsService } from '../services/payments.service';
 import { useSubscription } from '../hooks/useSubscription';
-import { BackArrowIcon } from './icons/NavigationIcons';
+import { BackArrowIcon } from '../components/icons/NavigationIcons';
 import { useTheme } from '../contexts/ThemeContext';
 import { NavigateFunction } from '../types/navigation.types';
 
