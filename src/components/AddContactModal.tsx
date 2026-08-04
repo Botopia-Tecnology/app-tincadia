@@ -14,7 +14,7 @@ import {
     ActivityIndicator,
     ScrollView,
     KeyboardAvoidingView,
-    Platform,
+    Modal,
     Alert,
 } from 'react-native';
 import * as Contacts from 'expo-contacts';
@@ -250,9 +250,13 @@ export function AddContactModal({
         }
     };
 
-    if (!visible) return null;
-
     return (
+        <Modal
+            visible={visible}
+            transparent
+            animationType="slide"
+            onRequestClose={handleClose}
+        >
         <View style={styles.overlay}>
             <TouchableOpacity
                 style={styles.backdrop}
@@ -260,12 +264,16 @@ export function AddContactModal({
                 onPress={handleClose}
             />
 
-            {/* En iOS la ventana no se redimensiona con el teclado (a diferencia de
-                adjustResize en Android): sin este KAV en flujo normal, el sheet
-                queda anclado al borde físico y el teclado tapa teléfono y Guardar.
-                El padding de un KAV ancestro no desplaza este overlay absoluto. */}
+            {/* El sheet vive dentro de un Modal nativo (patrón EditInfoModal):
+                como overlay absoluto en el árbol de la pantalla, el KAV de iOS
+                calcula mal el solape con el teclado y no aplica padding, así que
+                teléfono y Guardar quedaban tapados. Dentro del Modal, el KAV mide
+                contra la ventana completa y el padding funciona.
+                El padding aplica en AMBAS plataformas: con edgeToEdgeEnabled,
+                Android tampoco redimensiona la ventana del Modal con el teclado
+                (adjustResize no aplica a ventanas edge-to-edge). */}
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior="padding"
                 style={styles.keyboardAvoider}
             >
                 <View style={[styles.container, { backgroundColor: colors.surface }]}>
@@ -385,5 +393,6 @@ export function AddContactModal({
                 </View>
             </KeyboardAvoidingView>
         </View>
+        </Modal>
     );
 }
