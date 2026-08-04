@@ -156,6 +156,15 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     Speech.speak(speechText, {
       language: 'es-ES',
       rate: 1.0,
+      // El motor TTS tarda en inicializar (sobre todo la primera vez tras
+      // abrir la app). En Android el karaoke es un temporizador estimado, así
+      // que debe arrancar cuando el motor empieza a sonar de verdad, no al
+      // llamar a speak(); si no, el amarillo avanza sobre silencio.
+      onStart: () => {
+        if (Platform.OS === 'android' && isSpeakingRef.current) {
+          runAndroidSpeechTimer(startIndex);
+        }
+      },
       onBoundary: (event: any) => {
         if (Platform.OS === 'ios' && isSpeakingRef.current) {
           const relativeCharIndex = event.charIndex;
@@ -189,10 +198,6 @@ export const useCommunicationBoard = (onClose?: () => void) => {
         }
       }
     });
-
-    if (Platform.OS === 'android') {
-      runAndroidSpeechTimer(startIndex);
-    }
   };
 
   const handleSpeak = async () => {
