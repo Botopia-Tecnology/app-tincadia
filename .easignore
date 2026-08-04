@@ -1,0 +1,47 @@
+# Qué NO subir a EAS Build. Este archivo REEMPLAZA al .gitignore para el upload:
+# es idéntico salvo que NO excluye los archivos de configuración de Firebase
+# (GoogleService-Info.plist / google-services.json), que git ignora a propósito
+# (commit 06ba941) pero el builder necesita para compilar.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+.env
+.env.local
