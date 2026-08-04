@@ -99,7 +99,13 @@ export const MessageList = ({
     const isMe = msg.senderId === userId;
 
     if (msg.type === 'call') {
-      const CALL_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
+      // Fallback, no el mecanismo principal: la llamada termina cuando llega
+      // un terminal (lo emite quien cuelga de últimas o el último humano al
+      // auto-cerrarse). El TTL solo cubre el caso extremo de que ese terminal
+      // nunca llegue (todos los teléfonos murieron a la vez), y es largo para
+      // que en llamadas grupales extensas quien salió pueda reingresar con
+      // "Unirse ahora" mientras la llamada siga viva.
+      const CALL_EXPIRY_MS = 60 * 60 * 1000; // 60 minutos
 
       const getSafeTime = (dateStr: string) => {
         if (!dateStr) return 0;

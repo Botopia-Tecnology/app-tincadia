@@ -195,6 +195,14 @@ export const CallScreen = ({
     const hasExitedRef = useRef(false);
     const hasConnectedRef = useRef(false);
     const reconnectAttemptsRef = useRef(0);
+    // Humanos remotos actualmente en la sala (lo mantiene RoomEvents). Un
+    // evento terminal remoto con 2+ humanos aún conectados solo significa que
+    // ALGUIEN colgó, no que la llamada haya terminado para nosotros.
+    const remoteHumansRef = useRef(0);
+
+    const handleRemoteHumanCountChange = useCallback((count: number) => {
+        remoteHumansRef.current = count;
+    }, []);
 
     useEffect(() => {
         Keyboard.dismiss();
@@ -266,6 +274,57 @@ export const CallScreen = ({
         updateConversationPreview(conversationId, content, now, false);
         DeviceEventEmitter.emit('chat_local_update', conversationId);
         DeviceEventEmitter.emit('conversations_updated');
+    }, [conversationId, roomName, callSessionId]);
+
+    // Cierre por "quedé solo en la sala" (RoomEvents). En el flujo normal el
+    // penúltimo en colgar ya emitió el call_ended, pero si su app murió sin
+    // colgar (crash, pérdida de red, batería) nadie emite el terminal que
+    // apaga la caja "Unirse ahora" en los chats del resto: lo emite aquí el
+    // último humano al salir. Si ya procesamos un fin remoto
+    // (hasSavedRemoteEndRef), el terminal ya existe y solo salimos.
+    const emitTerminalAsLastHuman = useCallback(() => {
+        if (!hasExitedRef.current && conversationId && userId && !hasSavedRemoteEndRef.current) {
+            console.log('[CALL_DEBUG] Last human leaving room; emitting terminal call_ended.', {
+                conversationId,
+                roomName,
+                callSessionId,
+            });
+            persistRemoteEndLocally('call_ended');
+
+            const tempId = `call_last_leave_${Date.now()}`;
+            const now = new Date().toISOString();
+            broadcastCallEndedToChat(conversationId, userId, tempId, now, roomName, callSessionId);
+            chatService.sendMessage({
+                conversationId,
+                senderId: userId,
+                content: 'Llamada finalizada',
+                type: 'call_ended',
+                metadata: {
+                    roomName,
+                    callSessionId,
+                },
+            }).catch(e => console.log('Could not send last-participant call_ended:', e));
+        }
+        safeOnBack();
+    }, [conversationId, userId, roomName, callSessionId, persistRemoteEndLocally, safeOnBack]);
+
+    // En llamadas grupales, los eventos terminales remotos (call_ended,
+    // call_rejected) llegan a TODOS los participantes aunque solo uno haya
+    // colgado. Si todavía quedan 2+ humanos en la sala, la llamada sigue viva
+    // para nosotros; con 1 o 0 el evento sí es un cierre real (o el emisor es
+    // ese último humano cuyo disconnect de LiveKit aún no se registró).
+    const shouldKeepGroupCallAlive = useCallback((source: string) => {
+        if (remoteHumansRef.current >= 2) {
+            console.log('[CALL_DEBUG] Ignoring remote terminal event; group call still has other humans.', {
+                source,
+                remoteHumans: remoteHumansRef.current,
+                conversationId,
+                roomName,
+                callSessionId,
+            });
+            return true;
+        }
+        return false;
     }, [conversationId, roomName, callSessionId]);
 
     const retryRoomConnection = useCallback(() => {
@@ -350,6 +409,7 @@ export const CallScreen = ({
                 }
 
                 if (data.senderId !== userId && (data.roomName === roomName || data.conversationId === conversationId)) {
+                    if (shouldKeepGroupCallAlive('fast_broadcast')) return;
                     console.log('[CALL_DEBUG] Fast Broadcast remote call end detected, terminating local call...');
                     persistRemoteEndLocally(asOptionalString(data?.type));
                     safeOnBack();
@@ -360,7 +420,7 @@ export const CallScreen = ({
         return () => {
             void supabase.removeChannel(channel);
         };
-    }, [conversationId, roomName, userId, callSessionId, safeOnBack, persistRemoteEndLocally]);
+    }, [conversationId, roomName, userId, callSessionId, safeOnBack, persistRemoteEndLocally, shouldKeepGroupCallAlive]);
 
     const handleCallTimeout = useCallback(() => {
         console.log('Call timed out after 30s. Disconnecting...');
@@ -527,13 +587,14 @@ export const CallScreen = ({
             }
 
             if (data.conversationId === conversationId || data.roomName === roomName) {
+                if (shouldKeepGroupCallAlive('external_call_ended')) return;
                 console.log('[CALL_DEBUG] Remote call end detected, terminating local call...');
                 persistRemoteEndLocally(asOptionalString(data?.type));
                 safeOnBack();
             }
         });
         return () => sub.remove();
-    }, [conversationId, roomName, callSessionId, safeOnBack, persistRemoteEndLocally]);
+    }, [conversationId, roomName, callSessionId, safeOnBack, persistRemoteEndLocally, shouldKeepGroupCallAlive]);
 
     useEffect(() => {
         if (!conversationId) return;
@@ -588,6 +649,8 @@ export const CallScreen = ({
                     return;
                 }
 
+                if (shouldKeepGroupCallAlive('active_call_channel')) return;
+
                 console.log('[CALL_DEBUG] Remote terminal call event received via chat broadcast, closing immediately.', {
                     conversationId,
                     roomName,
@@ -604,7 +667,7 @@ export const CallScreen = ({
         return () => {
             void supabase.removeChannel(activeCallChannel);
         };
-    }, [conversationId, roomName, userId, callSessionId, safeOnBack, persistRemoteEndLocally]);
+    }, [conversationId, roomName, userId, callSessionId, safeOnBack, persistRemoteEndLocally, shouldKeepGroupCallAlive]);
 
     // Do not save a generic call_ended marker on every unmount.
     // Hangup and remote-end flows already emit/persist terminal events; doing it here
@@ -638,10 +701,22 @@ export const CallScreen = ({
                     playThroughEarpieceAndroid: false,
                 });
 
-                const data = await apiClient<{ token: string; url: string }>('/calls/token', {
+                const data = await apiClient<{ token?: string; url?: string; error?: string; message?: string }>('/calls/token', {
                     method: 'POST',
                     body: JSON.stringify({ roomName, username }),
                 });
+
+                // El backend puede negar el token con una razón de negocio
+                // (p. ej. la llamada ya tiene un intérprete conectado).
+                if (data.error && isMounted) {
+                    Alert.alert(
+                        'Llamada ocupada',
+                        data.message || 'Esta llamada ya se encuentra atendida por otro intérprete.',
+                        [{ text: 'Entendido', onPress: safeOnBack }],
+                        { cancelable: false },
+                    );
+                    return;
+                }
 
                 if (data.token && isMounted) {
                     setToken(data.token);
@@ -731,7 +806,12 @@ export const CallScreen = ({
                             onBack={onBack}
                             onNavigate={onNavigate}
                         />
-                        <RoomEvents onLeave={safeOnBack} />
+                        <RoomEvents
+                            onLeave={safeOnBack}
+                            exitIfEmptyAfterGrace={isIncomingCall}
+                            onRemoteHumanCountChange={handleRemoteHumanCountChange}
+                            onLastHumanLeft={emitTerminalAsLastHuman}
+                        />
                     </>
                 )}
             </LiveKitRoom>
@@ -878,7 +958,15 @@ function isHumanParticipant(participant: RemoteParticipant): boolean {
         !identity.includes('transcriber');
 }
 
-function RoomEvents({ onLeave }: { onLeave: () => void }) {
+function RoomEvents({ onLeave, exitIfEmptyAfterGrace, onRemoteHumanCountChange, onLastHumanLeft }: {
+    onLeave: () => void;
+    exitIfEmptyAfterGrace: boolean;
+    onRemoteHumanCountChange?: (count: number) => void;
+    /** Cierre porque el último humano remoto se desconectó (yo quedé solo).
+     * A diferencia de onLeave, aquí puede que nadie haya emitido el terminal
+     * (crash del otro lado), así que el caller puede emitirlo antes de salir. */
+    onLastHumanLeft?: () => void;
+}) {
     const room = useRoomContext();
 
     const countRemoteHumans = useCallback(() => {
@@ -890,6 +978,23 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
         return count;
     }, [room]);
 
+    // Mantiene en el CallScreen padre el conteo de humanos remotos para que
+    // los listeners de cierre remoto sepan si la llamada grupal sigue viva.
+    useEffect(() => {
+        if (!room || !onRemoteHumanCountChange) return;
+
+        const report = () => onRemoteHumanCountChange(countRemoteHumans());
+        report();
+
+        room.on('participantConnected', report);
+        room.on('participantDisconnected', report);
+        return () => {
+            room.off('participantConnected', report);
+            room.off('participantDisconnected', report);
+            onRemoteHumanCountChange(0);
+        };
+    }, [room, onRemoteHumanCountChange, countRemoteHumans]);
+
     // 1. Cierre cuando el otro humano se desconecta de la sala (caso normal).
     useEffect(() => {
         if (!room) return;
@@ -897,7 +1002,7 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
         const onParticipantDisconnected = (participant: RemoteParticipant) => {
             if (!participant || !isHumanParticipant(participant)) return;
             if (countRemoteHumans() === 0) {
-                onLeave();
+                (onLastHumanLeft || onLeave)();
             }
         };
 
@@ -905,14 +1010,17 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
         return () => {
             room.off('participantDisconnected', onParticipantDisconnected);
         };
-    }, [room, onLeave, countRemoteHumans]);
+    }, [room, onLeave, onLastHumanLeft, countRemoteHumans]);
 
     // 2. Carrera "el receptor entra justo cuando el llamante cuelga": el otro
     // pudo colgar antes de aparecer en la sala, así que participantDisconnected
     // nunca dispara. Si tras un periodo de gracia sigue sin haber otro humano,
     // salir de inmediato en vez de quedar 30s en una llamada fantasma.
+    // SOLO para quien se une a una llamada ya existente (receptor): el llamante
+    // espera legítimamente solo en la sala mientras al otro le suena — su caso
+    // "nadie contesta" lo cubre el timeout de 30s del RingingSoundManager.
     useEffect(() => {
-        if (!room) return;
+        if (!room || !exitIfEmptyAfterGrace) return;
 
         // Ya hay alguien: no aplica la salida por sala vacía.
         if (countRemoteHumans() > 0) return;
@@ -936,7 +1044,7 @@ function RoomEvents({ onLeave }: { onLeave: () => void }) {
             clearTimeout(graceTimer);
             room.off('participantConnected', onParticipantConnected);
         };
-    }, [room, onLeave, countRemoteHumans]);
+    }, [room, onLeave, countRemoteHumans, exitIfEmptyAfterGrace]);
 
     return null;
 }
@@ -1252,11 +1360,24 @@ function ControlsView({
         if (hasDisconnectedRef.current) return;
         hasDisconnectedRef.current = true;
 
+        // Si tras mi salida quedan 2+ humanos en la sala, la llamada grupal
+        // sigue sin mí: no emitir ningún terminal call_ended (el broadcast y
+        // el mensaje de API colgarían la llamada en todos los demás
+        // dispositivos). El último par restante sí emite el terminal, y el
+        // último humano solo se cierra vía RoomEvents.
+        let remainingHumans = 0;
+        room?.remoteParticipants?.forEach((p) => {
+            if (isHumanParticipant(p)) remainingHumans++;
+        });
+        const groupCallContinues = remainingHumans >= 2;
+
         console.log('[CALL_DEBUG] CallScreen.handleDisconnect.start', {
             conversationId,
             userId,
             roomName,
             callSessionId,
+            remainingHumans,
+            groupCallContinues,
         });
 
         // Disconnect immediately to avoid UI hang
@@ -1266,7 +1387,7 @@ function ControlsView({
         onHangup();
 
         // Perform side-effects in the background
-        if (conversationId && userId) {
+        if (conversationId && userId && !groupCallContinues) {
             const tempId = `call_${Date.now()}`;
             const now = new Date().toISOString();
 
