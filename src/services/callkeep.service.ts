@@ -273,11 +273,14 @@ class CallKeepService {
     const completionUUID = getStringValue(notification.nativeCallUUID || notification.callUUID || notification.uuid || callUUID);
 
     if (notificationType === 'call_ended' || notificationType === 'call_missed' || notificationType === 'call_rejected') {
-      // Dismiss by every known identifier: with legacy pushes the terminal push
+      // Dismiss by every known identifier: the native handler remaps callUUID to
+      // an ephemeral compliance UUID on terminal pushes (originalCallUUID keeps
+      // the ringing call's UUID), and with legacy pushes the terminal push
       // carries a different random UUID than the original ringing call, so the
       // conversation/room aliases are the only reliable way to reach it.
       const terminalIds = Array.from(new Set([
         callUUID,
+        getStringValue(notification.originalCallUUID),
         getStringValue(notification.conversationId),
         getStringValue(notification.roomName),
       ].filter(Boolean))) as string[];
@@ -324,6 +327,20 @@ class CallKeepService {
       RNCallKeep.addEventListener('answerCall', this.handleAnswerCall);
       RNCallKeep.addEventListener('endCall', this.handleEndCall);
       RNCallKeep.addEventListener('didDisplayIncomingCall', this.handleDidDisplayIncomingCall);
+
+      if (Platform.OS === 'ios') {
+        // Con la llamada CallKit viva tras contestar, es CallKit quien activa la
+        // AVAudioSession (p. ej. contestada desde lock screen con la app en
+        // background). WebRTC/LiveKit debe arrancar su audio en ese momento.
+        RNCallKeep.addEventListener('didActivateAudioSession', () => {
+          try {
+            const { AudioSession } = require('@livekit/react-native');
+            AudioSession.startAudioSession().catch(() => undefined);
+          } catch (error) {
+            console.warn('[CallKeep] Could not start LiveKit audio session:', error);
+          }
+        });
+      }
 
       this.initialized = true;
       console.log('[CallKeep] Service initialized successfully.');
@@ -472,8 +489,12 @@ class CallKeepService {
     CallState.setIncomingCallActive(context.conversationId, nativeUUID);
 
     const timeout = setTimeout(() => {
-      console.log(`[CallKeepService] Auto-hanging up incoming call ${nativeUUID} due to 35s timeout.`);
-      this.endCall(nativeUUID);
+      // Timeout local ≠ rechazo del usuario: cerrar en silencio. endCall aquí
+      // disparaba el evento nativo endCall → handleEndCall enviaba un
+      // call_rejected espurio y, si el usuario ya estaba en OTRA llamada de la
+      // misma conversación, wasInsideCallScreen cerraba ese CallScreen activo.
+      console.log(`[CallKeepService] Dismissing unanswered incoming call ${nativeUUID} after 35s timeout.`);
+      this.reportCallEndedSilently(nativeUUID, CONSTANTS.END_CALL_REASONS.MISSED);
     }, 35000);
     this.incomingCallTimeouts.set(nativeUUID, timeout);
     return nativeUUID;
@@ -604,6 +625,9 @@ class CallKeepService {
     RNCallKeep.removeEventListener('answerCall');
     RNCallKeep.removeEventListener('endCall');
     RNCallKeep.removeEventListener('didDisplayIncomingCall');
+    if (Platform.OS === 'ios') {
+      RNCallKeep.removeEventListener('didActivateAudioSession');
+    }
 
     if (Platform.OS === 'ios') {
       VoipPushNotification.removeEventListener('register');

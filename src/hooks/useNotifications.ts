@@ -611,12 +611,20 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       // Clear the reference before ending native UI so CallKeep_EndCall does not reject the call locally.
       activeIncomingCallRef.current = null;
 
-      // React Native CallScreen owns the video call. Close only the native CallKit UI.
-      try {
-        callKeepService.endCallSilently(callUUID);
-      } catch (e) {
-        console.warn('Error terminando llamada nativa al contestar', e);
+      if (Platform.OS === 'android') {
+        // Android: backToForeground ya trajo la app al frente; la UI nativa sobra.
+        try {
+          callKeepService.endCallSilently(callUUID);
+        } catch (e) {
+          console.warn('Error terminando llamada nativa al contestar', e);
+        }
       }
+      // iOS: la app no puede traerse al foreground por sí misma. La llamada
+      // CallKit debe seguir viva tras contestar: es lo que hace que iOS abra la
+      // app (llamada con video) y mantenga JS + sesión de audio corriendo en
+      // background mientras LiveKit conecta. CallScreen la cierra al desmontar
+      // (endAllCallsSilently) y el botón nativo de colgar ya llega vía
+      // CallKeep_EndCall con wasInsideCallScreen.
 
       CallState.clearIncomingCall(routing.conversationId);
       navigateToAnsweredIncomingCall(routing);
