@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Platform, DeviceEventEmitter, AppState, AppStateStatus, Keyboard } from 'react-native';
+import { Alert, Platform, DeviceEventEmitter, AppState, AppStateStatus, Keyboard } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import messaging from '@react-native-firebase/messaging';
@@ -371,12 +371,38 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
 
       if (data?.type === 'call_invite' && data?.roomName) {
         setInterpreterInvite(null);
-        onNavigateToCall({
+
+        const baseName = user.firstName || user.email?.split('@')[0] || 'Usuario';
+        const joinCall = () => onNavigateToCall({
           roomName: String(data.roomName),
-          username: user.firstName || user.email?.split('@')[0] || 'Usuario',
+          // Mismo formato de identity que el modal in-app: el backend usa el
+          // prefijo "Intérprete:" para aplicar la regla de un intérprete por llamada.
+          username: user.role === 'interpreter' ? `Intérprete: ${baseName}` : baseName,
           conversationId: String(data.roomName),
           userId: user.id
         });
+
+        // Tocar la notificación debe pasar por el mismo claim atómico que el
+        // modal: si otro intérprete ya tomó la llamada, avisar y no entrar.
+        const inviteId = data.inviteId ? String(data.inviteId) : undefined;
+        if (user.role === 'interpreter' && inviteId) {
+          chatService.claimInterpreterInvite(inviteId, user.id)
+            .then((result) => {
+              if (result.success) {
+                joinCall();
+              } else {
+                Alert.alert('Llamada ocupada', result.message || 'Esta llamada ya se encuentra atendida por otro intérprete.');
+              }
+            })
+            .catch(() => {
+              Alert.alert('Error', 'No se pudo procesar la solicitud de intérprete.');
+            });
+        } else if (user.role === 'interpreter') {
+          chatService.updateInterpreterStatus(user.id, true).catch(() => { });
+          joinCall();
+        } else {
+          joinCall();
+        }
       } else if (data?.conversationId && data?.senderId) {
         onNavigateToChat({
           conversationId: String(data.conversationId),
