@@ -27,6 +27,8 @@ export interface NavigationParams {
     callSessionId?: string;
     isIncomingCall?: boolean;
     nativeCallUUID?: string;
+    /** Reingreso vía "Unirse ahora": no reproducir timbre de salida. */
+    suppressRinging?: boolean;
     [key: string]: unknown;
 }
 

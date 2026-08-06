@@ -200,6 +200,45 @@ class MediaService {
     }
 
     /**
+     * Transcribe a voice note / audio file via Model-ms (Vosk local).
+     */
+    async audioToText(audioUri: string): Promise<string | null> {
+        try {
+            const token = await authService.getToken();
+            if (!token) throw new Error('No authenticated');
+
+            const endpoint = `${API_URL}/model/audio-to-text`;
+            console.log('🎙️ Sending audio for transcription:', audioUri);
+
+            const response = await FileSystem.uploadAsync(endpoint, audioUri, {
+                httpMethod: 'POST',
+                uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+                fieldName: 'file',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            console.log('📝 Audio-to-text response:', response.status, response.body);
+
+            if (response.status !== 200 && response.status !== 201) {
+                console.error('Audio-to-text failed:', response.status, response.body);
+                throw new Error(`Transcription failed: ${response.status}`);
+            }
+
+            const data = JSON.parse(response.body);
+            if (data.success && typeof data.text === 'string') {
+                return data.text.trim() || null;
+            }
+
+            return null;
+        } catch (error) {
+            console.error('Audio-to-text error:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Upload media to Cloudinary via API Gateway
      * Returns the Public ID (essential for signed URLs) and Type
      */
@@ -339,19 +378,55 @@ class MediaService {
         return this.recording !== null;
     }
     /**
+     * Get signed Cloudinary URL for media or documents
+     */
+    async getSignedUrl(publicId: string, mediaType: 'image' | 'video' | 'audio' | 'document' | 'file' = 'image'): Promise<string | null> {
+        try {
+            if (!publicId) return null;
+            if (publicId.startsWith('http://') || publicId.startsWith('https://')) return publicId;
+
+            const token = await authService.getToken();
+            let resourceType: 'image' | 'video' | 'raw' = 'raw';
+            if (mediaType === 'image') resourceType = 'image';
+            else if (mediaType === 'video') resourceType = 'video';
+            else if (mediaType === 'audio' || mediaType === 'document' || mediaType === 'file') resourceType = 'raw';
+
+            const lower = publicId.toLowerCase();
+            if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp')) {
+                resourceType = 'image';
+            }
+
+            const response = await fetch(API_URL + API_ENDPOINTS.GET_SIGNED_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ publicId, resourceType })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return data.url || null;
+            }
+        } catch (e) {
+            console.error('Error fetching signed URL:', e);
+        }
+        return null;
+    }
+
+    /**
      * Download media to local file system with persistent caching
      * @param storageKeyOrUrl - The public ID or URL of the media
-     * @param mediaType - The type of media ('image' | 'video' | 'audio') to determine resource type
+     * @param mediaType - The type of media ('image' | 'video' | 'audio' | 'document') to determine resource type
      */
-    async downloadMedia(storageKeyOrUrl: string, mediaType?: 'image' | 'video' | 'audio'): Promise<string | null> {
+    async downloadMedia(storageKeyOrUrl: string, mediaType?: 'image' | 'video' | 'audio' | 'document'): Promise<string | null> {
         try {
             if (!storageKeyOrUrl) return null;
 
             // 1. Generate a consistent filename for caching
-            // We use the storageKeyOrUrl itself to create a unique but predictable filename
-            // Sanitizing to remove special characters that might break file systems
             const safeFilename = storageKeyOrUrl.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const extension = mediaType === 'video' ? 'mp4' : (mediaType === 'audio' ? 'm4a' : 'jpg');
+            const extension = mediaType === 'video' ? 'mp4' : (mediaType === 'audio' ? 'm4a' : (mediaType === 'document' ? 'pdf' : 'jpg'));
             const fileUri = `${FileSystem.documentDirectory}${safeFilename}.${extension}`;
 
             // 2. Check if file already exists in persistent storage
@@ -366,29 +441,9 @@ class MediaService {
             // 3. If it's not a URL (doesn't start with http), it's a storage key (Public ID)
             if (!storageKeyOrUrl.startsWith('http')) {
                 console.log(`🔑 [MediaService] Fetching signed URL for key: ${storageKeyOrUrl}`);
-                try {
-                    const token = await authService.getToken();
-                    let resourceType: 'image' | 'video' | 'raw' = 'image';
-                    if (mediaType === 'audio') resourceType = 'raw';
-                    else if (mediaType === 'video') resourceType = 'video';
-
-                    const response = await fetch(API_URL + API_ENDPOINTS.GET_SIGNED_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({ publicId: storageKeyOrUrl, resourceType })
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.url) {
-                            urlToDownload = data.url;
-                        }
-                    }
-                } catch (e) {
-                    console.error('Error fetching signed URL:', e);
+                const signedUrl = await this.getSignedUrl(storageKeyOrUrl, mediaType);
+                if (signedUrl) {
+                    urlToDownload = signedUrl;
                 }
             }
 

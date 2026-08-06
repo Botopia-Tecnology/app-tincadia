@@ -266,6 +266,32 @@ export const messageBubbleMediaStyles = StyleSheet.create({
         width: 3,
         borderRadius: 2,
     },
+    audioTranscriptToggle: {
+        marginTop: 4,
+        paddingHorizontal: 12,
+        paddingBottom: 2,
+        alignSelf: 'flex-start',
+    },
+    audioTranscriptToggleText: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    audioTranscriptBox: {
+        marginTop: 2,
+        marginHorizontal: 8,
+        marginBottom: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+        borderRadius: 8,
+        backgroundColor: 'rgba(0,0,0,0.08)',
+    },
+    audioTranscriptBoxMine: {
+        backgroundColor: 'rgba(255,255,255,0.12)',
+    },
+    audioTranscriptText: {
+        fontSize: 12,
+        lineHeight: 16,
+    },
     modalBackdrop: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.95)',

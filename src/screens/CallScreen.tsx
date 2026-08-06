@@ -42,6 +42,14 @@ type PartialCaption = {
     text: string;
 };
 
+const CaptionsVisibilityContext = React.createContext<{
+    captionsVisible: boolean;
+    setCaptionsVisible: (visible: boolean) => void;
+}>({
+    captionsVisible: true,
+    setCaptionsVisible: () => undefined,
+});
+
 /**
  * Colores bien diferenciados sobre fondo oscuro (nombre = un color estable por hash).
  * Tonos saturados para que se note la diferencia entre personas.
@@ -163,11 +171,14 @@ export interface CallScreenProps {
     userId?: string;
     callSessionId?: string;
     onBack: () => void;
+    onCallRejected?: () => void;
     isManualPipMode?: boolean;
     onRestoreFromPip?: () => void;
     onMinimize?: () => void;
     onNavigate?: (screen: string, params?: any) => void;
     isIncomingCall?: boolean;
+    /** Reingreso a una llamada ya activa (p. ej. "Unirse ahora"): sin timbre de salida. */
+    suppressRinging?: boolean;
     nativeCallUUID?: string;
 }
 
@@ -178,17 +189,20 @@ export const CallScreen = ({
     userId,
     callSessionId,
     onBack,
+    onCallRejected,
     isManualPipMode = false,
     onRestoreFromPip,
     onMinimize,
     onNavigate,
     isIncomingCall = false,
+    suppressRinging = false,
     nativeCallUUID
 }: CallScreenProps) => {
     const [token, setToken] = useState<string | null>(null);
     const [url, setUrl] = useState<string | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
     const [isFrontCamera, setIsFrontCamera] = useState(true);
+    const [captionsVisible, setCaptionsVisible] = useState(true);
     const [roomRenderKey, setRoomRenderKey] = useState(0);
     const [isRoomConnected, setIsRoomConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -693,6 +707,19 @@ export const CallScreen = ({
 
         const prepareSession = async () => {
             try {
+                if (!userId) {
+                    console.error('❌ Cannot request call token without userId');
+                    if (isMounted) {
+                        Alert.alert(
+                            'Error',
+                            'No se pudo identificar al usuario para unirse a la llamada.',
+                            [{ text: 'Entendido', onPress: onCallRejected || safeOnBack }],
+                            { cancelable: false },
+                        );
+                    }
+                    return;
+                }
+
                 await Audio.setAudioModeAsync({
                     allowsRecordingIOS: true,
                     playsInSilentModeIOS: true,
@@ -703,7 +730,7 @@ export const CallScreen = ({
 
                 const data = await apiClient<{ token?: string; url?: string; error?: string; message?: string }>('/calls/token', {
                     method: 'POST',
-                    body: JSON.stringify({ roomName, username }),
+                    body: JSON.stringify({ roomName, username, userId }),
                 });
 
                 // El backend puede negar el token con una razón de negocio
@@ -712,7 +739,7 @@ export const CallScreen = ({
                     Alert.alert(
                         'Llamada ocupada',
                         data.message || 'Esta llamada ya se encuentra atendida por otro intérprete.',
-                        [{ text: 'Entendido', onPress: safeOnBack }],
+                        [{ text: 'Entendido', onPress: onCallRejected || safeOnBack }],
                         { cancelable: false },
                     );
                     return;
@@ -736,7 +763,7 @@ export const CallScreen = ({
         prepareSession();
 
         return () => { isMounted = false; };
-    }, [roomName, username, callSessionId]);
+    }, [roomName, username, userId, callSessionId, onCallRejected, safeOnBack]);
 
     if (connectionError) {
         return (
@@ -780,14 +807,14 @@ export const CallScreen = ({
                 {/* Montado desde el primer render de la sala: el timbre debe sonar
                     también durante la negociación de conexión, no solo tras
                     onConnected. El receptor no timbra pero conserva el timeout. */}
-                <RingingSoundManager onTimeout={handleCallTimeout} shouldRing={!isIncomingCall} />
+                <RingingSoundManager onTimeout={handleCallTimeout} shouldRing={!isIncomingCall && !suppressRinging} />
                 {!isRoomConnected ? (
                     <View style={styles.connectingOverlay}>
                         <ActivityIndicator size="large" color="#7C3AED" />
                         <Text style={styles.text}>Conectando a la sala...</Text>
                     </View>
                 ) : (
-                    <>
+                    <CaptionsVisibilityContext.Provider value={{ captionsVisible, setCaptionsVisible }}>
                         <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
                         <ControlsView
                             onHangup={safeOnBack}
@@ -812,7 +839,7 @@ export const CallScreen = ({
                             onRemoteHumanCountChange={handleRemoteHumanCountChange}
                             onLastHumanLeft={emitTerminalAsLastHuman}
                         />
-                    </>
+                    </CaptionsVisibilityContext.Provider>
                 )}
             </LiveKitRoom>
         </View>
@@ -827,6 +854,7 @@ function payloadToUint8Array(payload: Uint8Array | ArrayBuffer | undefined): Uin
 
 function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 30 }: { participantIdentity: string, bottomOffset?: number }) {
     const room = useRoomContext();
+    const { captionsVisible, setCaptionsVisible } = React.useContext(CaptionsVisibilityContext);
     const [isLivekitConnected, setIsLivekitConnected] = useState(false);
     const [finalLines, setFinalLines] = useState<TranscriptCaption[]>([]);
     const [partialLine, setPartialLine] = useState<PartialCaption | null>(null);
@@ -914,15 +942,23 @@ function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 3
         };
     }, [room]);
 
-    if (!isLivekitConnected) return null;
+    if (!isLivekitConnected || !captionsVisible) return null;
 
     const hasContent = finalLines.length > 0 || !!partialLine;
     // Sin texto aún: no mostrar caja ni "esperando…" (menos invasivo).
     if (!hasContent) return null;
 
     return (
-        <View style={[styles.participantTranscriptionContainer, { bottom: bottomOffset }]} pointerEvents="none">
-            <View style={styles.participantTranscriptionBox}>
+        <View style={[styles.participantTranscriptionContainer, { bottom: bottomOffset }]} pointerEvents="box-none">
+            <TouchableOpacity
+                style={styles.transcriptionCloseButton}
+                onPress={() => setCaptionsVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Cerrar subtítulos"
+            >
+                <Text style={styles.transcriptionCloseText}>✕</Text>
+            </TouchableOpacity>
+            <View style={styles.participantTranscriptionBox} pointerEvents="none">
                 <ScrollView
                     ref={scrollRef}
                     style={styles.transcriptionScroll}
@@ -1136,17 +1172,32 @@ function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () 
     return null;
 }
 
+function isInterpreterIdentity(identity: string): boolean {
+    const normalized = identity.toLowerCase();
+    return normalized.includes('interp') || normalized.includes('intérp');
+}
+
+/** Nombre visible en la UI de la llamada (p. ej. "Intérprete: Ana"). */
+function formatParticipantDisplayName(identity: string): string {
+    const trimmed = (identity || '').trim();
+    if (/^interpreter:/i.test(trimmed)) {
+        return 'Intérprete';
+    }
+    // Normaliza "interprete:" / "intérprete:" a "Intérprete: <nombre>"
+    const match = trimmed.match(/^int[eé]rprete\s*:\s*(.+)$/i);
+    if (match) {
+        return `Intérprete: ${match[1].trim()}`;
+    }
+    return trimmed;
+}
+
 function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFrontCamera: boolean }) {
     const tracks = useTracks([Track.Source.Camera]);
     const { height: screenHeight } = Dimensions.get('window');
     const insets = useSafeAreaInsets();
 
-    const isInterpreter = (identity: string) => {
-        return identity.toLowerCase().includes('interp') || identity.toLowerCase().includes('intérp');
-    };
-
-    const interpreterTracks = tracks.filter(t => isInterpreter(t.participant.identity));
-    const otherTracks = tracks.filter(t => !isInterpreter(t.participant.identity));
+    const interpreterTracks = tracks.filter(t => isInterpreterIdentity(t.participant.identity));
+    const otherTracks = tracks.filter(t => !isInterpreterIdentity(t.participant.identity));
 
     const renderParticipant = (track: typeof tracks[number], width: DimensionValue, height: DimensionValue, isBottomRow: boolean = true) => {
         // Use percentage-based offsets relative to the tile height so labels
@@ -1160,12 +1211,13 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
         const transcriptionBottom = isBottomRow
             ? Math.max(140 + insets.bottom, numericHeight ? numericHeight * 0.25 : 140)
             : 40;
+        const displayName = formatParticipantDisplayName(track.participant.identity);
 
         return (
             <View key={track.participant.identity} style={[styles.participant, { width, height }]}>
                 {track.publication.isMuted ? (
                     <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
-                        <Text style={{ color: '#666' }}>{track.participant.identity}</Text>
+                        <Text style={{ color: '#666' }}>{displayName}</Text>
                     </View>
                 ) : (
                     <VideoTrack
@@ -1176,7 +1228,7 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
                 )}
                 <View style={[styles.participantLabel, { bottom: labelBottom }]}>
                     <Text style={styles.participantName} numberOfLines={1}>
-                        {track.participant.identity}
+                        {displayName}
                     </Text>
                 </View>
                 <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={transcriptionBottom} />
@@ -1237,11 +1289,13 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
         <View style={styles.interpreterLayout}>
             <View style={styles.mainVideoArea}>
                 {interpreterTracks.length > 0 ? (
-                    interpreterTracks.map((track) => (
+                    interpreterTracks.map((track) => {
+                        const displayName = formatParticipantDisplayName(track.participant.identity);
+                        return (
                         <View key={track.participant.identity} style={styles.mainParticipant}>
                             {track.publication.isMuted ? (
                                 <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
-                                    <Text style={{ color: '#666', fontSize: 18 }}>🤟 Intérprete - Cámara off</Text>
+                                    <Text style={{ color: '#666', fontSize: 18 }}>{displayName} - Cámara off</Text>
                                 </View>
                             ) : (
                                 <VideoTrack
@@ -1251,11 +1305,12 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
                                 />
                             )}
                             <View style={[styles.interpreterMainLabel, { bottom: Math.max(110 + insets.bottom, screenHeight * 0.12) }]}>
-                                <Text style={styles.interpreterMainName}>🤟 Intérprete</Text>
+                                <Text style={styles.interpreterMainName}>{displayName}</Text>
                             </View>
                             <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={Math.max(140 + insets.bottom, screenHeight * 0.20)} />
                         </View>
-                    ))
+                        );
+                    })
                 ) : (
                     <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
                         <Text style={{ color: '#666' }}>Esperando intérprete...</Text>
@@ -1268,7 +1323,7 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
                     <View key={track.participant.identity} style={styles.sidebarVideo}>
                         {track.publication.isMuted ? (
                             <View style={[styles.video, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
-                                <Text style={{ color: '#666', fontSize: 10 }}>{track.participant.identity}</Text>
+                                <Text style={{ color: '#666', fontSize: 10 }}>{formatParticipantDisplayName(track.participant.identity)}</Text>
                             </View>
                         ) : (
                             <VideoTrack
@@ -1279,7 +1334,7 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
                         )}
                         <View style={styles.sidebarLabel}>
                             <Text style={styles.sidebarName} numberOfLines={1}>
-                                {track.participant.identity}
+                                {formatParticipantDisplayName(track.participant.identity)}
                             </Text>
                         </View>
                         <ParticipantTranscriptionOverlay participantIdentity={track.participant.identity} bottomOffset={35} />
@@ -1326,6 +1381,7 @@ function ControlsView({
     const { user } = useAuth();
     const { isMicrophoneEnabled, isCameraEnabled, localParticipant, cameraTrack } = useLocalParticipant();
     const room = useRoomContext();
+    const { captionsVisible, setCaptionsVisible } = React.useContext(CaptionsVisibilityContext);
     const { canUseInterpreter } = useSubscription(userId);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const insets = useSafeAreaInsets();
@@ -1610,6 +1666,15 @@ function ControlsView({
                 },
                 isManualPipMode && styles.controlsContainerMini
             ]}>
+                {!captionsVisible && !isManualPipMode && (
+                    <TouchableOpacity
+                        style={styles.ccToggleBar}
+                        onPress={() => setCaptionsVisible(true)}
+                        accessibilityLabel="Mostrar subtítulos"
+                    >
+                        <Text style={styles.ccToggleBarText}>CC</Text>
+                    </TouchableOpacity>
+                )}
                 <TouchableOpacity
                     style={[styles.button, !isMicrophoneEnabled && styles.buttonDisabled]}
                     onPress={toggleMic}

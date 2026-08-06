@@ -55,7 +55,14 @@ interface ChatViewProps {
   groupDescription?: string;
   onGroupUpdate?: (updates: { title?: string; description?: string; imageUrl?: string }) => void;
   onContactUpdate?: (contact: Contact) => void;
-  onNavigateCall: (roomName: string, username: string, conversationId: string, userId: string, callSessionId?: string) => void;
+  onNavigateCall: (
+    roomName: string,
+    username: string,
+    conversationId: string,
+    userId: string,
+    callSessionId?: string,
+    options?: { suppressRinging?: boolean },
+  ) => void;
   onNavigate: NavigateFunction;
   currentUser?: User | null;
 }
@@ -93,7 +100,6 @@ export function ChatView(props: ChatViewProps) {
   const {
     planTier,
     canUseCorrection, recordCorrectionUse,
-    canUseTranscription, recordTranscriptionUse,
     canUseLSC, canUseTTS
   } = useSubscription(userId);
 
@@ -292,7 +298,6 @@ export function ChatView(props: ChatViewProps) {
       const audioAsset = { uri, type: 'audio' as const, fileName: `audio_${Date.now()}.m4a` };
       const result = await mediaService.uploadMedia(audioAsset);
       await sendMessage(result.publicId, 'audio', { publicId: result.publicId, duration });
-      recordTranscriptionUse();
       
       // Remove optimistic bubble when real one arrives
       setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
@@ -363,12 +368,12 @@ export function ChatView(props: ChatViewProps) {
         callSessionId,
       });
       setTimeout(() => {
-        onNavigateCall(roomName, username, conversationId, userId, callSessionId);
+        onNavigateCall(roomName, username, conversationId, userId, callSessionId, { suppressRinging: true });
       }, 450);
       return;
     }
 
-    onNavigateCall(roomName, username, conversationId, userId, callSessionId);
+    onNavigateCall(roomName, username, conversationId, userId, callSessionId, { suppressRinging: true });
   };
 
   // ── Message long-press actions ──────────────────────────────────────────
@@ -502,6 +507,10 @@ export function ChatView(props: ChatViewProps) {
         isDark={isDark}
         swipeableRefs={swipeableRefs}
         readReceiptsEnabled={currentUser?.readReceiptsEnabled ?? true}
+        onNeedUpgrade={(feature) => {
+          setUpgradeFeature(feature);
+          setShowUpgradeModal(true);
+        }}
       />
 
       {isRecordingMode ? (

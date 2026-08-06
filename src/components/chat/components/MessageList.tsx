@@ -30,6 +30,7 @@ interface MessageListProps {
   isDark: boolean;
   swipeableRefs: React.MutableRefObject<Map<string, Swipeable | null>>;
   readReceiptsEnabled?: boolean;
+  onNeedUpgrade?: (feature: 'transcription' | 'transcription_blocked') => void;
 }
 
 export const MessageList = ({
@@ -43,7 +44,8 @@ export const MessageList = ({
   colors,
   isDark,
   swipeableRefs,
-  readReceiptsEnabled = true
+  readReceiptsEnabled = true,
+  onNeedUpgrade,
 }: MessageListProps) => {
   const terminalCallTypes = useMemo(() => {
     return new Set(isGroup ? ['call_ended', 'call_missed'] : ['call_ended', 'call_rejected', 'call_missed']);
@@ -89,6 +91,7 @@ export const MessageList = ({
             isSynced={false}
             type={uploader.type}
             duration={uploader.metadata?.duration}
+            onNeedUpgrade={onNeedUpgrade}
           />
           <ActivityIndicator style={{ position: 'absolute', alignSelf: 'center', top: '40%' }} color="white" />
         </View>
@@ -232,6 +235,7 @@ export const MessageList = ({
             updatedAt={item.updatedAt}
             readAt={item.readAt}
             metadata={item.metadata}
+            onNeedUpgrade={onNeedUpgrade}
           />
         </Pressable>
       </Swipeable>

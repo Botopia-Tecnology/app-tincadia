@@ -53,21 +53,27 @@ Sentry.init({
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    const data = notification.request.content.data;
-    const isCall = data?.type === 'call';
-    const isCallInvite = data?.type === 'call_invite';
+    const data = notification.request.content.data ?? {};
+    const type = String((data as { type?: unknown }).type || '');
+    const isCall = type === 'call';
+    const isCallInvite = type === 'call_invite';
+    const isSilentDismiss =
+      type === 'call_invite_taken' ||
+      String((data as { _action?: unknown })._action || '') === 'dismiss_invite';
     const isForeground = AppState.currentState === 'active';
 
-    if (isCall) {
+    // Push silenciosos de cancelación de invitación: nunca mostrar banner.
+    if (isSilentDismiss) {
       return {
-        shouldShowAlert: !isForeground,
-        shouldPlaySound: !isForeground,
+        shouldShowAlert: false,
+        shouldPlaySound: false,
         shouldSetBadge: false,
-        shouldShowBanner: !isForeground,
-        shouldShowList: true,
+        shouldShowBanner: false,
+        shouldShowList: false,
       };
     }
 
+    // Solicitud de intérprete: SÍ debe llegar aunque la app esté abierta.
     if (isCallInvite) {
       return {
         shouldShowAlert: true,
@@ -78,12 +84,24 @@ Notifications.setNotificationHandler({
       };
     }
 
+    // Llamadas 1:1: en foreground lo cubre CallKit / UI nativa.
+    if (isCall) {
+      return {
+        shouldShowAlert: !isForeground,
+        shouldPlaySound: !isForeground,
+        shouldSetBadge: false,
+        shouldShowBanner: !isForeground,
+        shouldShowList: true,
+      };
+    }
+
+    // Mensajes y resto: no mostrar Expo notification si la app está en uso.
     return {
-      shouldShowAlert: true,
-      shouldPlaySound: true,
+      shouldShowAlert: !isForeground,
+      shouldPlaySound: !isForeground,
       shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
+      shouldShowBanner: !isForeground,
+      shouldShowList: !isForeground,
     };
   },
 });
@@ -93,7 +111,7 @@ function AppContent() {
   const { colors } = useTheme();
   
   const [screenStack, setScreenStack] = useState<ScreenName[]>(['chats']);
-  const [callParams, setCallParams] = useState<{ roomName?: string; username?: string; conversationId?: string; userId?: string; callSessionId?: string; isIncomingCall?: boolean; nativeCallUUID?: string } | null>(null);
+  const [callParams, setCallParams] = useState<{ roomName?: string; username?: string; conversationId?: string; userId?: string; callSessionId?: string; isIncomingCall?: boolean; nativeCallUUID?: string; suppressRinging?: boolean } | null>(null);
   const [profileParams, setProfileParams] = useState<{ openManagePlan?: boolean } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [initialChatParams, setInitialChatParams] = useState<{ conversationId?: string; recipientId?: string; isGroup?: boolean; title?: string; description?: string } | null>(null);
@@ -119,6 +137,12 @@ function AppContent() {
     setScreenStack((prev) => prev[prev.length - 1] === next ? prev : [...prev, next]);
   }, []);
 
+  const returnToHome = useCallback(() => {
+    setCallParams(null);
+    setInitialChatParams(null);
+    setScreenStack(['chats']);
+  }, []);
+
   const goBack = useCallback(() => {
     setScreenStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
   }, []);
@@ -133,7 +157,8 @@ function AppContent() {
       Keyboard.dismiss();
       setCallParams(params);
       setScreenStack(prev => prev[prev.length - 1] === 'call' ? prev : [...prev, 'call']);
-    }
+    },
+    returnToHome,
   );
 
   useEffect(() => {
@@ -153,7 +178,11 @@ function AppContent() {
       try {
         const claimResult = await chatService.claimInterpreterInvite(interpreterInvite.inviteId, user.id);
         if (!claimResult.success) {
-          Alert.alert('Solicitud Atendida', claimResult.message || 'Esta llamada ya fue aceptada por otro compañero.');
+          Alert.alert(
+            'Llamada ocupada',
+            claimResult.message || 'Esta llamada ya fue aceptada por otro compañero.',
+            [{ text: 'Entendido', onPress: returnToHome }],
+          );
           setInterpreterInvite(null);
           return;
         }
@@ -308,11 +337,13 @@ function AppContent() {
             userId={callParams?.userId}
             callSessionId={callParams?.callSessionId}
             isIncomingCall={!!callParams?.isIncomingCall}
+            suppressRinging={!!callParams?.suppressRinging}
             nativeCallUUID={callParams?.nativeCallUUID}
             isManualPipMode={!isCallFullScreen}
             onRestoreFromPip={() => currentScreen !== 'call' && setScreenStack(prev => prev[prev.length - 1] === 'call' ? prev : [...prev, 'call'])}
             onMinimize={() => currentScreen === 'call' && goBack()}
             onBack={() => { setCallParams(null); currentScreen === 'call' && goBack(); }}
+            onCallRejected={returnToHome}
             onNavigate={navigate}
           />
         </View>

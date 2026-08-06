@@ -23,13 +23,22 @@ interface ChatHeaderProps {
 export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, avatarUrl, subTitle, isUnknown, typingUsers }: ChatHeaderProps) => {
   const { colors, isDark } = useTheme();
 
+  const [imageError, setImageError] = React.useState(false);
+
   const normalizeUrl = (url?: string) => {
     if (!url) return undefined;
-    if (url.startsWith('http')) return url;
-    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+    const trimmed = String(url).trim();
+    if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === '[object Object]') return undefined;
+    if (trimmed.startsWith('http')) return trimmed;
+    return `${API_URL}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
   };
 
   const finalAvatarUrl = normalizeUrl(avatarUrl);
+  const hasValidAvatar = !!finalAvatarUrl && !imageError;
+
+  React.useEffect(() => {
+    setImageError(false);
+  }, [avatarUrl]);
 
   return (
     <View style={[chatViewStyles.header, {
@@ -43,13 +52,17 @@ export const ChatHeader = ({ onBack, onProfilePress, onCallPress, displayName, a
       <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} onPress={onProfilePress}>
         <View style={[
           chatViewStyles.avatarSmall,
-          isUnknown && { backgroundColor: '#9CA3AF' },
-          finalAvatarUrl ? { backgroundColor: 'transparent' } : {}
+          { overflow: 'hidden' },
+          isUnknown && { backgroundColor: '#9CA3AF' }
         ]}>
-          {finalAvatarUrl ? (
-            <Image source={{ uri: finalAvatarUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+          {hasValidAvatar ? (
+            <Image
+              source={{ uri: finalAvatarUrl }}
+              style={{ width: 40, height: 40, borderRadius: 20 }}
+              onError={() => setImageError(true)}
+            />
           ) : (
-            <Text style={chatViewStyles.avatarSmallText}>{displayName.charAt(0).toUpperCase()}</Text>
+            <Text style={chatViewStyles.avatarSmallText}>{displayName ? displayName.charAt(0).toUpperCase() : '?'}</Text>
           )}
         </View>
         <View style={chatViewStyles.headerInfo}>

@@ -239,8 +239,8 @@ export function useChat(
 
             console.log('📡 Syncing messages since:', lastTimestamp || 'beginning');
 
-            // Fetch messages (server should support `since` param)
-            const { messages: serverMessages } = await chatService.getMessages(conversationId, lastTimestamp || undefined);
+            // Fetch messages (server supports `after` and `userId` filtering)
+            const { messages: serverMessages } = await chatService.getMessages(conversationId, lastTimestamp || undefined, userId);
 
             // Filter only new messages if we have a timestamp (client-side filter as fallback)
             const newMessages = lastTimestamp

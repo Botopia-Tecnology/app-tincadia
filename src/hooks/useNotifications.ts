@@ -55,7 +55,7 @@ function asSafeRoomName(value?: string, nativeCallUUID?: string): string | undef
   return value;
 }
 
-export const useNotifications = (user: User | null, onNavigateToChat: (params: NavigationParams) => void, onNavigateToCall: (params: NavigationParams) => void) => {
+export const useNotifications = (user: User | null, onNavigateToChat: (params: NavigationParams) => void, onNavigateToCall: (params: NavigationParams) => void, onNavigateHome?: () => void) => {
   const [interpreterInvite, setInterpreterInvite] = useState<{
     roomName: string;
     senderId: string;
@@ -391,7 +391,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
               if (result.success) {
                 joinCall();
               } else {
-                Alert.alert('Llamada ocupada', result.message || 'Esta llamada ya se encuentra atendida por otro intérprete.');
+                Alert.alert('Llamada ocupada', result.message || 'Esta sala ya se encuentra ocupada por otro intérprete.', [{ text: 'Entendido', onPress: onNavigateHome }]);
               }
             })
             .catch(() => {
@@ -434,7 +434,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       if (notificationListener.current) notificationListener.current.remove();
       if (responseListener.current) responseListener.current.remove();
     };
-  }, [user, onNavigateToCall, onNavigateToChat]);
+  }, [user, onNavigateToCall, onNavigateToChat, onNavigateHome]);
 
   // 5. Handle Realtime Supabase Broadcasts (fast cancellation)
   useEffect(() => {
@@ -569,6 +569,19 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           updateConversationPreview(convId, previewText, safeCreatedAt, false);
           DeviceEventEmitter.emit('chat_local_update', convId);
         }
+      })
+      .on('broadcast', { event: 'call_invite' }, (payload) => {
+        const data = payload.payload;
+        if (!data?.roomName || !data?.senderId) return;
+        if (user.role !== 'interpreter') return;
+
+        // Misma UX que el push: aunque la app esté abierta, mostrar el modal.
+        setInterpreterInvite({
+          roomName: String(data.roomName),
+          senderId: String(data.senderId),
+          senderName: String(data.senderName || 'Usuario'),
+          inviteId: data.inviteId ? String(data.inviteId) : undefined,
+        });
       })
       .on('broadcast', { event: 'call_invite_taken' }, () => {
         setInterpreterInvite(null);

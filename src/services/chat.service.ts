@@ -89,6 +89,15 @@ export const chatService = {
     },
 
     /**
+     * Delete a conversation for the current user (Instagram style)
+     */
+    async deleteConversation(conversationId: string, userId: string): Promise<void> {
+        return apiClient(`${API_ENDPOINTS.CONVERSATIONS}/${conversationId}?userId=${encodeURIComponent(userId)}`, {
+            method: 'DELETE',
+        });
+    },
+
+    /**
      * Send a message
      */
     async sendMessage(data: SendMessageDto): Promise<{ message: Message }> {
@@ -101,10 +110,13 @@ export const chatService = {
     /**
      * Get messages for a conversation
      */
-    async getMessages(conversationId: string, after?: string): Promise<{ messages: Message[] }> {
+    async getMessages(conversationId: string, after?: string, userId?: string): Promise<{ messages: Message[] }> {
         let url = API_ENDPOINTS.CONVERSATION_MESSAGES(conversationId);
-        if (after) {
-            url += `?after=${encodeURIComponent(after)}`;
+        const params: string[] = [];
+        if (after) params.push(`after=${encodeURIComponent(after)}`);
+        if (userId) params.push(`userId=${encodeURIComponent(userId)}`);
+        if (params.length > 0) {
+            url += `?${params.join('&')}`;
         }
         return apiClient(url, {
             method: 'GET',
@@ -294,7 +306,7 @@ export const chatService = {
     /**
      * Reclamar una invitación de intérprete de forma atómica
      */
-    async claimInterpreterInvite(inviteId: string, userId: string): Promise<{ success: boolean; message?: string; roomName?: string }> {
+    async claimInterpreterInvite(inviteId: string, userId: string): Promise<{ success: boolean; code?: string; message?: string; roomName?: string }> {
         return apiClient('/chat/interpreter/claim', {
             method: 'POST',
             body: JSON.stringify({ inviteId, userId }),

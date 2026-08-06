@@ -21,6 +21,7 @@ import {
   updateSyncTime,
   updateConversationPreview,
   deleteConversation as localDeleteConversation,
+  clearConversationMessages,
 } from '../database/chatDatabase';
 
 /** Realtime/API payloads may use snake_case or camelCase; UUIDs may differ in casing. */
@@ -116,10 +117,12 @@ export const useChatList = (userId: string) => {
     const uniqueConversations = Array.from(deduped.values());
     const conversationsByUserId = new Map(uniqueConversations.map(conv => [conv.otherUserId, conv]));
 
-    const normalizeUrl = (url?: string) => {
+    const normalizeUrl = (url?: string | null) => {
       if (!url) return undefined;
-      if (url.startsWith('http')) return url;
-      return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+      const trimmed = String(url).trim();
+      if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === '[object Object]') return undefined;
+      if (trimmed.startsWith('http')) return trimmed;
+      return `${API_URL}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
     };
 
     const items: ChatListItem[] = uniqueConversations.map(conv => {
@@ -171,7 +174,7 @@ export const useChatList = (userId: string) => {
           alias: contact.alias,
           customFirstName: contact.customFirstName,
           customLastName: contact.customLastName,
-          avatarUrl: normalizeUrl(conv.otherUserAvatar),
+          avatarUrl: normalizeUrl(conv.otherUserAvatar) || normalizeUrl(contact.avatarUrl),
           hasActiveIncomingCall: CallState.hasIncomingCall(conv.id),
         };
       } else {
@@ -209,6 +212,7 @@ export const useChatList = (userId: string) => {
           alias: contact.alias,
           customFirstName: contact.customFirstName,
           customLastName: contact.customLastName,
+          avatarUrl: normalizeUrl(contact.avatarUrl),
         });
       }
     });
@@ -231,6 +235,7 @@ export const useChatList = (userId: string) => {
           alias: c.alias || undefined,
           customFirstName: c.custom_first_name || undefined,
           customLastName: c.custom_last_name || undefined,
+          avatarUrl: c.avatar_url || undefined,
           createdAt: c.updated_at || new Date().toISOString(),
         }));
 
@@ -291,6 +296,7 @@ export const useChatList = (userId: string) => {
             alias: c.alias,
             customFirstName: c.customFirstName,
             customLastName: c.customLastName,
+            avatarUrl: c.avatarUrl,
           });
         }
       });
@@ -307,6 +313,7 @@ export const useChatList = (userId: string) => {
         alias: c.alias || undefined,
         customFirstName: c.custom_first_name || undefined,
         customLastName: c.custom_last_name || undefined,
+        avatarUrl: c.avatar_url || contacts.find(contact => contact.contactUserId === c.contact_user_id)?.avatarUrl,
         createdAt: c.updated_at || new Date().toISOString(),
       }));
 
@@ -332,15 +339,6 @@ export const useChatList = (userId: string) => {
           imageUrl: conv.imageUrl ?? existing?.image_url ?? undefined,
           description: mergedDescription,
         });
-      });
-
-      // Remove local conversations that no longer exist on the server
-      const serverConvIds = new Set(conversations.map(c => c.id));
-      const localConvs = getLocalConversations();
-      localConvs.forEach(local => {
-        if (!serverConvIds.has(local.id)) {
-          localDeleteConversation(local.id);
-        }
       });
 
       updateSyncTime(`chats-${userId}`);
@@ -495,11 +493,12 @@ export const useChatList = (userId: string) => {
           }
         }
       })
-      .on('broadcast', { event: 'conversation_deleted' }, (payload) => {
-        const deleted = payload.payload as { id?: string };
-        if (deleted?.id) {
-          console.log('🗑️ Conversation deleted via broadcast:', deleted.id);
-          localDeleteConversation(deleted.id);
+      .on('broadcast', { event: 'conversation_cleared' }, (payload) => {
+        const data = payload.payload as { conversationId?: string; id?: string };
+        const targetId = data?.conversationId || data?.id;
+        if (targetId) {
+          console.log('🧹 Conversation cleared via broadcast:', targetId);
+          clearConversationMessages(targetId);
           loadFromLocalCache();
         }
       })
@@ -647,8 +646,30 @@ export const useChatList = (userId: string) => {
     loadChats();
   };
 
-  const deleteChat = (conversationId: string) => {
+  const deleteChat = async (conversationId: string) => {
+    try {
+      if (userId) {
+        await chatService.deleteConversation(conversationId, userId);
+      }
+    } catch (err) {
+      console.error('Error deleting conversation on backend:', err);
+    }
     if (localDeleteConversation(conversationId)) {
+      loadFromLocalCache();
+      return true;
+    }
+    return false;
+  };
+
+  const clearChatMessages = async (conversationId: string) => {
+    try {
+      if (userId) {
+        await chatService.deleteConversation(conversationId, userId);
+      }
+    } catch (err) {
+      console.error('Error clearing conversation on backend:', err);
+    }
+    if (clearConversationMessages(conversationId)) {
       loadFromLocalCache();
       return true;
     }
@@ -684,6 +705,7 @@ export const useChatList = (userId: string) => {
     syncFromServer,
     loadFromLocalCache,
     deleteChat,
+    clearChatMessages,
     removeFromSyncedCache,
     syncedContacts,
     setSyncedContacts,

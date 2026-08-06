@@ -20,13 +20,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { contactService, Contact, UpdateContactDto } from '../../services/contact.service';
 import { chatService } from '../../services/chat.service';
-import { saveContact, getMediaForConversation, saveMediaUrl, getMediaUrl, deleteContact as deleteLocalContact, deleteConversation } from '../../database/chatDatabase';
+import { saveContact, getMediaForConversation, saveMediaUrl, getMediaUrl, deleteContact as deleteLocalContact, deleteConversation, updateUserAvatarInLocalDb } from '../../database/chatDatabase';
 import { contactProfileStyles as styles } from '../../styles/ContactProfile.styles';
 import { BackArrowIcon } from '../icons/NavigationIcons';
 import { mediaService } from '../../services/media.service';
 import { syncCacheService } from '../../services/sync-cache.service';
 import { useTheme } from '../../contexts/ThemeContext';
-
+import { API_URL } from '../../config/api.config';
 export interface ContactProfileProps {
     userId: string;
     otherUserId: string;
@@ -49,8 +49,8 @@ interface UserProfile {
     firstName?: string;
     lastName?: string;
     phone?: string;
+    avatarUrl?: string;
 }
-
 interface MediaItem {
     id: string;
     url: string;
@@ -93,21 +93,26 @@ export function ContactProfileScreen({
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(false);
 
-    // Fetch original user profile if not a saved contact OR if phone is missing
+    // Fetch the profile as a fallback when the chat payload has no avatar.
     useEffect(() => {
         const fetchOriginalProfile = async () => {
-            if (otherUserId && (!otherUserPhone || !isContact)) {
+            if (otherUserId && (!otherUserPhone || !isContact || !avatarUrl)) {
                 try {
                     // Get profiles from the conversation or a profile endpoint
                     const response = await chatService.getUserProfile(otherUserId);
                     // Backend returns { user: {...} }
                     const userData = response?.user || response?.profile;
                     if (userData) {
+                        const fetchedAvatar = (userData as Record<string, any>).avatarUrl || (userData as Record<string, any>).avatar_url;
                         setOriginalProfile({
                             firstName: (userData as Record<string, any>).firstName || (userData as Record<string, any>).first_name,
                             lastName: (userData as Record<string, any>).lastName || (userData as Record<string, any>).last_name,
                             phone: (userData as Record<string, any>).phone as string,
+                            avatarUrl: fetchedAvatar,
                         });
+                        if (fetchedAvatar && otherUserId) {
+                            updateUserAvatarInLocalDb(otherUserId, fetchedAvatar);
+                        }
                     }
                 } catch (err) {
                     console.error('Error fetching user profile:', err);
@@ -116,7 +121,7 @@ export function ContactProfileScreen({
         };
 
         fetchOriginalProfile();
-    }, [isContact, otherUserId, otherUserPhone]);
+    }, [avatarUrl, isContact, otherUserId, otherUserPhone]);
 
     // Fetch media shared in conversation (cache-first)
     useEffect(() => {
@@ -138,7 +143,7 @@ export function ContactProfileScreen({
                 }
 
                 // 2. Get messages from backend to check for new media
-                const { messages } = await chatService.getMessages(conversationId);
+                const { messages } = await chatService.getMessages(conversationId, undefined, userId);
 
                 // Filter only image messages
                 const imageMessages = messages
@@ -226,6 +231,7 @@ export function ContactProfileScreen({
                 alias: contact.alias,
                 customFirstName: contact.customFirstName,
                 customLastName: contact.customLastName,
+                avatarUrl: contact.avatarUrl || effectiveAvatarUrl,
             });
 
             setIsEditing(false);
@@ -263,6 +269,7 @@ export function ContactProfileScreen({
                 alias: contact.alias,
                 customFirstName: contact.customFirstName,
                 customLastName: contact.customLastName,
+                avatarUrl: contact.avatarUrl || effectiveAvatarUrl,
             });
 
             if (onContactAdded) {
@@ -288,7 +295,7 @@ export function ContactProfileScreen({
     const handleDeleteContact = () => {
         Alert.alert(
             'Eliminar Contacto',
-            '¿Estás seguro de que deseas eliminar este contacto? Esta acción también eliminará todos los mensajes y la conversación asociada.',
+            '¿Estás seguro de que deseas eliminar este contacto de tu agenda?',
             [
                 { text: 'Cancelar', style: 'cancel' },
                 {
@@ -298,15 +305,11 @@ export function ContactProfileScreen({
                         if (!contactId) return;
                         setIsSaving(true);
                         try {
-                            // 1. Remote delete
+                            // 1. Remote delete contact
                             await contactService.deleteContact(contactId, userId);
 
-                            // 2. Local delete (SQLite)
+                            // 2. Local delete contact (SQLite)
                             deleteLocalContact(contactId);
-
-                            if (conversationId) {
-                                deleteConversation(conversationId);
-                            }
 
                             // Clean up synced contacts cache to avoid duplication
                             await syncCacheService.removeFromSyncedCache(userId, otherUserId);
@@ -341,8 +344,12 @@ export function ContactProfileScreen({
     };
 
     const effectivePhone = getPhone();
-
-    // Dynamic styles for dark mode
+    const effectiveAvatarUrl = avatarUrl || originalProfile?.avatarUrl;
+    const normalizedAvatarUrl = effectiveAvatarUrl
+        ? (/^https?:\/\//i.test(effectiveAvatarUrl)
+            ? effectiveAvatarUrl
+            : `${API_URL}${effectiveAvatarUrl.startsWith('/') ? '' : '/'}${effectiveAvatarUrl}`)
+        : undefined;
     const themeStyles = {
         container: { backgroundColor: colors.background },
         header: { backgroundColor: colors.card, borderBottomColor: colors.border },
@@ -384,9 +391,9 @@ export function ContactProfileScreen({
                     {/* Avatar */}
                     <View style={styles.avatarContainer}>
                         <View style={styles.avatarLarge}>
-                            {avatarUrl ? (
+                            {normalizedAvatarUrl ? (
                                 <Image
-                                    source={{ uri: avatarUrl }}
+                                    source={{ uri: normalizedAvatarUrl }}
                                     style={{
                                         width: 100,
                                         height: 100,

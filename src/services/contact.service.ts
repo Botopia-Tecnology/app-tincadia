@@ -16,6 +16,8 @@ export interface Contact {
     customLastName?: string;
     phone: string;
     createdAt: string;
+    /** Avatar returned by the contacts endpoint for contacts without a chat yet. */
+    avatarUrl?: string;
 }
 
 export interface AddContactDto {
@@ -45,6 +47,7 @@ function mapContactToCamelCase(contact: Record<string, any>): Contact {
         customFirstName: contact.customFirstName || contact.custom_first_name,
         customLastName: contact.customLastName || contact.custom_last_name,
         createdAt: contact.createdAt || contact.created_at,
+        avatarUrl: contact.avatarUrl || contact.avatar_url || contact.user?.avatarUrl || contact.user?.avatar_url,
     };
 }
 
@@ -57,9 +60,13 @@ export const contactService = {
         if (since) {
             url += `?since=${encodeURIComponent(since)}`;
         }
-        return apiClient(url, {
+        const response = await apiClient<{ contacts?: Record<string, any>[] }>(url, {
             method: 'GET',
         });
+
+        return {
+            contacts: (response.contacts || []).map(mapContactToCamelCase),
+        };
     },
 
     /**

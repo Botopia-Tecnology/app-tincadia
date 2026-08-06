@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Pressable, Vibration, Linking, Dimensions } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Pressable, Vibration, Linking, Dimensions, Alert, Platform } from 'react-native';
 import { Video, ResizeMode, Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
+import * as WebBrowser from 'expo-web-browser';
+import * as FileSystem from 'expo-file-system';
+// import * as Sharing from 'expo-sharing';
 import { messageBubbleStyles as styles } from '../../../styles/ChatComponents.styles';
 import { messageBubbleMediaStyles as mediaStyles } from '../../../styles/ChatComponents.styles';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +13,8 @@ import Autolink from 'react-native-autolink';
 import { API_URL } from '../../../config/api.config';
 import { apiClient } from '../../../lib/api-client';
 import { MessageMetadata } from '../../../types/chat.types';
+import { useSubscription } from '../../../hooks/useSubscription';
+import { APP_TIERS } from '../../../config/revenuecat.config';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -49,7 +54,7 @@ interface MessageBubbleProps {
     isMine: boolean;
     isSynced?: boolean;
     isRead?: boolean;
-    type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'call' | 'call_ended' | 'call_rejected' | 'call_missed';
+    type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'file' | 'call' | 'call_ended' | 'call_rejected' | 'call_missed';
     replyToContent?: string;
     replyToSender?: string;
     publicId?: string;
@@ -58,6 +63,7 @@ interface MessageBubbleProps {
     updatedAt?: string;
     readAt?: string;
     metadata?: MessageMetadata;
+    onNeedUpgrade?: (feature: 'transcription' | 'transcription_blocked') => void;
 }
 
 export function MessageBubble({
@@ -75,13 +81,29 @@ export function MessageBubble({
     updatedAt,
     readAt,
     metadata,
+    onNeedUpgrade,
 }: MessageBubbleProps) {
+    const { canUseTranscription, recordTranscriptionUse, planTier } = useSubscription();
     const [mediaUri, setMediaUri] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [audioSound, setAudioSound] = useState<Audio.Sound | null>(null);
     const [showFullscreen, setShowFullscreen] = useState(false);
     const [audioDuration, setAudioDuration] = useState<number | null>(null);
+    const [transcription, setTranscription] = useState<string | null>(
+        typeof metadata?.transcription === 'string' ? metadata.transcription : null
+    );
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    const [showTranscription, setShowTranscription] = useState(
+        Boolean(metadata?.transcription)
+    );
+
+    useEffect(() => {
+        if (typeof metadata?.transcription === 'string' && metadata.transcription) {
+            setTranscription(metadata.transcription);
+            setShowTranscription(true);
+        }
+    }, [metadata?.transcription]);
 
     // Auto-load media when component mounts
     useEffect(() => {
@@ -102,7 +124,7 @@ export function MessageBubble({
                 try {
 
                     const resolvedKey = resolveChatMediaKey(publicId, content, API_URL);
-                    const localUri = await mediaService.downloadMedia(resolvedKey, type as 'image' | 'video' | 'audio');
+                    const localUri = await mediaService.downloadMedia(resolvedKey, type as 'image' | 'video' | 'audio' | 'document');
 
                     if (localUri) {
                         setMediaUri(localUri);
@@ -175,6 +197,40 @@ export function MessageBubble({
             setIsPlaying(true);
         } catch (e) {
             console.error('Audio playback error:', e);
+        }
+    };
+
+    const handleTranscribeAudio = async () => {
+        if (transcription) {
+            setShowTranscription((prev) => !prev);
+            return;
+        }
+
+        if (!canUseTranscription()) {
+            onNeedUpgrade?.(planTier === APP_TIERS.GRATIS ? 'transcription_blocked' : 'transcription');
+            return;
+        }
+
+        if (!mediaUri) {
+            Alert.alert('Audio no listo', 'Espera a que el audio termine de cargar.');
+            return;
+        }
+
+        setIsTranscribing(true);
+        try {
+            const text = await mediaService.audioToText(mediaUri);
+            if (!text) {
+                Alert.alert('Sin texto', 'No se pudo detectar voz en este audio.');
+                return;
+            }
+            setTranscription(text);
+            setShowTranscription(true);
+            await recordTranscriptionUse();
+        } catch (e) {
+            console.error('Transcription error:', e);
+            Alert.alert('Error', 'No se pudo transcribir el audio. Intenta de nuevo.');
+        } finally {
+            setIsTranscribing(false);
         }
     };
 
@@ -300,53 +356,143 @@ export function MessageBubble({
             // Use extracted duration, fallback to prop
             const displayDuration = audioDuration ?? duration;
             return (
-                <TouchableOpacity onPress={handlePlayAudio} style={mediaStyles.audio}>
-                    <Ionicons
-                        name={isPlaying ? 'pause-circle' : 'play-circle'}
-                        size={36}
-                        color={isMine ? 'white' : '#4CAF50'}
-                    />
-                    <View style={mediaStyles.audioWave}>
-                        {audioWaveHeights.map((height, i) => (
-                            <View
-                                key={i}
-                                style={[
-                                    mediaStyles.audioBar,
-                                    {
-                                        height: height,
-                                        backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : 'rgba(76,175,80,0.6)',
-                                    },
-                                ]}
-                            />
-                        ))}
-                    </View>
-                    <Text style={{
-                        color: isMine ? 'rgba(255,255,255,0.8)' : '#666',
-                        fontSize: 11,
-                        marginLeft: 8,
-                        alignSelf: 'flex-end',
-                        marginBottom: 4
-                    }}>
-                        {displayDuration ? formatDuration(displayDuration) : '--:--'}
-                    </Text>
-                </TouchableOpacity>
+                <View>
+                    <TouchableOpacity onPress={handlePlayAudio} style={mediaStyles.audio}>
+                        <Ionicons
+                            name={isPlaying ? 'pause-circle' : 'play-circle'}
+                            size={36}
+                            color={isMine ? 'white' : '#4CAF50'}
+                        />
+                        <View style={mediaStyles.audioWave}>
+                            {audioWaveHeights.map((height, i) => (
+                                <View
+                                    key={i}
+                                    style={[
+                                        mediaStyles.audioBar,
+                                        {
+                                            height: height,
+                                            backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : 'rgba(76,175,80,0.6)',
+                                        },
+                                    ]}
+                                />
+                            ))}
+                        </View>
+                        <Text style={{
+                            color: isMine ? 'rgba(255,255,255,0.8)' : '#666',
+                            fontSize: 11,
+                            marginLeft: 8,
+                            alignSelf: 'flex-end',
+                            marginBottom: 4
+                        }}>
+                            {displayDuration ? formatDuration(displayDuration) : '--:--'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={mediaStyles.audioTranscriptToggle}
+                        onPress={handleTranscribeAudio}
+                        disabled={isTranscribing || isLoading}
+                    >
+                        {isTranscribing ? (
+                            <ActivityIndicator size="small" color={isMine ? 'rgba(255,255,255,0.85)' : '#4CAF50'} />
+                        ) : (
+                            <Text style={[
+                                mediaStyles.audioTranscriptToggleText,
+                                { color: isMine ? 'rgba(255,255,255,0.85)' : '#4CAF50' },
+                            ]}>
+                                {transcription
+                                    ? (showTranscription ? 'Ocultar transcripción' : 'Ver transcripción')
+                                    : 'Ver transcripción'}
+                            </Text>
+                        )}
+                    </TouchableOpacity>
+
+                    {showTranscription && transcription ? (
+                        <View style={[
+                            mediaStyles.audioTranscriptBox,
+                            isMine && mediaStyles.audioTranscriptBoxMine,
+                        ]}>
+                            <Text style={[
+                                mediaStyles.audioTranscriptText,
+                                { color: isMine ? 'rgba(255,255,255,0.92)' : '#374151' },
+                            ]}>
+                                {transcription}
+                            </Text>
+                        </View>
+                    ) : null}
+                </View>
             );
         }
 
-        if (type === 'document') {
-            const fileName = metadata?.fileName || 'Documento adjunto';
-            const handleOpenDocument = () => {
-                if (mediaUri) {
-                    Linking.openURL(mediaUri).catch(() => {
-                        console.error('Could not open document:', mediaUri);
-                    });
+        if (type === 'document' || type === 'file') {
+            const fileName = metadata?.fileName || (metadata as any)?.filename || 'Archivo adjunto';
+            const handleOpenDocument = async () => {
+                try {
+                    setIsLoading(true);
+                    const resolvedKey = resolveChatMediaKey(publicId, content, API_URL);
+                    let httpUrl: string | null = null;
+
+                    if (resolvedKey && resolvedKey.startsWith('http')) {
+                        httpUrl = resolvedKey;
+                    } else if (resolvedKey) {
+                        httpUrl = await mediaService.getSignedUrl(resolvedKey, type as 'document' | 'file');
+                    }
+
+                    if (!httpUrl && mediaUri && mediaUri.startsWith('http')) {
+                        httpUrl = mediaUri;
+                    }
+
+                    const rawFileName = metadata?.fileName || (metadata as any)?.filename || 'archivo_adjunto';
+                    const sanitizedFileName = rawFileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+                    const docDir = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory || '';
+                    const localPath = `${docDir}${sanitizedFileName}`;
+
+                    let targetFileUri: string | null = mediaUri && mediaUri.startsWith('file://') ? mediaUri : null;
+
+                    if (httpUrl) {
+                        try {
+                            const downloadRes = await FileSystem.downloadAsync(httpUrl, localPath);
+                            if (downloadRes.status === 200) {
+                                targetFileUri = downloadRes.uri;
+                            }
+                        } catch (dlErr) {
+                            console.warn('Error downloading document/file for native view:', dlErr);
+                        }
+                    }
+
+                    if (!targetFileUri && httpUrl) {
+                        // Fallback in case local storage fails
+                        await WebBrowser.openBrowserAsync(httpUrl);
+                        return;
+                    }
+
+                    if (httpUrl) {
+                        await WebBrowser.openBrowserAsync(httpUrl);
+                    } else if (targetFileUri) {
+                        try {
+                            await Linking.openURL(targetFileUri);
+                        } catch {
+                            Alert.alert('Error', 'No se pudo abrir el archivo.');
+                        }
+                    } else {
+                        Alert.alert('Error', 'No se pudo obtener el archivo.');
+                    }
+                } catch (err) {
+                    console.error('Error opening file natively:', err);
+                    Alert.alert('Error', 'No se pudo abrir el archivo.');
+                } finally {
+                    setIsLoading(false);
                 }
             };
 
             return (
-                <TouchableOpacity onPress={handleOpenDocument} style={mediaStyles.document}>
+                <TouchableOpacity onPress={handleOpenDocument} style={mediaStyles.document} activeOpacity={0.8}>
                     <View style={mediaStyles.documentIconContainer}>
-                        <Ionicons name="document-text" size={32} color={isMine ? 'white' : '#4F46E5'} />
+                        {isLoading ? (
+                            <ActivityIndicator color={isMine ? 'white' : '#4F46E5'} size="small" />
+                        ) : (
+                            <Ionicons name="document-text" size={32} color={isMine ? 'white' : '#4F46E5'} />
+                        )}
                     </View>
                     <View style={mediaStyles.documentTextContainer}>
                         <Text style={[mediaStyles.documentName, { color: isMine ? 'white' : '#333' }]} numberOfLines={1}>

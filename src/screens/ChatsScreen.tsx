@@ -91,6 +91,7 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
     syncFromServer,
     loadFromLocalCache,
     deleteChat,
+    clearChatMessages,
     syncedContacts,
     setSyncedContacts,
     chatItems,
@@ -251,12 +252,12 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
 
     if (item.conversationId) {
       options.push({
-        text: 'Eliminar Chat',
+        text: 'Eliminar todos los mensajes',
         style: 'destructive',
         onPress: () => {
-          Alert.alert('Eliminar Chat', `¿Borrar chat con ${item.displayName}?`, [
+          Alert.alert('Vaciar mensajes', `¿Deseas eliminar todos los mensajes de esta conversación con ${item.displayName}?`, [
             { text: 'Cancelar', style: 'cancel' },
-            { text: 'Eliminar', style: 'destructive', onPress: () => deleteChat(item.conversationId!) }
+            { text: 'Eliminar', style: 'destructive', onPress: () => clearChatMessages(item.conversationId!) }
           ]);
         }
       });
@@ -334,7 +335,16 @@ export function ChatsScreen({ onNavigate, initialConversation, onInitialConversa
             }) : null);
             syncFromServer(false);
           }}
-          onNavigateCall={(roomName, username, conversationId, passedUserId, callSessionId) => onNavigate('call', { roomName, username, conversationId, userId: passedUserId, callSessionId })}
+          onNavigateCall={(roomName, username, conversationId, passedUserId, callSessionId, options) =>
+            onNavigate('call', {
+              roomName,
+              username,
+              conversationId,
+              userId: passedUserId,
+              callSessionId,
+              suppressRinging: options?.suppressRinging,
+            })
+          }
         />
       </KeyboardSafeView>
     );

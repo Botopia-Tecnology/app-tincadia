@@ -96,6 +96,18 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
     return null;
   };
 
+  const [imageError, setImageError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImageError(false);
+  }, [item.avatarUrl]);
+
+  const hasValidAvatar = !!item.avatarUrl && !imageError;
+
+  const cleanLastMessage = (item.lastMessage || item.phone || '')
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
+
   return (
     <View style={[styles.chatItemRow, { backgroundColor: colors.background }]}>
       <TouchableOpacity
@@ -106,12 +118,16 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
       >
         <View style={[
           styles.avatarContainer,
+          { overflow: 'hidden' },
           item.type === 'unknown' && { backgroundColor: '#9CA3AF' },
-          item.type === 'synced' && { backgroundColor: '#3B82F6' },
-          item.avatarUrl ? { backgroundColor: 'transparent' } : {}
+          item.type === 'synced' && { backgroundColor: '#3B82F6' }
         ]}>
-          {item.avatarUrl ? (
-            <Image source={{ uri: item.avatarUrl }} style={{ width: 48, height: 48, borderRadius: 24 }} />
+          {hasValidAvatar ? (
+            <Image
+              source={{ uri: item.avatarUrl }}
+              style={{ width: 56, height: 56, borderRadius: 28 }}
+              onError={() => setImageError(true)}
+            />
           ) : (
             <Text style={styles.avatarText}>{initials}</Text>
           )}
@@ -133,6 +149,7 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
               <Text
                 style={[styles.lastMessage, { color: colors.textSecondary, fontWeight: 'normal' }]}
                 numberOfLines={1}
+                ellipsizeMode="tail"
               >
                 {item.phone}
               </Text>
@@ -143,8 +160,9 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
                   { color: (item.unreadCount || 0) > 0 ? colors.text : colors.textSecondary, fontWeight: (item.unreadCount || 0) > 0 ? '600' : 'normal' }
                 ]}
                 numberOfLines={1}
+                ellipsizeMode="tail"
               >
-                {item.lastMessage || item.phone}
+                {cleanLastMessage}
               </Text>
             )}
             {(item.unreadCount || 0) > 0 && (

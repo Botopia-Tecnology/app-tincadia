@@ -190,6 +190,21 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
                         db.execSync(`ALTER TABLE conversations ADD COLUMN description TEXT`);
                     }
                 }
+
+                // Migrate contacts table for avatar_url
+                const contactTables = db.getAllSync<{ name: string }>(
+                    `SELECT name FROM sqlite_master WHERE type='table' AND name='contacts'`
+                );
+                if (contactTables.length > 0) {
+                    const contactColumns = db.getAllSync<{ name: string }>(
+                        `PRAGMA table_info(contacts)`
+                    );
+                    const contactColumnNames = contactColumns.map(col => col.name);
+                    if (!contactColumnNames.includes('avatar_url')) {
+                        console.log('🔧 Adding avatar_url column to contacts...');
+                        db.execSync(`ALTER TABLE contacts ADD COLUMN avatar_url TEXT`);
+                    }
+                }
             } catch (migrationError) {
                 console.error('⚠️ Migration check failed (table may not exist yet):', migrationError);
                 // Continue - table will be created below with all columns
@@ -241,7 +256,8 @@ function ensureInitialized(): SQLite.SQLiteDatabase {
           alias TEXT,
           custom_first_name TEXT,
           custom_last_name TEXT,
-          updated_at TEXT
+          updated_at TEXT,
+          avatar_url TEXT
         );
         
         CREATE TABLE IF NOT EXISTS media_cache (
@@ -530,6 +546,19 @@ export function saveConversation(conv: {
     description?: string;
 }) {
     const database = ensureInitialized();
+    const existing = getConversation(conv.id);
+
+    // Preserve existing avatar if incoming is empty/falsy
+    let finalAvatar = conv.otherUserAvatar || '';
+    if (!finalAvatar && existing && existing.other_user_avatar) {
+        finalAvatar = existing.other_user_avatar;
+    }
+
+    let finalImageUrl = conv.imageUrl || '';
+    if (!finalImageUrl && existing && existing.image_url) {
+        finalImageUrl = existing.image_url;
+    }
+
     const now = new Date().toISOString();
     database.runSync(
         `INSERT OR REPLACE INTO conversations 
@@ -539,7 +568,7 @@ export function saveConversation(conv: {
             conv.id,
             conv.otherUserId || null, // Allow null for groups
             conv.otherUserName || '',
-            conv.otherUserAvatar || '',
+            finalAvatar,
             conv.otherUserPhone || '',
             conv.lastMessage || '',
             conv.lastMessageAt || '',
@@ -547,7 +576,7 @@ export function saveConversation(conv: {
             now,
             conv.type || 'direct',
             conv.title || '',
-            conv.imageUrl || '',
+            finalImageUrl,
             conv.description || '',
         ]
     );
@@ -635,6 +664,26 @@ export function deleteConversation(id: string): boolean {
 }
 
 /**
+ * Clear all messages for a conversation without deleting the conversation thread
+ */
+export function clearConversationMessages(id: string): boolean {
+    const database = ensureInitialized();
+    try {
+        database.runSync(`DELETE FROM messages WHERE conversation_id = ?`, [id]);
+        database.runSync(
+            `UPDATE conversations SET last_message = '', last_message_at = '', unread_count = 0 WHERE id = ?`,
+            [id]
+        );
+        DeviceEventEmitter.emit('conversations_updated');
+        DeviceEventEmitter.emit('messages_updated');
+        return true;
+    } catch (e) {
+        console.error('Error clearing conversation messages:', e);
+        return false;
+    }
+}
+
+/**
  * Update unread count for a conversation
  */
 export function updateUnreadCount(conversationId: string, count: number) {
@@ -696,6 +745,7 @@ export interface LocalContact {
     custom_first_name: string;
     custom_last_name: string;
     updated_at: string;
+    avatar_url?: string | null;
 }
 
 /**
@@ -709,6 +759,7 @@ export function saveContact(contact: {
     alias?: string;
     customFirstName?: string;
     customLastName?: string;
+    avatarUrl?: string;
 }) {
     // Validate only truly required fields (phone can be empty)
     if (!contact.id || !contact.ownerId || !contact.contactUserId) {
@@ -722,10 +773,27 @@ export function saveContact(contact: {
 
     const database = ensureInitialized();
     const now = new Date().toISOString();
+
+    // Preserve existing avatar_url if new avatarUrl is undefined
+    let finalAvatarUrl = contact.avatarUrl || null;
+    if (!finalAvatarUrl) {
+        try {
+            const existing = database.getAllSync<{ avatar_url: string | null }>(
+                `SELECT avatar_url FROM contacts WHERE id = ?`,
+                [contact.id]
+            );
+            if (existing && existing.length > 0 && existing[0].avatar_url) {
+                finalAvatarUrl = existing[0].avatar_url;
+            }
+        } catch (e) {
+            // Ignore check error
+        }
+    }
+
     database.runSync(
         `INSERT OR REPLACE INTO contacts 
-     (id, owner_id, contact_user_id, phone, alias, custom_first_name, custom_last_name, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, owner_id, contact_user_id, phone, alias, custom_first_name, custom_last_name, updated_at, avatar_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             contact.id,
             contact.ownerId,
@@ -735,8 +803,34 @@ export function saveContact(contact: {
             contact.customFirstName || '',
             contact.customLastName || '',
             now,
+            finalAvatarUrl,
         ]
     );
+}
+
+/**
+ * Update avatar for a contact user across SQLite contacts & conversations tables
+ */
+export function updateUserAvatarInLocalDb(contactUserId: string, avatarUrl: string): void {
+    if (!contactUserId || !avatarUrl) return;
+    const database = ensureInitialized();
+
+    try {
+        database.runSync(
+            `UPDATE contacts SET avatar_url = ? WHERE contact_user_id = ?`,
+            [avatarUrl, contactUserId]
+        );
+        database.runSync(
+            `UPDATE conversations SET other_user_avatar = ? WHERE other_user_id = ?`,
+            [avatarUrl, contactUserId]
+        );
+
+        console.log(`🖼️ Updated avatar in local DB for user ${contactUserId}`);
+        DeviceEventEmitter.emit('contacts_updated');
+        DeviceEventEmitter.emit('conversations_updated');
+    } catch (error) {
+        console.error('Error updating user avatar in local DB:', error);
+    }
 }
 
 /**

@@ -55,8 +55,10 @@ export function useConversations(userId: string): UseConversationsReturn {
     }): Conversation => {
         const normalizeUrl = (url?: string | null) => {
             if (!url) return '';
-            if (url.startsWith('http')) return url;
-            return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+            const trimmed = String(url).trim();
+            if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === '[object Object]') return '';
+            if (trimmed.startsWith('http')) return trimmed;
+            return `${API_URL}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
         };
 
         return {

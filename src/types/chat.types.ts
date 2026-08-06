@@ -23,6 +23,8 @@ export interface MessageMetadata {
     thumbnailUrl?: string;
     fileName?: string;
     fileSize?: number;
+    /** Transcripción de nota de voz (Vosk) */
+    transcription?: string;
     /** True when the user (or remote) actually edited message body */
     wasEdited?: boolean;
     /** Mensaje de actividad del grupo (centrado en el hilo) */
@@ -108,6 +110,7 @@ export interface DatabaseContact {
     custom_first_name: string;
     custom_last_name: string;
     updated_at: string;
+    avatar_url?: string | null;
 }
 
 export interface GroupParticipant extends User {
