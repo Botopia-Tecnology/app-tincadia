@@ -265,6 +265,8 @@ class MediaService {
                 },
                 parameters: {
                     type: uploadType,
+                    // Nombre original con extensión (el URI local suele ser un cache sin extensión útil)
+                    fileName: media.fileName || `file_${Date.now()}`,
                 },
             });
 
@@ -426,7 +428,14 @@ class MediaService {
 
             // 1. Generate a consistent filename for caching
             const safeFilename = storageKeyOrUrl.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const extension = mediaType === 'video' ? 'mp4' : (mediaType === 'audio' ? 'm4a' : (mediaType === 'document' ? 'pdf' : 'jpg'));
+            let extension = 'bin';
+            if (mediaType === 'video') extension = 'mp4';
+            else if (mediaType === 'audio') extension = 'm4a';
+            else if (mediaType === 'image') extension = 'jpg';
+            else if (mediaType === 'document') {
+                const fromKey = storageKeyOrUrl.match(/\.([a-z0-9]{1,8})$/i);
+                extension = fromKey ? fromKey[1] : 'bin';
+            }
             const fileUri = `${FileSystem.documentDirectory}${safeFilename}.${extension}`;
 
             // 2. Check if file already exists in persistent storage

@@ -22,6 +22,7 @@ export interface MessageMetadata {
     height?: number;
     thumbnailUrl?: string;
     fileName?: string;
+    mimeType?: string;
     fileSize?: number;
     /** Transcripción de nota de voz (Vosk) */
     transcription?: string;

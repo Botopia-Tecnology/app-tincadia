@@ -4,7 +4,7 @@ import { Video, ResizeMode, Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import * as WebBrowser from 'expo-web-browser';
 import * as FileSystem from 'expo-file-system';
-// import * as Sharing from 'expo-sharing';
+import * as Sharing from 'expo-sharing';
 import { messageBubbleStyles as styles } from '../../../styles/ChatComponents.styles';
 import { messageBubbleMediaStyles as mediaStyles } from '../../../styles/ChatComponents.styles';
 import { Ionicons } from '@expo/vector-icons';
@@ -426,6 +426,36 @@ export function MessageBubble({
 
         if (type === 'document' || type === 'file') {
             const fileName = metadata?.fileName || (metadata as any)?.filename || 'Archivo adjunto';
+            const mimeType = metadata?.mimeType || (metadata as any)?.mime || undefined;
+
+            const ensureExtension = (name: string): string => {
+                if (/\.[a-z0-9]{1,8}$/i.test(name)) return name;
+                const mimeExt: Record<string, string> = {
+                    'application/pdf': 'pdf',
+                    'image/png': 'png',
+                    'image/jpeg': 'jpg',
+                    'image/jpg': 'jpg',
+                    'image/webp': 'webp',
+                    'image/gif': 'gif',
+                    'application/msword': 'doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+                    'application/vnd.ms-excel': 'xls',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+                    'application/vnd.ms-powerpoint': 'ppt',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+                    'text/plain': 'txt',
+                    'application/zip': 'zip',
+                    'audio/mpeg': 'mp3',
+                    'audio/m4a': 'm4a',
+                    'video/mp4': 'mp4',
+                };
+                const ext = mimeType ? mimeExt[mimeType] : undefined;
+                if (ext) return `${name}.${ext}`;
+                // Fallback: intentar extensión desde publicId/content de Cloudinary
+                const fromKey = (publicId || content || '').match(/\.([a-z0-9]{1,8})(?:$|\?)/i);
+                return fromKey ? `${name}.${fromKey[1]}` : name;
+            };
+
             const handleOpenDocument = async () => {
                 try {
                     setIsLoading(true);
@@ -443,9 +473,10 @@ export function MessageBubble({
                     }
 
                     const rawFileName = metadata?.fileName || (metadata as any)?.filename || 'archivo_adjunto';
-                    const sanitizedFileName = rawFileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+                    const withExt = ensureExtension(rawFileName);
+                    const sanitizedFileName = withExt.replace(/[^a-zA-Z0-9_.-]/g, '_');
                     const docDir = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory || '';
-                    const localPath = `${docDir}${sanitizedFileName}`;
+                    const localPath = `${docDir}${Date.now()}_${sanitizedFileName}`;
 
                     let targetFileUri: string | null = mediaUri && mediaUri.startsWith('file://') ? mediaUri : null;
 
@@ -460,20 +491,31 @@ export function MessageBubble({
                         }
                     }
 
-                    if (!targetFileUri && httpUrl) {
-                        // Fallback in case local storage fails
-                        await WebBrowser.openBrowserAsync(httpUrl);
-                        return;
+                    // Abrir el archivo local con extensión para que el SO elija el visor.
+                    if (targetFileUri) {
+                        try {
+                            if (await Sharing.isAvailableAsync()) {
+                                await Sharing.shareAsync(targetFileUri, {
+                                    mimeType: mimeType || undefined,
+                                    dialogTitle: fileName,
+                                    UTI: mimeType || undefined,
+                                });
+                                return;
+                            }
+                            if (Platform.OS === 'android' && (FileSystem as any).getContentUriAsync) {
+                                const contentUri = await (FileSystem as any).getContentUriAsync(targetFileUri);
+                                await Linking.openURL(contentUri);
+                                return;
+                            }
+                            await Linking.openURL(targetFileUri);
+                            return;
+                        } catch (openErr) {
+                            console.warn('Native open failed, falling back to browser:', openErr);
+                        }
                     }
 
                     if (httpUrl) {
                         await WebBrowser.openBrowserAsync(httpUrl);
-                    } else if (targetFileUri) {
-                        try {
-                            await Linking.openURL(targetFileUri);
-                        } catch {
-                            Alert.alert('Error', 'No se pudo abrir el archivo.');
-                        }
                     } else {
                         Alert.alert('Error', 'No se pudo obtener el archivo.');
                     }

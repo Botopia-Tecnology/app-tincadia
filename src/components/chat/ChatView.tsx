@@ -269,7 +269,12 @@ export function ChatView(props: ChatViewProps) {
       }, ...prev]);
 
       const result = await mediaService.uploadMedia(asset);
-      await sendMessage(result.publicId, asset.type === 'video' ? 'video' : (asset.type === 'document' ? 'document' : 'image'), { publicId: result.publicId, fileName: asset.fileName });
+      await sendMessage(result.publicId, asset.type === 'video' ? 'video' : (asset.type === 'document' ? 'document' : 'image'), {
+        publicId: result.publicId,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+        fileSize: asset.fileSize,
+      });
       setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {
       Alert.alert('Error', 'Error al subir archivo');
