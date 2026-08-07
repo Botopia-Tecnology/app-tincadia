@@ -6,13 +6,17 @@ import { useCommunicationBoard } from '../hooks/useCommunicationBoard';
 import { getStyles } from '../styles/CommunicationBoardScreen.styles';
 import { useTheme } from '../contexts/ThemeContext';
 import { MagicPencilIcon } from '../components/icons/ActionIcons';
+import { UpgradeModal } from '../components/UpgradeModal';
+import { NavigateFunction } from '../types/navigation.types';
 
 interface CommunicationBoardScreenProps {
   onBack: () => void;
+  onNavigate?: NavigateFunction;
 }
 
 export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> = ({
   onBack,
+  onNavigate,
 }) => {
   const { colors, isDark } = useTheme();
   const {
@@ -35,6 +39,9 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     handleClose,
     startListening,
     stopListening,
+    showUpgradeModal,
+    upgradeFeature,
+    dismissUpgradeModal,
   } = useCommunicationBoard(onBack);
 
   const styles = getStyles(colors, isDark);
@@ -212,6 +219,16 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
           )}
         </View>
       </KeyboardAvoidingView>
+
+      <UpgradeModal
+        visible={showUpgradeModal}
+        onClose={dismissUpgradeModal}
+        feature={upgradeFeature}
+        onUpgradePress={() => {
+          dismissUpgradeModal();
+          onNavigate?.('profile', { openManagePlan: true });
+        }}
+      />
     </SafeAreaView>
   );
 };

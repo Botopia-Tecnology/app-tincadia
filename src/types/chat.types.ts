@@ -26,6 +26,8 @@ export interface MessageMetadata {
     fileSize?: number;
     /** Transcripción de nota de voz (Vosk) */
     transcription?: string;
+    /** Nota de video circular estilo WhatsApp */
+    isVideoNote?: boolean;
     /** True when the user (or remote) actually edited message body */
     wasEdited?: boolean;
     /** Mensaje de actividad del grupo (centrado en el hilo) */

@@ -316,7 +316,7 @@ function AppContent() {
             }
           }} />
         ) : underlyingScreen === 'communication_board' ? (
-          <CommunicationBoardScreen onBack={goBack} />
+          <CommunicationBoardScreen onBack={goBack} onNavigate={navigate} />
         ) : (
           <ProfileScreen 
             onNavigate={navigate} 

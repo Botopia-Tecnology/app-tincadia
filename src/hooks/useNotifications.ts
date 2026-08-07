@@ -416,7 +416,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       const data = notification.request.content.data;
       if (data?.type === 'call_invite' && data?.roomName && data?.senderId) {
-        if (user.role === 'interpreter') {
+        if (String(user.role || '').toLowerCase() === 'interpreter') {
           setInterpreterInvite({
             roomName: String(data.roomName),
             senderId: String(data.senderId),
@@ -573,15 +573,31 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       .on('broadcast', { event: 'call_invite' }, (payload) => {
         const data = payload.payload;
         if (!data?.roomName || !data?.senderId) return;
-        if (user.role !== 'interpreter') return;
+        if (String(user.role || '').toLowerCase() !== 'interpreter') return;
 
-        // Misma UX que el push: aunque la app esté abierta, mostrar el modal.
+        // Misma UX que el push: aunque la app esté abierta, mostrar modal + banner local.
         setInterpreterInvite({
           roomName: String(data.roomName),
           senderId: String(data.senderId),
           senderName: String(data.senderName || 'Usuario'),
           inviteId: data.inviteId ? String(data.inviteId) : undefined,
         });
+
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: '📞 Solicitud de Intérprete',
+            body: `${data.senderName || 'Usuario'} requiere un intérprete en una llamada.`,
+            sound: true,
+            data: {
+              type: 'call_invite',
+              inviteId: data.inviteId,
+              roomName: data.roomName,
+              senderId: data.senderId,
+              senderName: data.senderName,
+            },
+          },
+          trigger: null,
+        }).catch(() => { });
       })
       .on('broadcast', { event: 'call_invite_taken' }, () => {
         setInterpreterInvite(null);

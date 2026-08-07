@@ -116,13 +116,56 @@ class MediaService {
 
 
     /**
-     * Record a video using the camera
+     * Take a photo using the camera
+     */
+    async takePhoto(): Promise<MediaFile | null> {
+        const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+        if (cameraPermission.granted === false) {
+            Alert.alert('Permiso requerido', 'Se requiere acceso a la cámara para tomar fotos.');
+            return null;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: false,
+            quality: 0.8,
+        });
+
+        if (!result.canceled && result.assets[0]) {
+            const asset = result.assets[0];
+
+            if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE) {
+                Alert.alert('Archivo muy grande', 'La foto debe ser menor a 50MB.');
+                return null;
+            }
+
+            return {
+                uri: asset.uri,
+                type: 'image',
+                width: asset.width,
+                height: asset.height,
+                fileSize: asset.fileSize,
+                mimeType: asset.mimeType || 'image/jpeg',
+                fileName: asset.fileName || `photo_${Date.now()}.jpg`,
+            };
+        }
+
+        return null;
+    }
+
+    /**
+     * Record a short video using the camera (max 60s)
      */
     async recordVideo(): Promise<MediaFile | null> {
-        // Request camera permissions
         const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
         if (cameraPermission.granted === false) {
             Alert.alert('Permiso requerido', 'Se requiere acceso a la cámara para grabar video.');
+            return null;
+        }
+
+        const micPermission = await Audio.requestPermissionsAsync();
+        if (micPermission.status !== 'granted') {
+            Alert.alert('Permiso requerido', 'Se requiere acceso al micrófono para grabar video con audio.');
             return null;
         }
 
@@ -130,7 +173,7 @@ class MediaService {
             mediaTypes: ImagePicker.MediaTypeOptions.Videos,
             allowsEditing: false,
             quality: 0.8,
-            videoMaxDuration: 60, // 1 minute max
+            videoMaxDuration: 60, // short videos, 1 minute max
         });
 
         if (!result.canceled && result.assets[0]) {

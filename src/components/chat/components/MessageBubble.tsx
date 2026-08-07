@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Pressable, Vibration, Linking, Dimensions, Alert, Platform } from 'react-native';
-import { Video, ResizeMode, Audio } from 'expo-av';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Vibration, Alert } from 'react-native';
+import { Video, ResizeMode, Audio, AVPlaybackStatus } from 'expo-av';
 import * as Speech from 'expo-speech';
-import * as WebBrowser from 'expo-web-browser';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { messageBubbleStyles as styles } from '../../../styles/ChatComponents.styles';
 import { messageBubbleMediaStyles as mediaStyles } from '../../../styles/ChatComponents.styles';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,9 +14,7 @@ import { apiClient } from '../../../lib/api-client';
 import { MessageMetadata } from '../../../types/chat.types';
 import { useSubscription } from '../../../hooks/useSubscription';
 import { APP_TIERS } from '../../../config/revenuecat.config';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const SCREEN_HEIGHT = Dimensions.get('window').height;
+import { DocumentViewerModal } from './DocumentViewerModal';
 
 /**
  * Clave para descarga / URL firmada: evita tratar un public_id de Cloudinary como ruta del API
@@ -83,6 +80,8 @@ export function MessageBubble({
     metadata,
     onNeedUpgrade,
 }: MessageBubbleProps) {
+    const insets = useSafeAreaInsets();
+    const videoRef = useRef<Video>(null);
     const { canUseTranscription, recordTranscriptionUse, planTier } = useSubscription();
     const [mediaUri, setMediaUri] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -97,6 +96,13 @@ export function MessageBubble({
     const [showTranscription, setShowTranscription] = useState(
         Boolean(metadata?.transcription)
     );
+    const [docViewer, setDocViewer] = useState<{
+        visible: boolean;
+        uri: string | null;
+        localUri: string | null;
+        fileName: string;
+        mimeType?: string;
+    }>({ visible: false, uri: null, localUri: null, fileName: 'Documento' });
 
     useEffect(() => {
         if (typeof metadata?.transcription === 'string' && metadata.transcription) {
@@ -342,13 +348,32 @@ export function MessageBubble({
         }
 
         if (type === 'video') {
+            const isVideoNote = Boolean(metadata?.isVideoNote);
             return (
-                <Video
-                    source={{ uri: mediaUri }}
-                    style={mediaStyles.thumbnail}
-                    useNativeControls
-                    resizeMode={ResizeMode.COVER}
-                />
+                <TouchableOpacity
+                    onPress={() => setShowFullscreen(true)}
+                    activeOpacity={0.9}
+                    style={isVideoNote ? mediaStyles.videoNoteThumbWrap : mediaStyles.videoThumbWrap}
+                >
+                    <Video
+                        source={{ uri: mediaUri }}
+                        style={isVideoNote ? mediaStyles.videoNoteThumbnail : mediaStyles.thumbnail}
+                        resizeMode={ResizeMode.COVER}
+                        shouldPlay={false}
+                        isMuted
+                        useNativeControls={false}
+                    />
+                    <View style={mediaStyles.videoPlayOverlay} pointerEvents="none">
+                        <View style={isVideoNote ? mediaStyles.videoNotePlayBadge : mediaStyles.videoPlayBadge}>
+                            <Ionicons
+                              name="play"
+                              size={isVideoNote ? 22 : 28}
+                              color="#FFF"
+                              style={{ marginLeft: 3 }}
+                            />
+                        </View>
+                    </View>
+                </TouchableOpacity>
             );
         }
 
@@ -491,34 +516,19 @@ export function MessageBubble({
                         }
                     }
 
-                    // Abrir el archivo local con extensión para que el SO elija el visor.
-                    if (targetFileUri) {
-                        try {
-                            if (await Sharing.isAvailableAsync()) {
-                                await Sharing.shareAsync(targetFileUri, {
-                                    mimeType: mimeType || undefined,
-                                    dialogTitle: fileName,
-                                    UTI: mimeType || undefined,
-                                });
-                                return;
-                            }
-                            if (Platform.OS === 'android' && (FileSystem as any).getContentUriAsync) {
-                                const contentUri = await (FileSystem as any).getContentUriAsync(targetFileUri);
-                                await Linking.openURL(contentUri);
-                                return;
-                            }
-                            await Linking.openURL(targetFileUri);
-                            return;
-                        } catch (openErr) {
-                            console.warn('Native open failed, falling back to browser:', openErr);
-                        }
+                    if (!httpUrl && !targetFileUri) {
+                        Alert.alert('Error', 'No se pudo obtener el archivo.');
+                        return;
                     }
 
-                    if (httpUrl) {
-                        await WebBrowser.openBrowserAsync(httpUrl);
-                    } else {
-                        Alert.alert('Error', 'No se pudo obtener el archivo.');
-                    }
+                    // Visor in-app (estilo WhatsApp). No abrir "Abrir con..." del sistema.
+                    setDocViewer({
+                        visible: true,
+                        uri: httpUrl || targetFileUri,
+                        localUri: targetFileUri,
+                        fileName,
+                        mimeType,
+                    });
                 } catch (err) {
                     console.error('Error opening file natively:', err);
                     Alert.alert('Error', 'No se pudo abrir el archivo.');
@@ -528,6 +538,7 @@ export function MessageBubble({
             };
 
             return (
+                <>
                 <TouchableOpacity onPress={handleOpenDocument} style={mediaStyles.document} activeOpacity={0.8}>
                     <View style={mediaStyles.documentIconContainer}>
                         {isLoading ? (
@@ -545,30 +556,90 @@ export function MessageBubble({
                         </Text>
                     </View>
                 </TouchableOpacity>
+                <DocumentViewerModal
+                    visible={docViewer.visible}
+                    onClose={() => setDocViewer(prev => ({ ...prev, visible: false }))}
+                    uri={docViewer.uri}
+                    localUri={docViewer.localUri}
+                    fileName={docViewer.fileName}
+                    mimeType={docViewer.mimeType}
+                />
+                </>
             );
         }
 
         return null;
     };
 
-    // Fullscreen image modal
+    const closeFullscreen = async () => {
+        try {
+            if (videoRef.current) {
+                await videoRef.current.pauseAsync();
+                await videoRef.current.setPositionAsync(0);
+            }
+        } catch {
+            // ignore unload/seek errors while closing
+        }
+        setShowFullscreen(false);
+    };
+
+    const handleVideoStatusUpdate = async (status: AVPlaybackStatus) => {
+        if (!status.isLoaded) return;
+        if (status.didJustFinish) {
+            try {
+                await videoRef.current?.setPositionAsync(0);
+                await videoRef.current?.pauseAsync();
+            } catch (e) {
+                console.error('Failed to reset video after finish:', e);
+            }
+        }
+    };
+
+    // Fullscreen image / video modal
     const renderFullscreenModal = () => (
-        <Modal visible={showFullscreen} transparent animationType="fade">
-            <Pressable style={mediaStyles.modalBackdrop} onPress={() => setShowFullscreen(false)}>
-                <View style={mediaStyles.modalContent}>
-                    <Image
-                        source={{ uri: mediaUri! }}
-                        style={mediaStyles.fullscreenImage}
-                        resizeMode="contain"
-                    />
+        <Modal
+            visible={showFullscreen}
+            transparent
+            animationType="fade"
+            onRequestClose={closeFullscreen}
+            statusBarTranslucent
+        >
+            <View style={mediaStyles.modalBackdrop}>
+                <View
+                    style={[
+                        mediaStyles.modalContent,
+                        {
+                            paddingTop: insets.top + 8,
+                            paddingBottom: insets.bottom + 12,
+                            paddingHorizontal: Math.max(insets.left, insets.right, 8),
+                        },
+                    ]}
+                >
+                    {type === 'video' && mediaUri && showFullscreen ? (
+                        <Video
+                            ref={videoRef}
+                            source={{ uri: mediaUri }}
+                            style={mediaStyles.fullscreenVideo}
+                            resizeMode={ResizeMode.CONTAIN}
+                            useNativeControls
+                            shouldPlay
+                            onPlaybackStatusUpdate={handleVideoStatusUpdate}
+                        />
+                    ) : type === 'image' && mediaUri ? (
+                        <Image
+                            source={{ uri: mediaUri }}
+                            style={mediaStyles.fullscreenImage}
+                            resizeMode="contain"
+                        />
+                    ) : null}
                     <TouchableOpacity
-                        style={mediaStyles.closeButton}
-                        onPress={() => setShowFullscreen(false)}
+                        style={[mediaStyles.closeButton, { top: insets.top + 12 }]}
+                        onPress={closeFullscreen}
                     >
                         <Ionicons name="close" size={28} color="white" />
                     </TouchableOpacity>
                 </View>
-            </Pressable>
+            </View>
         </Modal>
     );
 
@@ -694,6 +765,32 @@ export function MessageBubble({
     }
 
     // Media message (image/video/audio)
+    const isVideoNote = type === 'video' && Boolean(metadata?.isVideoNote);
+
+    // Nota de video: sin fondo de burbuja (estilo WhatsApp)
+    if (isVideoNote) {
+        return (
+            <View style={[styles.container, isMine ? styles.containerMine : styles.containerOther]}>
+                <View style={mediaStyles.videoNoteBubble}>
+                    {senderName ? (
+                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: senderColor, marginBottom: 4 }}>
+                            {senderName}
+                        </Text>
+                    ) : null}
+                    {renderReplyQuote()}
+                    <View style={mediaStyles.videoNoteOuter}>
+                        {renderMedia()}
+                        <View style={mediaStyles.videoNoteFooter} pointerEvents="none">
+                            <Text style={mediaStyles.videoNoteTime}>{formatTime(time)}</Text>
+                            {renderCheckmarks()}
+                        </View>
+                    </View>
+                </View>
+                {renderFullscreenModal()}
+            </View>
+        );
+    }
+
     return (
         <View style={[styles.container, isMine ? styles.containerMine : styles.containerOther]}>
             <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther, { padding: 4 }]}>
@@ -714,7 +811,7 @@ export function MessageBubble({
                     {renderCheckmarks()}
                 </View>
             </View>
-            {type === 'image' && renderFullscreenModal()}
+            {(type === 'image' || type === 'video') && renderFullscreenModal()}
         </View>
     );
 }

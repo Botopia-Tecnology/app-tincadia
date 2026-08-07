@@ -200,7 +200,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               style={[chatViewStyles.mediaButton, { backgroundColor: isDark ? finalColors.inputBg : '#F3F4F6' }]} 
               onPress={onTextToSpeech}
             >
-              <Ionicons name="volume-medium-outline" size={22} color={finalColors.icon} />
+              <Ionicons name="easel-outline" size={22} color={finalColors.icon} />
             </TouchableOpacity>
           </View>
 

@@ -14,7 +14,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { chatService } from '../services/chat.service';
 import { useSubscription } from '../hooks/useSubscription';
 import { UpgradeModal } from './UpgradeModal';
-import { Video, QrCode, MessageSquare } from 'lucide-react-native';
+import { Video, QrCode, Presentation } from 'lucide-react-native';
 import { NavigateFunction } from '../types/navigation.types';
 import { useProductTour } from '../hooks/useProductTour';
 
@@ -107,7 +107,7 @@ export function BottomNavigation({ currentScreen, onNavigate }: BottomNavigation
                                         <Text style={[styles.floatingLabel, { color: colors.text }]}>Pizarra</Text>
                                     </View>
                                     <View style={[styles.floatingButton, { backgroundColor: '#4F46E5' }]}>
-                                        <MessageSquare size={24} color="white" />
+                                        <Presentation size={24} color="white" />
                                     </View>
                                 </TouchableOpacity>
 

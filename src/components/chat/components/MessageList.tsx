@@ -15,7 +15,7 @@ interface UploadingMessage {
   status: 'uploading';
   createdAt: string;
   senderId: string;
-  metadata?: { duration?: number };
+  metadata?: { duration?: number; isVideoNote?: boolean };
 }
 
 interface MessageListProps {
@@ -91,6 +91,7 @@ export const MessageList = ({
             isSynced={false}
             type={uploader.type}
             duration={uploader.metadata?.duration}
+            metadata={uploader.metadata}
             onNeedUpgrade={onNeedUpgrade}
           />
           <ActivityIndicator style={{ position: 'absolute', alignSelf: 'center', top: '40%' }} color="white" />

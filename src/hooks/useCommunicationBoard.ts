@@ -3,6 +3,8 @@ import { Alert, NativeModules, Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import Voice from '@react-native-voice/voice';
 import { chatService } from '../services/chat.service';
+import { useSubscription } from './useSubscription';
+import { APP_TIERS } from '../config/revenuecat.config';
 
 export interface WordToken {
   word: string;
@@ -39,12 +41,17 @@ const hasNativeVoiceModule = () => {
   return Boolean(nativeVoiceModule?.startSpeech);
 };
 
+export type CorrectionUpgradeFeature = 'correction' | 'correction_blocked';
+
 export const useCommunicationBoard = (onClose?: () => void) => {
+  const { planTier, canUseCorrection, recordCorrectionUse } = useSubscription();
   const [text, setText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceRecognitionError, setVoiceRecognitionError] = useState<string | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<CorrectionUpgradeFeature>('correction');
 
   // Estados del Karaoke por palabra
   const [words, setWords] = useState<WordToken[]>([]);
@@ -349,11 +356,18 @@ export const useCommunicationBoard = (onClose?: () => void) => {
   const handleAICorrect = async () => {
     if (!text.trim() || isCorrecting) return;
 
+    if (!canUseCorrection()) {
+      setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'correction_blocked' : 'correction');
+      setShowUpgradeModal(true);
+      return;
+    }
+
     setIsCorrecting(true);
     try {
       const { correctedText } = await chatService.correctMessage(text);
       if (correctedText) {
         setText(correctedText);
+        recordCorrectionUse();
       }
     } catch (error) {
       console.error('Error al corregir texto con IA:', error);
@@ -418,5 +432,8 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     handleClose,
     startListening,
     stopListening,
+    showUpgradeModal,
+    upgradeFeature,
+    dismissUpgradeModal: () => setShowUpgradeModal(false),
   };
 };

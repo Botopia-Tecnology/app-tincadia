@@ -22,6 +22,7 @@ import { MessageList } from './components/MessageList';
 import { ChatInput } from './components/ChatInput';
 import { AudioRecorder } from './recorders/AudioRecorder';
 import { StreamingLSCRecorder } from './recorders/StreamingLSCRecorder';
+import { VideoNoteRecorder } from './recorders/VideoNoteRecorder';
 import { AddContactModal } from '../AddContactModal';
 import { AttachmentMenu } from './components/AttachmentMenu';
 import { ContactProfileScreen } from './ContactProfileScreen';
@@ -75,7 +76,7 @@ interface UploadingMessage {
   status: 'uploading';
   createdAt: string;
   senderId: string;
-  metadata?: { duration?: number };
+  metadata?: { duration?: number; isVideoNote?: boolean };
 }
 
 export function ChatView(props: ChatViewProps) {
@@ -117,6 +118,7 @@ export function ChatView(props: ChatViewProps) {
   const [showVideoTranslator, setShowVideoTranslator] = useState(false);
   const [uploadingMessages, setUploadingMessages] = useState<UploadingMessage[]>([]);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showVideoNoteRecorder, setShowVideoNoteRecorder] = useState(false);
   const [inputAreaHeight, setInputAreaHeight] = useState(48);
 
   const { startTour } = useProductTourContext();
@@ -309,6 +311,45 @@ export function ChatView(props: ChatViewProps) {
     } catch (err) {
       console.error('Error uploading audio:', err);
       Alert.alert('Error', 'Error al enviar audio');
+      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
+    }
+  };
+
+  const handleVideoNoteSend = async (uri: string, durationSec: number) => {
+    setShowVideoNoteRecorder(false);
+
+    const tempId = `upload-video-note-${Date.now()}`;
+    try {
+      setUploadingMessages(prev => [{
+        id: tempId,
+        content: '',
+        localUri: uri,
+        type: 'video',
+        status: 'uploading',
+        createdAt: new Date().toISOString(),
+        senderId: userId,
+        metadata: { duration: durationSec, isVideoNote: true },
+      }, ...prev]);
+
+      const videoAsset = {
+        uri,
+        type: 'video' as const,
+        fileName: `video_note_${Date.now()}.mp4`,
+        mimeType: 'video/mp4',
+        duration: durationSec,
+      };
+      const result = await mediaService.uploadMedia(videoAsset);
+      await sendMessage(result.publicId, 'video', {
+        publicId: result.publicId,
+        fileName: videoAsset.fileName,
+        mimeType: videoAsset.mimeType,
+        duration: durationSec,
+        isVideoNote: true,
+      });
+      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
+    } catch (err) {
+      console.error('Error uploading video note:', err);
+      Alert.alert('Error', 'Error al enviar la nota de video');
       setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     }
   };
@@ -599,6 +640,21 @@ export function ChatView(props: ChatViewProps) {
           const asset = await mediaService.pickDocument();
           if (asset) await processAsset(asset);
         }}
+        onTakePhoto={async () => {
+          const asset = await mediaService.takePhoto();
+          if (asset) await processAsset(asset);
+        }}
+        onRecordVideo={async () => {
+          const asset = await mediaService.recordVideo();
+          if (asset) await processAsset(asset);
+        }}
+        onRecordVideoNote={() => setShowVideoNoteRecorder(true)}
+      />
+
+      <VideoNoteRecorder
+        visible={showVideoNoteRecorder}
+        onClose={() => setShowVideoNoteRecorder(false)}
+        onSend={handleVideoNoteSend}
       />
     </View>
   );
