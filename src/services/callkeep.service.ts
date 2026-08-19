@@ -30,13 +30,55 @@ function normalizeCallKey(value: string): string {
 }
 
 function getStringValue(value: unknown): string | undefined {
-  if (value == null) return undefined;
-  const text = String(value);
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const text = String(value).trim();
   return text.length > 0 ? text : undefined;
 }
 
 function asPayloadObject(value: unknown): Record<string, any> {
-  return value && typeof value === 'object' ? value as Record<string, any> : {};
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, any>
+    : {};
+}
+
+const CALL_NOTIFICATION_TYPES = new Set(['call', 'incoming_call', 'call_ended', 'call_missed', 'call_rejected']);
+const TERMINAL_CALL_NOTIFICATION_TYPES = new Set(['call_ended', 'call_missed', 'call_rejected']);
+
+function getBoundedString(value: unknown, maxLength = 256): string | undefined {
+  const text = getStringValue(value);
+  return text && text.length <= maxLength ? text : undefined;
+}
+
+function normalizeCallNotificationPayload(value: unknown): Record<string, string> | undefined {
+  const data = asPayloadObject(value);
+  const type = getBoundedString(data.type, 32) || 'call';
+  if (!CALL_NOTIFICATION_TYPES.has(type)) return undefined;
+
+  const normalized: Record<string, string> = { type };
+  const fields: Array<[string, unknown, number]> = [
+    ['nativeCallUUID', data.nativeCallUUID, 128],
+    ['callUUID', data.callUUID, 128],
+    ['uuid', data.uuid, 128],
+    ['originalCallUUID', data.originalCallUUID, 128],
+    ['roomName', data.roomName, 256],
+    ['conversationId', data.conversationId, 128],
+    ['callSessionId', data.callSessionId || data.call_session_id, 128],
+    ['senderId', data.senderId || data.sender_id, 128],
+    ['senderName', data.senderName || data.callerName, 120],
+    ['callerName', data.callerName || data.senderName, 120],
+    ['handle', data.handle, 120],
+  ];
+
+  fields.forEach(([key, rawValue, maxLength]) => {
+    const safeValue = getBoundedString(rawValue, maxLength);
+    if (safeValue) normalized[key] = safeValue;
+  });
+
+  const callIdentifier = normalized.nativeCallUUID || normalized.callUUID || normalized.uuid ||
+    normalized.roomName || normalized.conversationId || normalized.originalCallUUID;
+  if (!callIdentifier) return undefined;
+
+  return normalized;
 }
 
 const options = {
@@ -66,6 +108,7 @@ const options = {
 
 class CallKeepService {
   private initialized = false;
+  private setupPromise: Promise<void> = Promise.resolve();
   private voipPushInitialized = false;
   private voipTokenHandler?: (token: string) => void;
   /** Native UUIDs ended by app cleanup; only matching endCall events are suppressed. */
@@ -232,23 +275,24 @@ class CallKeepService {
   private buildContextFromPayload(payload: unknown): NativeCallContext {
     const data = asPayloadObject(payload);
     return {
-      roomName: getStringValue(data.roomName),
-      conversationId: getStringValue(data.conversationId),
-      callSessionId: getStringValue(data.callSessionId || data.call_session_id),
-      senderId: getStringValue(data.senderId || data.sender_id),
-      senderName: getStringValue(data.senderName || data.callerName || data.handle),
+      roomName: getBoundedString(data.roomName, 256),
+      conversationId: getBoundedString(data.conversationId, 128),
+      callSessionId: getBoundedString(data.callSessionId || data.call_session_id, 128),
+      senderId: getBoundedString(data.senderId || data.sender_id, 128),
+      senderName: getBoundedString(data.senderName || data.callerName || data.handle, 120),
     };
   }
 
   private getRequestedUUIDFromPayload(payload: unknown, fallbackUUID?: string): string | undefined {
     const data = asPayloadObject(payload);
-    return getStringValue(
+    return getBoundedString(
       data.nativeCallUUID ||
       data.callUUID ||
       data.uuid ||
       data.roomName ||
       data.conversationId ||
-      fallbackUUID
+      fallbackUUID,
+      256,
     );
   }
 
@@ -263,65 +307,22 @@ class CallKeepService {
   }
 
   private handleVoipNotificationPayload = (notificationObj: unknown) => {
-    console.log('[VoIP Push] Notification received:', notificationObj);
-
-    const notification = asPayloadObject(notificationObj);
-    const notificationType = getStringValue(notification.type);
-    const callUUID = this.getRequestedUUIDFromPayload(notification);
-    const callerName = getStringValue(notification.callerName || notification.senderName) || 'Tincadia';
-    const handle = getStringValue(notification.handle || notification.senderName) || 'Tincadia Call';
-    const completionUUID = getStringValue(notification.nativeCallUUID || notification.callUUID || notification.uuid || callUUID);
-
-    if (notificationType === 'call_ended' || notificationType === 'call_missed' || notificationType === 'call_rejected') {
-      // Dismiss by every known identifier: the native handler remaps callUUID to
-      // an ephemeral compliance UUID on terminal pushes (originalCallUUID keeps
-      // the ringing call's UUID), and with legacy pushes the terminal push
-      // carries a different random UUID than the original ringing call, so the
-      // conversation/room aliases are the only reliable way to reach it.
-      const terminalIds = Array.from(new Set([
-        callUUID,
-        getStringValue(notification.originalCallUUID),
-        getStringValue(notification.conversationId),
-        getStringValue(notification.roomName),
-      ].filter(Boolean))) as string[];
-
-      terminalIds.forEach((id) => {
-        try {
-          this.dismissIncomingCall(id);
-        } catch (error) {
-          console.warn('[VoIP Push] Could not dismiss terminal call notification:', error);
-        }
-      });
-      if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
-        VoipPushNotification.onVoipNotificationCompleted(completionUUID);
-      }
-      return;
-    }
-
-    if (callUUID) {
-      // PushKit should report CallKit natively in AppDelegate with fromPushKit:YES.
-      // Here we only save the UUID <-> LiveKit room context so answer/end events
-      // can navigate to the correct app room without displaying a duplicate call.
-      this.registerIncomingCallContext(this.resolveCallUUID(callUUID), callUUID, {
-        ...this.buildContextFromPayload(notification),
-        senderName: getStringValue(notification.senderName) || callerName || handle,
-      }, true);
-    }
-
-    if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
-      VoipPushNotification.onVoipNotificationCompleted(completionUUID);
-    }
+    void this.handleIncomingCallPayload(notificationObj, { nativeAlreadyDisplayed: true }).catch(() => {
+      // A malformed/stale native push must not destabilize the JS bridge.
+    });
   };
 
   setup() {
-    if (this.initialized) return;
+    if (this.initialized) return this.setupPromise;
 
     try {
-      RNCallKeep.setup(options).then(accepted => {
-        console.log('[CallKeep] Setup accepted:', accepted);
+      this.setupPromise = Promise.resolve(RNCallKeep.setup(options)).then(() => {
         if (Platform.OS === 'android') {
           RNCallKeep.setAvailable(true);
         }
+      }).catch(() => {
+        // Native call UI may still be available when setup was already done
+        // by the cold-start path. Never turn this into an auth/session failure.
       });
 
       RNCallKeep.addEventListener('answerCall', this.handleAnswerCall);
@@ -332,20 +333,58 @@ class CallKeepService {
         // Con la llamada CallKit viva tras contestar, es CallKit quien activa la
         // AVAudioSession (p. ej. contestada desde lock screen con la app en
         // background). WebRTC/LiveKit debe arrancar su audio en ese momento.
-        RNCallKeep.addEventListener('didActivateAudioSession', () => {
-          try {
-            const { AudioSession } = require('@livekit/react-native');
-            AudioSession.startAudioSession().catch(() => undefined);
-          } catch (error) {
-            console.warn('[CallKeep] Could not start LiveKit audio session:', error);
-          }
-        });
+        RNCallKeep.addEventListener('didActivateAudioSession', this.handleDidActivateAudioSession);
       }
 
       this.initialized = true;
-      console.log('[CallKeep] Service initialized successfully.');
-    } catch (error) {
-      console.error('[CallKeep] Failed to initialize:', error);
+      void this.consumeInitialCallKeepEvents();
+    } catch {
+      this.setupPromise = Promise.resolve();
+      this.initialized = true;
+    }
+
+    return this.setupPromise;
+  }
+
+  async ensureReady() {
+    this.setup();
+    await this.setupPromise;
+  }
+
+  private handleDidActivateAudioSession = () => {
+    try {
+      const { AudioSession } = require('@livekit/react-native');
+      AudioSession.startAudioSession().catch(() => undefined);
+    } catch {
+      // LiveKit may not be loaded in the native/headless path yet.
+    }
+  };
+
+  private async consumeInitialCallKeepEvents() {
+    try {
+      await this.setupPromise;
+      const events = await RNCallKeep.getInitialEvents();
+      if (!Array.isArray(events)) return;
+
+      for (const event of events) {
+        const name = (event as any)?.name;
+        const data = (event as any)?.data;
+        if (name === 'RNCallKeepPerformAnswerCallAction') {
+          const callUUID = getBoundedString(data?.callUUID, 128);
+          if (callUUID) this.handleAnswerCall({ callUUID });
+        } else if (name === 'RNCallKeepPerformEndCallAction') {
+          const callUUID = getBoundedString(data?.callUUID, 128);
+          if (callUUID) await this.handleEndCall({ callUUID });
+        } else if (name === 'RNCallKeepDidDisplayIncomingCall') {
+          this.handleDidDisplayIncomingCall(data);
+        } else if (name === 'RNCallKeepDidActivateAudioSession') {
+          this.handleDidActivateAudioSession();
+        }
+      }
+
+      RNCallKeep.clearInitialEvents();
+    } catch {
+      // Initial events are best-effort; live listeners remain active.
     }
   }
 
@@ -455,8 +494,7 @@ class CallKeepService {
     }
   };
 
-  private handleDidDisplayIncomingCall = ({ error, callUUID, handle, localizedCallerName, payload }: any) => {
-    console.log('[CallKeep] didDisplayIncomingCall', callUUID, handle, localizedCallerName, error, payload);
+  private handleDidDisplayIncomingCall = ({ error, callUUID, handle, localizedCallerName, payload }: any = {}) => {
     if (error || !callUUID) return;
 
     // Terminal VoIP pushes are reported to CallKit only for PushKit compliance
@@ -498,6 +536,83 @@ class CallKeepService {
     }, 35000);
     this.incomingCallTimeouts.set(nativeUUID, timeout);
     return nativeUUID;
+  }
+
+  async handleIncomingCallPayload(payload: unknown, options: { nativeAlreadyDisplayed?: boolean } = {}) {
+    const notification = normalizeCallNotificationPayload(payload);
+    if (!notification) return false;
+
+    const notificationType = notification.type;
+    const requestedUUID = this.getRequestedUUIDFromPayload(notification);
+    const completionUUID = getBoundedString(
+      notification.nativeCallUUID || notification.callUUID || notification.uuid || requestedUUID,
+      128,
+    );
+
+    if (TERMINAL_CALL_NOTIFICATION_TYPES.has(notificationType)) {
+      const terminalIds = Array.from(new Set([
+        requestedUUID,
+        notification.originalCallUUID,
+        notification.conversationId,
+        notification.roomName,
+      ].filter(Boolean))) as string[];
+
+      terminalIds.forEach((id) => {
+        try {
+          this.dismissIncomingCall(id);
+        } catch {
+          // Native CallKit may already have dismissed this identifier.
+        }
+      });
+      if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
+        VoipPushNotification.onVoipNotificationCompleted(completionUUID);
+      }
+      return true;
+    }
+
+    if (!requestedUUID) return false;
+
+    const context = this.buildContextFromPayload(notification);
+    const callerName = getBoundedString(notification.callerName || notification.senderName, 120) || 'Tincadia';
+    const handle = getBoundedString(notification.handle || notification.senderName, 120) || 'Tincadia Call';
+
+    if (options.nativeAlreadyDisplayed) {
+      this.registerIncomingCallContext(this.resolveCallUUID(requestedUUID), requestedUUID, {
+        ...context,
+        senderName: context.senderName || callerName,
+      }, true);
+    } else {
+      await this.ensureReady();
+      this.displayIncomingCall(requestedUUID, handle, callerName, context);
+    }
+
+    if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
+      VoipPushNotification.onVoipNotificationCompleted(completionUUID);
+    }
+    return true;
+  }
+
+  async handleBackgroundCallKeepMessage(value: unknown) {
+    const data = asPayloadObject(value);
+    const explicitType = getBoundedString(data.type, 32);
+
+    // RNCallKeep's Android headless task is normally used for native outgoing
+    // call reachability/actions. Only display an incoming call when the task
+    // explicitly carries an incoming-call type; generic callUUID/name/handle
+    // data must not create a phantom incoming call.
+    if (explicitType === 'call' || explicitType === 'incoming_call') {
+      await this.handleIncomingCallPayload(data);
+      return;
+    }
+
+    const callUUID = getBoundedString(data.callUUID, 128);
+    if (!callUUID) return;
+
+    if (data.name === 'RNCallKeepPerformAnswerCallAction' || data.action === 'answer') {
+      this.handleAnswerCall({ callUUID });
+    } else if (data.name === 'RNCallKeepPerformEndCallAction' || data.action === 'end') {
+      await this.handleEndCall({ callUUID });
+    }
   }
 
   endCall(uuid: string) {
@@ -583,7 +698,7 @@ class CallKeepService {
     }
   }
 
-  setupVoipPush(onVoipToken: (token: string) => void) {
+  setupVoipPush(onVoipToken?: (token: string) => void) {
     if (Platform.OS !== 'ios') return;
     this.voipTokenHandler = onVoipToken;
 
@@ -600,7 +715,6 @@ class CallKeepService {
         if (event?.name === 'RNVoipPushRemoteNotificationsRegisteredEvent') {
           const token = getStringValue(event.data);
           if (token) {
-            console.log('[VoIP Push] Cached token received:', token);
             this.voipTokenHandler?.(token);
           }
         }
@@ -612,7 +726,6 @@ class CallKeepService {
     });
 
     VoipPushNotification.addEventListener('register', (token) => {
-      console.log('[VoIP Push] Token received:', token);
       this.voipTokenHandler?.(token);
     });
 

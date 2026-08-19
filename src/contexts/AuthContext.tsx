@@ -92,6 +92,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         role: normalizedRole,
                         isProfileComplete: result.isProfileComplete,
                     });
+                    // Push registration is best-effort and must never decide whether
+                    // the persisted JavaScript session is valid.
+                    void authService.ensureDeviceRegistration(result.user.id).catch((error) => {
+                        console.warn('[DEVICE_REGISTRATION] Startup reconciliation failed:', error);
+                    });
                 } else {
                     // Token invalid or API unreachable - clear everything
                     console.log('Token check returned null or failed, clearing auth data');
@@ -229,16 +234,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const logout = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Unregister push token before logging out to avoid cross-user notification leaks
-            if (user?.id) {
-                try {
-                    await authService.updatePushToken(user.id, '');
-                    console.log('📱 Cleared push token for user');
-                } catch (e) {
-                    console.warn('Could not clear push token:', e);
-                }
-            }
-
             await authService.logout();
             // Clear local chat database when logging out
             try {

@@ -12,6 +12,8 @@ import { tokenStorage, clearAllAuthData } from './secure-storage';
 
 export interface ApiClientOptions extends RequestInit {
     skipAuth?: boolean;
+    /** Notification registration failures must not log the user out. */
+    suppressUnauthorizedHandling?: boolean;
 }
 
 export class ApiError extends Error {
@@ -36,7 +38,7 @@ export async function apiClient<T>(
     endpoint: string,
     options: ApiClientOptions = {}
 ): Promise<T> {
-    const { skipAuth = false, ...fetchOptions } = options;
+    const { skipAuth = false, suppressUnauthorizedHandling = false, ...fetchOptions } = options;
 
     const headers = new Headers(fetchOptions.headers);
     headers.set('Content-Type', 'application/json');
@@ -57,7 +59,7 @@ export async function apiClient<T>(
         });
 
         // Handle 401 Unauthorized
-        if (response.status === 401 && !skipAuth) {
+        if (response.status === 401 && !skipAuth && !suppressUnauthorizedHandling) {
             await clearAllAuthData();
             if (onUnauthorized) {
                 onUnauthorized();
