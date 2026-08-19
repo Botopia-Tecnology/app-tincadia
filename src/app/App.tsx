@@ -147,7 +147,7 @@ function AppContent() {
     setScreenStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
   }, []);
 
-  const { interpreterInvite, setInterpreterInvite, setActiveCall } = useNotifications(
+  const { interpreterInvite, clearInterpreterInvite, setActiveCall } = useNotifications(
     user,
     (params) => {
       setScreenStack(['chats']);
@@ -173,6 +173,7 @@ function AppContent() {
 
   const handleAcceptInterpreterInvite = async () => {
     if (!interpreterInvite || !user) return;
+    const isInterpreter = String(user.role || '').toLowerCase() === 'interpreter';
     
     if (interpreterInvite.inviteId) {
       try {
@@ -183,27 +184,27 @@ function AppContent() {
             claimResult.message || 'Esta llamada ya fue aceptada por otro compañero.',
             [{ text: 'Entendido', onPress: returnToHome }],
           );
-          setInterpreterInvite(null);
+          clearInterpreterInvite();
           return;
         }
       } catch (err) {
         Alert.alert('Error', 'Hubo un problema al procesar la solicitud.');
         return;
       }
-    } else if (user.role === 'interpreter') {
+    } else if (isInterpreter) {
       await chatService.updateInterpreterStatus(user.id, true).catch(() => {});
     }
 
     Keyboard.dismiss();
     setCallParams({
       roomName: interpreterInvite.roomName,
-      username: user.role === 'interpreter'
+      username: isInterpreter
         ? `Intérprete: ${user.firstName || user.email?.split('@')[0] || 'Usuario'}`
         : (user.firstName || user.email?.split('@')[0] || 'Usuario'),
       conversationId: interpreterInvite.roomName,
       userId: user.id
     });
-    setInterpreterInvite(null);
+    clearInterpreterInvite();
     setScreenStack(prev => prev[prev.length - 1] === 'call' ? prev : [...prev, 'call']);
   };
 
@@ -349,15 +350,17 @@ function AppContent() {
         </View>
       )}
 
-      <IncomingCallModal
-        visible={!!interpreterInvite}
-        callerName={interpreterInvite?.senderName || 'Usuario'}
-        subtitle="Solicita un intérprete en su llamada..."
-        acceptText="Unirse"
-        declineText="Ignorar"
-        onAccept={handleAcceptInterpreterInvite}
-        onDecline={() => setInterpreterInvite(null)}
-      />
+      <View style={{ zIndex: 10000, elevation: 10000 }} pointerEvents="box-none">
+        <IncomingCallModal
+          visible={!!interpreterInvite}
+          callerName={interpreterInvite?.senderName || 'Usuario'}
+          subtitle="Solicita un intérprete en su llamada..."
+          acceptText="Unirse"
+          declineText="Ignorar"
+          onAccept={handleAcceptInterpreterInvite}
+          onDecline={clearInterpreterInvite}
+        />
+      </View>
     </>
   );
 }

@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Alert, Platform, DeviceEventEmitter, AppState, AppStateStatus, Keyboard } from 'react-native';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Alert, Platform, DeviceEventEmitter, AppState, AppStateStatus, Keyboard, Vibration } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import messaging from '@react-native-firebase/messaging';
@@ -67,6 +67,83 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
   const activeCallRef = useRef<string | null>(null);
   const activeIncomingCallRef = useRef<string | null>(null);
+  const lastInviteKeyRef = useRef<string | null>(null);
+
+  const isInterpreter = useCallback(() => {
+    return String(user?.role || '').toLowerCase() === 'interpreter';
+  }, [user?.role]);
+
+  /**
+   * Solicitud de intérprete: SOLO Expo/UI in-app (IncomingCallModal).
+   * Nunca CallKeep / CallKit / módulo nativo de llamadas.
+   */
+  const showInterpreterInvite = useCallback((raw: {
+    roomName?: unknown;
+    room_name?: unknown;
+    senderId?: unknown;
+    sender_id?: unknown;
+    senderName?: unknown;
+    sender_name?: unknown;
+    inviteId?: unknown;
+    invite_id?: unknown;
+  }, opts?: { presentLocalBanner?: boolean }) => {
+    if (!user || !isInterpreter()) return false;
+
+    const roomName = getStringValue(raw.roomName || raw.room_name);
+    const senderId = getStringValue(raw.senderId || raw.sender_id);
+    if (!roomName || !senderId) return false;
+
+    const inviteId = getStringValue(raw.inviteId || raw.invite_id);
+    const senderName = getStringValue(raw.senderName || raw.sender_name) || 'Usuario';
+    const inviteKey = `${inviteId || ''}:${roomName}:${senderId}`;
+
+    // Evitar spam si Expo + broadcast llegan casi juntos.
+    if (lastInviteKeyRef.current === inviteKey) {
+      setInterpreterInvite({
+        roomName,
+        senderId,
+        senderName,
+        inviteId,
+      });
+      return true;
+    }
+    lastInviteKeyRef.current = inviteKey;
+
+    setInterpreterInvite({
+      roomName,
+      senderId,
+      senderName,
+      inviteId,
+    });
+
+    try {
+      Vibration.vibrate(Platform.OS === 'android' ? [0, 400, 200, 400] : 400);
+    } catch {
+      // ignore
+    }
+
+    // Banner Expo local solo como refuerzo in-app (p. ej. vía broadcast).
+    // Si ya vino un push Expo remoto, no duplicar.
+    if (opts?.presentLocalBanner && AppState.currentState === 'active') {
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: '📞 Solicitud de Intérprete',
+          body: `${senderName} requiere un intérprete en una llamada.`,
+          sound: true,
+          data: {
+            type: 'call_invite',
+            inviteId,
+            roomName,
+            senderId,
+            senderName,
+          },
+        },
+        trigger: null,
+      }).catch(() => { });
+    }
+
+    return true;
+  }, [user, isInterpreter]);
 
   const resolveIncomingCallRouting = (payload: {
     callUUID?: string;
@@ -291,6 +368,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       // Handle FCM Data messages in foreground
       const unsubscribeFCM = messaging().onMessage(async remoteMessage => {
         const data = remoteMessage.data;
+
         if (data?.type === 'call') {
           const senderId = getStringValue(data.senderId || data.sender_id);
           if (isSameUserId(senderId, user.id)) {
@@ -371,21 +449,23 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
 
       if (data?.type === 'call_invite' && data?.roomName) {
         setInterpreterInvite(null);
+        lastInviteKeyRef.current = null;
 
         const baseName = user.firstName || user.email?.split('@')[0] || 'Usuario';
         const joinCall = () => onNavigateToCall({
           roomName: String(data.roomName),
           // Mismo formato de identity que el modal in-app: el backend usa el
           // prefijo "Intérprete:" para aplicar la regla de un intérprete por llamada.
-          username: user.role === 'interpreter' ? `Intérprete: ${baseName}` : baseName,
+          username: isInterpreter() ? `Intérprete: ${baseName}` : baseName,
           conversationId: String(data.roomName),
           userId: user.id
         });
 
         // Tocar la notificación debe pasar por el mismo claim atómico que el
         // modal: si otro intérprete ya tomó la llamada, avisar y no entrar.
+        // Solo Expo / Claim — nunca CallKeep.
         const inviteId = data.inviteId ? String(data.inviteId) : undefined;
-        if (user.role === 'interpreter' && inviteId) {
+        if (isInterpreter() && inviteId) {
           chatService.claimInterpreterInvite(inviteId, user.id)
             .then((result) => {
               if (result.success) {
@@ -397,7 +477,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             .catch(() => {
               Alert.alert('Error', 'No se pudo procesar la solicitud de intérprete.');
             });
-        } else if (user.role === 'interpreter') {
+        } else if (isInterpreter()) {
           chatService.updateInterpreterStatus(user.id, true).catch(() => { });
           joinCall();
         } else {
@@ -415,17 +495,13 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
 
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       const data = notification.request.content.data;
-      if (data?.type === 'call_invite' && data?.roomName && data?.senderId) {
-        if (String(user.role || '').toLowerCase() === 'interpreter') {
-          setInterpreterInvite({
-            roomName: String(data.roomName),
-            senderId: String(data.senderId),
-            senderName: String(data.senderName || 'Usuario'),
-            inviteId: data.inviteId ? String(data.inviteId) : undefined,
-          });
-        }
+      if (data?.type === 'call_invite') {
+        // Push Expo en foreground: abrir modal in-app (sin CallKeep).
+        // presentLocalBanner=false porque el propio push ya muestra banner vía handler.
+        showInterpreterInvite(data, { presentLocalBanner: false });
       } else if (data?.type === 'call_invite_taken') {
         setInterpreterInvite(null);
+        lastInviteKeyRef.current = null;
         Notifications.dismissAllNotificationsAsync().catch(() => { });
       }
     });
@@ -434,7 +510,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       if (notificationListener.current) notificationListener.current.remove();
       if (responseListener.current) responseListener.current.remove();
     };
-  }, [user, onNavigateToCall, onNavigateToChat, onNavigateHome]);
+  }, [user, onNavigateToCall, onNavigateToChat, onNavigateHome, isInterpreter, showInterpreterInvite]);
 
   // 5. Handle Realtime Supabase Broadcasts (fast cancellation)
   useEffect(() => {
@@ -572,35 +648,13 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       })
       .on('broadcast', { event: 'call_invite' }, (payload) => {
         const data = payload.payload;
-        if (!data?.roomName || !data?.senderId) return;
-        if (String(user.role || '').toLowerCase() !== 'interpreter') return;
-
-        // Misma UX que el push: aunque la app esté abierta, mostrar modal + banner local.
-        setInterpreterInvite({
-          roomName: String(data.roomName),
-          senderId: String(data.senderId),
-          senderName: String(data.senderName || 'Usuario'),
-          inviteId: data.inviteId ? String(data.inviteId) : undefined,
-        });
-
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: '📞 Solicitud de Intérprete',
-            body: `${data.senderName || 'Usuario'} requiere un intérprete en una llamada.`,
-            sound: true,
-            data: {
-              type: 'call_invite',
-              inviteId: data.inviteId,
-              roomName: data.roomName,
-              senderId: data.senderId,
-              senderName: data.senderName,
-            },
-          },
-          trigger: null,
-        }).catch(() => { });
+        // Fallback in-app vía Realtime (sin CallKeep). Si Expo push ya llegó,
+        // showInterpreterInvite deduplica por inviteKey.
+        showInterpreterInvite(data, { presentLocalBanner: true });
       })
       .on('broadcast', { event: 'call_invite_taken' }, () => {
         setInterpreterInvite(null);
+        lastInviteKeyRef.current = null;
         Notifications.dismissAllNotificationsAsync().catch(() => { });
       })
       .subscribe();
@@ -608,7 +662,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     return () => {
       supabase.removeChannel(userChannel);
     };
-  }, [user]);
+  }, [user, showInterpreterInvite]);
 
   // 6. Reconcile state when returning to foreground. Supabase sockets and JS
   // timers die in background, so terminal call events can be lost entirely;
@@ -796,6 +850,10 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   return {
     interpreterInvite,
     setInterpreterInvite,
+    clearInterpreterInvite: () => {
+      setInterpreterInvite(null);
+      lastInviteKeyRef.current = null;
+    },
     incomingCall: null,
     setIncomingCall: (_val: any) => { },
     setActiveCall: (value: string | null) => {

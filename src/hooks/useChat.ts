@@ -459,6 +459,16 @@ export function useChat(
                                 return;
                             }
 
+                            // Reply fields are encrypted at rest. If the realtime row arrives
+                            // before the decrypted broadcast, reload through the API instead of
+                            // persisting ciphertext in the local message state.
+                            const hasEncryptedReplyField = [rawMsg.reply_to_content, rawMsg.reply_to_sender]
+                                .some((value) => typeof value === 'string' && value.split(':').length === 3);
+                            if (hasEncryptedReplyField) {
+                                syncFromServer();
+                                return;
+                            }
+
                             saveMessage({
                                 id: msgId,
                                 serverId: msgId,
@@ -587,6 +597,9 @@ export function useChat(
                             status: 'delivered',
                             createdAt: msgCreatedAt as string,
                             isMine: false,
+                            replyToId: (sm.replyToId || sm.reply_to_id || bMeta?.replyToId) as string | undefined,
+                            replyToContent: (sm.replyToContent || sm.reply_to_content || bMeta?.replyToContent) as string | undefined,
+                            replyToSender: (sm.replyToSender || sm.reply_to_sender || bMeta?.replyToSender) as string | undefined,
                             metadata: bMeta ? (bMeta as Record<string, unknown>) : undefined,
                         });
                         loadLocalMessages();

@@ -1,4 +1,5 @@
 import { registerRootComponent } from 'expo';
+import './src/config/debug.config';
 import { AppRegistry } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import RNVoipPushNotification from 'react-native-voip-push-notification';
