@@ -6,14 +6,11 @@
  */
 
 import * as SecureStore from 'expo-secure-store';
-import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 
 const TOKEN_KEY = 'tincadia_accessToken';
 const USER_KEY = 'tincadia_user';
 const SESSION_KEY = 'tincadia_supabaseSession';
-const INSTALLATION_ID_KEY = 'tincadia_installationId';
-const DEVICE_REGISTRATION_KEY = 'tincadia_deviceRegistration';
 
 // Web fallback using localStorage (less secure, but SecureStore doesn't work on web)
 // NOTE: This project is typed for React Native (no DOM lib), so we must not reference `window` directly.
@@ -112,68 +109,6 @@ export const userStorage = {
             }
         } catch (error) {
             console.error('Error clearing user:', error);
-        }
-    },
-};
-
-export interface StoredDeviceRegistration {
-    userId: string;
-    registrationId: string;
-}
-
-export const deviceIdStorage = {
-    async getOrCreate(): Promise<string> {
-        try {
-            const existing = isWeb
-                ? await webStorage.getItem(INSTALLATION_ID_KEY)
-                : await SecureStore.getItemAsync(INSTALLATION_ID_KEY);
-            if (existing) return existing;
-
-            const installationId = Crypto.randomUUID();
-            if (isWeb) {
-                await webStorage.setItem(INSTALLATION_ID_KEY, installationId);
-            } else {
-                await SecureStore.setItemAsync(INSTALLATION_ID_KEY, installationId);
-            }
-            return installationId;
-        } catch (error) {
-            console.error('Error getting/creating installation id:', error);
-            throw error;
-        }
-    },
-};
-
-export const deviceRegistrationStorage = {
-    async get(): Promise<StoredDeviceRegistration | null> {
-        try {
-            const value = isWeb
-                ? await webStorage.getItem(DEVICE_REGISTRATION_KEY)
-                : await SecureStore.getItemAsync(DEVICE_REGISTRATION_KEY);
-            if (!value) return null;
-
-            const parsed = JSON.parse(value) as Partial<StoredDeviceRegistration>;
-            if (!parsed.userId || !parsed.registrationId) return null;
-            return { userId: parsed.userId, registrationId: parsed.registrationId };
-        } catch (error) {
-            console.error('Error getting device registration:', error);
-            return null;
-        }
-    },
-
-    async set(value: StoredDeviceRegistration): Promise<void> {
-        const serialized = JSON.stringify(value);
-        if (isWeb) {
-            await webStorage.setItem(DEVICE_REGISTRATION_KEY, serialized);
-        } else {
-            await SecureStore.setItemAsync(DEVICE_REGISTRATION_KEY, serialized);
-        }
-    },
-
-    async clear(): Promise<void> {
-        if (isWeb) {
-            await webStorage.deleteItem(DEVICE_REGISTRATION_KEY);
-        } else {
-            await SecureStore.deleteItemAsync(DEVICE_REGISTRATION_KEY);
         }
     },
 };

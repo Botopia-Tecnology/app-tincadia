@@ -298,19 +298,6 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     let unsubscribeTokenRefresh: (() => void) | undefined;
     let unsubscribeFCM: (() => void) | undefined;
 
-    // This is deliberately best-effort: notification registration must never
-    // clear or invalidate the JavaScript authentication session.
-    void authService.ensureDeviceRegistration(user.id).catch((error) => {
-      console.warn('[DEVICE_REGISTRATION] Notification startup failed:', error);
-    });
-
-    const updateDeviceTokens = (tokens: Parameters<typeof authService.updateDeviceTokens>[1]) => {
-      if (cancelled) return;
-      void authService.updateDeviceTokens(user.id, tokens).catch((error) => {
-        console.warn('[DEVICE_REGISTRATION] Token update failed:', error);
-      });
-    };
-
     // 1. Register for Standard Expo Push Notifications (for Chat Messages)
     const registerForPush = async () => {
       if (!Device.isDevice) return;
@@ -345,7 +332,9 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
         const token = (await Notifications.getExpoPushTokenAsync({
           projectId: '8bf6b071-622c-4428-a2f8-b83b95fa2d99',
         })).data;
-        if (token && !cancelled) updateDeviceTokens({ pushToken: token });
+        if (token && !cancelled) {
+          await authService.updatePushToken(user.id, token);
+        }
       }
     };
     registerForPush().catch(e => {
@@ -355,7 +344,9 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     // 2. Register for VoIP Push (iOS)
     if (Platform.OS === 'ios') {
       callKeepService.setupVoipPush((token) => {
-        if (token && !cancelled) updateDeviceTokens({ voipToken: token });
+        if (token && !cancelled) {
+          void authService.updateVoipToken(user.id, token).catch(console.error);
+        }
       });
     }
 
@@ -364,7 +355,9 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       messaging().getToken()
         .then(token => {
           console.log('✅ FCM Token generated:', token ? token.substring(0, 15) + '...' : 'null');
-          if (token && !cancelled) updateDeviceTokens({ fcmToken: token });
+          if (token && !cancelled) {
+            void authService.updateFcmToken(user.id, token).catch(console.error);
+          }
         })
         .catch(error => {
           console.error('❌ Error getting FCM token:', error);
@@ -373,7 +366,9 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       // Listen for token refreshes
       unsubscribeTokenRefresh = messaging().onTokenRefresh(token => {
         console.log('🔄 FCM Token refreshed:', token ? token.substring(0, 15) + '...' : 'null');
-        if (token && !cancelled) updateDeviceTokens({ fcmToken: token });
+        if (token && !cancelled) {
+          void authService.updateFcmToken(user.id, token).catch(console.error);
+        }
       });
 
       // Handle FCM Data messages in foreground

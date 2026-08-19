@@ -4,17 +4,14 @@
  * Handles all auth API calls to the backend.
  */
 
-import { apiClient, ApiError } from '../lib/api-client';
+import { apiClient } from '../lib/api-client';
 import {
     tokenStorage,
     userStorage,
-    deviceIdStorage,
-    deviceRegistrationStorage,
 } from '../lib/secure-storage';
 import { API_ENDPOINTS, API_URL } from '../config/api.config';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 import type {
     LoginDto,
     RegisterDto,
@@ -22,74 +19,6 @@ import type {
     UpdateProfileDto,
     User,
 } from '../types/auth.types';
-
-type DevicePlatform = 'ios' | 'android';
-
-export interface DeviceTokenUpdate {
-    pushToken?: string;
-    fcmToken?: string;
-    voipToken?: string;
-}
-
-interface DeviceRegistrationResponse {
-    success: boolean;
-    registrationId?: string;
-    active?: boolean;
-    stale?: boolean;
-}
-
-const getDevicePlatform = (): DevicePlatform | null => {
-    if (Platform.OS === 'ios' || Platform.OS === 'android') return Platform.OS;
-    return null;
-};
-
-const cleanToken = (token?: string): string | undefined => {
-    const cleaned = token?.trim();
-    return cleaned || undefined;
-};
-
-const cleanDeviceTokens = (tokens: DeviceTokenUpdate = {}): DeviceTokenUpdate => ({
-    ...(cleanToken(tokens.pushToken) ? { pushToken: cleanToken(tokens.pushToken) } : {}),
-    ...(cleanToken(tokens.fcmToken) ? { fcmToken: cleanToken(tokens.fcmToken) } : {}),
-    ...(cleanToken(tokens.voipToken) ? { voipToken: cleanToken(tokens.voipToken) } : {}),
-});
-
-const hasDeviceTokens = (tokens: DeviceTokenUpdate): boolean => Object.keys(tokens).length > 0;
-
-// Serializes activation/rotation/revocation so login and notification startup
-// cannot race and leave an older registrationId in SecureStore.
-let deviceRegistrationQueue: Promise<unknown> = Promise.resolve();
-let deviceRegistrationLogoutInProgress = false;
-const withDeviceRegistrationLock = <T>(task: () => Promise<T>): Promise<T> => {
-    const next = deviceRegistrationQueue.then(task, task);
-    deviceRegistrationQueue = next.then(() => undefined, () => undefined);
-    return next;
-};
-
-const postDeviceRegistration = async (
-    userId: string,
-    deviceId: string,
-    platform: DevicePlatform,
-    tokens: DeviceTokenUpdate,
-    registrationId?: string,
-): Promise<DeviceRegistrationResponse> => {
-    const response = await apiClient<DeviceRegistrationResponse>(API_ENDPOINTS.DEVICE_REGISTRATION, {
-        method: 'POST',
-        body: JSON.stringify({
-            userId,
-            deviceId,
-            platform,
-            ...tokens,
-            ...(registrationId ? { registrationId } : {}),
-        }),
-        suppressUnauthorizedHandling: true,
-    });
-
-    if (response.registrationId) {
-        await deviceRegistrationStorage.set({ userId, registrationId: response.registrationId });
-    }
-    return response;
-};
 
 export const authService = {
     /**
@@ -105,9 +34,6 @@ export const authService = {
         // Store token and user
         await tokenStorage.setToken(response.token);
         await userStorage.setUser(JSON.stringify(response.user));
-        void authService.activateNewDevice(response.user.id).catch((error) => {
-            console.warn('[DEVICE_REGISTRATION] Login activation failed:', error);
-        });
 
         return response;
     },
@@ -125,9 +51,6 @@ export const authService = {
         // Store token and user
         await tokenStorage.setToken(response.token);
         await userStorage.setUser(JSON.stringify(response.user));
-        void authService.activateNewDevice(response.user.id).catch((error) => {
-            console.warn('[DEVICE_REGISTRATION] Registration activation failed:', error);
-        });
 
         return response;
     },
@@ -153,9 +76,6 @@ export const authService = {
         // Store token and user
         await tokenStorage.setToken(response.token);
         await userStorage.setUser(JSON.stringify(response.user));
-        void authService.activateNewDevice(response.user.id).catch((error) => {
-            console.warn('[DEVICE_REGISTRATION] OAuth activation failed:', error);
-        });
 
         return response;
     },
@@ -348,11 +268,7 @@ export const authService = {
      * Logout - clear tokens and notify backend
      */
     async logout(): Promise<void> {
-        deviceRegistrationLogoutInProgress = true;
-        let registration: Awaited<ReturnType<typeof deviceRegistrationStorage.get>> = null;
         try {
-            registration = await deviceRegistrationStorage.get();
-            // Retrieve data before clearing (to satisfy backend DTO)
             const token = await tokenStorage.getToken();
             const userData = await userStorage.getUser();
             let userId = '';
@@ -364,20 +280,12 @@ export const authService = {
                 } catch (e) { }
             }
 
-            if (userId && registration?.userId === userId) {
-                await authService.revokeDeviceRegistration(userId);
-            }
-
             if (token && userId) {
                 await apiClient(API_ENDPOINTS.LOGOUT, {
                     method: 'POST',
                     body: JSON.stringify({
                         userId,
                         token,
-                        ...(registration?.userId === userId ? {
-                            deviceId: await deviceIdStorage.getOrCreate(),
-                            registrationId: registration.registrationId,
-                        } : {}),
                     }),
                     suppressUnauthorizedHandling: true,
                 });
@@ -396,7 +304,6 @@ export const authService = {
         } finally {
             await tokenStorage.clearToken();
             await userStorage.clearUser();
-            deviceRegistrationLogoutInProgress = false;
         }
     },
 
@@ -423,123 +330,7 @@ export const authService = {
         return null;
     },
 
-    /** Start a new single-active-device activation after a successful login. */
-    async activateNewDevice(userId: string, tokens: DeviceTokenUpdate = {}): Promise<string | null> {
-        const platform = getDevicePlatform();
-        if (!platform || !userId || deviceRegistrationLogoutInProgress) return null;
-
-        return withDeviceRegistrationLock(async () => {
-            const deviceId = await deviceIdStorage.getOrCreate();
-            const response = await postDeviceRegistration(
-                userId,
-                deviceId,
-                platform,
-                cleanDeviceTokens(tokens),
-            );
-            return response.registrationId || null;
-        });
-    },
-
-    /** Reconcile the stored registration when the app starts or a user becomes active. */
-    async ensureDeviceRegistration(userId: string, tokens: DeviceTokenUpdate = {}): Promise<string | null> {
-        const platform = getDevicePlatform();
-        if (!platform || !userId || deviceRegistrationLogoutInProgress) return null;
-
-        return withDeviceRegistrationLock(async () => {
-            const deviceId = await deviceIdStorage.getOrCreate();
-            const stored = await deviceRegistrationStorage.get();
-            const cleanTokens = cleanDeviceTokens(tokens);
-
-            if (stored?.userId === userId && stored.registrationId) {
-                try {
-                    const response = await postDeviceRegistration(
-                        userId,
-                        deviceId,
-                        platform,
-                        cleanTokens,
-                        stored.registrationId,
-                    );
-
-                    if (!response.stale) return response.registrationId || stored.registrationId;
-                } catch (error) {
-                    // The previous phone may have activated the same account and
-                    // revoked this registration. Re-activate only for that
-                    // deterministic stale-registration response; network/auth
-                    // failures must not create a second activation attempt.
-                    if (!(error instanceof ApiError) || error.status !== 400) throw error;
-                }
-            }
-
-            const response = await postDeviceRegistration(userId, deviceId, platform, cleanTokens);
-            return response.registrationId || null;
-        });
-    },
-
-    /** Rotate only non-empty native tokens for the current active registration. */
-    async updateDeviceTokens(userId: string, tokens: DeviceTokenUpdate): Promise<string | null> {
-        const platform = getDevicePlatform();
-        const cleanTokens = cleanDeviceTokens(tokens);
-        if (!platform || !userId || !hasDeviceTokens(cleanTokens) || deviceRegistrationLogoutInProgress) return null;
-
-        return withDeviceRegistrationLock(async () => {
-            const deviceId = await deviceIdStorage.getOrCreate();
-            const stored = await deviceRegistrationStorage.get();
-
-            if (!stored || stored.userId !== userId) {
-                const response = await postDeviceRegistration(userId, deviceId, platform, cleanTokens);
-                return response.registrationId || null;
-            }
-
-            const response = await apiClient<DeviceRegistrationResponse>(API_ENDPOINTS.DEVICE_REGISTRATION_TOKENS, {
-                method: 'POST',
-                body: JSON.stringify({
-                    userId,
-                    deviceId,
-                    registrationId: stored.registrationId,
-                    platform,
-                    ...cleanTokens,
-                }),
-                suppressUnauthorizedHandling: true,
-            });
-
-            if (response.stale) {
-                const replacement = await postDeviceRegistration(userId, deviceId, platform, cleanTokens);
-                return replacement.registrationId || null;
-            }
-
-            return stored.registrationId;
-        });
-    },
-
-    /** Revoke only the exact registration belonging to the currently logged-in user. */
-    async revokeDeviceRegistration(userId: string): Promise<boolean> {
-        const platform = getDevicePlatform();
-        if (!platform || !userId) return false;
-
-        return withDeviceRegistrationLock(async () => {
-            const deviceId = await deviceIdStorage.getOrCreate();
-            const stored = await deviceRegistrationStorage.get();
-            if (!stored || stored.userId !== userId) return false;
-
-            try {
-                const response = await apiClient<{ success: boolean; revoked?: boolean }>(API_ENDPOINTS.DEVICE_REGISTRATION_REVOKE, {
-                    method: 'POST',
-                    body: JSON.stringify({ userId, deviceId, registrationId: stored.registrationId }),
-                    suppressUnauthorizedHandling: true,
-                });
-                return response.revoked ?? response.success;
-            } finally {
-                // Never reuse this registrationId for another account after logout.
-                const current = await deviceRegistrationStorage.get();
-                if (current?.userId === userId && current.registrationId === stored.registrationId) {
-                    await deviceRegistrationStorage.clear();
-                }
-            }
-        });
-    },
-
     async updatePushToken(userId: string, pushToken: string): Promise<void> {
-        // Legacy compatibility only. New notification flows use updateDeviceTokens.
         await apiClient(API_ENDPOINTS.UPDATE_PUSH_TOKEN, {
             method: 'POST',
             body: JSON.stringify({ userId, pushToken }),

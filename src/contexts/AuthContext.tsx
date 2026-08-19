@@ -92,11 +92,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         role: normalizedRole,
                         isProfileComplete: result.isProfileComplete,
                     });
-                    // Push registration is best-effort and must never decide whether
-                    // the persisted JavaScript session is valid.
-                    void authService.ensureDeviceRegistration(result.user.id).catch((error) => {
-                        console.warn('[DEVICE_REGISTRATION] Startup reconciliation failed:', error);
-                    });
                 } else {
                     // Token invalid or API unreachable - clear everything
                     console.log('Token check returned null or failed, clearing auth data');
