@@ -1,12 +1,37 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
 import { Audio } from 'expo-av';
 import { Alert } from 'react-native';
 import { API_URL, API_ENDPOINTS } from '../config/api.config';
 import { authService } from './auth.service';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // Increased to 50MB for videos
+
+type CloudinaryResourceType = 'image' | 'video' | 'raw';
+
+interface DownloadMediaOptions {
+    mimeType?: string;
+    resourceType?: CloudinaryResourceType;
+}
+
+function extensionFromMimeType(mimeType?: string): string | undefined {
+    if (!mimeType) return undefined;
+    const extensions: Record<string, string> = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'image/bmp': 'bmp',
+        'image/heic': 'heic',
+        'video/mp4': 'mp4',
+        'audio/m4a': 'm4a',
+        'application/pdf': 'pdf',
+    };
+    return extensions[mimeType.toLowerCase()];
+}
 
 export interface MediaFile {
     uri: string;
@@ -18,6 +43,8 @@ export interface MediaFile {
     fileName?: string;
     duration?: number;
     base64?: string;
+    /** URI points to a verified local copy ready for upload/render. */
+    uploadReady?: boolean;
 }
 
 export interface UploadResponse {
@@ -29,6 +56,48 @@ export interface UploadResponse {
 
 class MediaService {
     private recording: Audio.Recording | null = null;
+
+    /** Wait until a camera/provider URI exists and its size is stable. */
+    async ensureLocalMediaReady(uri: string, attempts = 20, delayMs = 100): Promise<string> {
+        if (!uri || !uri.startsWith('file://')) return uri;
+
+        let previousSize = -1;
+        let stableReads = 0;
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+            const info = await FileSystem.getInfoAsync(uri);
+            const size = info.exists && 'size' in info && typeof info.size === 'number' ? info.size : 0;
+            if (size > 0) {
+                stableReads = size === previousSize ? stableReads + 1 : 0;
+                previousSize = size;
+                // Two equal reads prevent uploading a partially written camera file.
+                if (stableReads >= 1) return uri;
+            }
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+
+        throw new Error('El archivo multimedia todavía no está disponible.');
+    }
+
+    /**
+     * Materialize the picker/camera URI into a unique cache file. The same
+     * stable URI is then used by both the optimistic preview and the upload.
+     */
+    async prepareMediaForUpload(media: MediaFile): Promise<MediaFile> {
+        if (media.uploadReady || !media.uri.startsWith('file://')) return media;
+
+        const sourceUri = await this.ensureLocalMediaReady(media.uri);
+        const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+        if (!directory) throw new Error('No hay almacenamiento local disponible.');
+
+        const extension = media.fileName?.match(/\.([a-z0-9]{1,8})$/i)?.[1]
+            || (media.type === 'image' ? 'jpg' : media.type === 'video' ? 'mp4' : media.type === 'audio' ? 'm4a' : 'bin');
+        const targetUri = `${directory}chat-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+
+        await FileSystem.copyAsync({ from: sourceUri, to: targetUri });
+        await this.ensureLocalMediaReady(targetUri);
+
+        return { ...media, uri: targetUri, uploadReady: true };
+    }
 
     /**
      * Pick an image or video from the device gallery
@@ -290,16 +359,18 @@ class MediaService {
             const token = await authService.getToken();
             if (!token) throw new Error('No authenticated');
 
+            const preparedMedia = await this.prepareMediaForUpload(media);
+
             const uploadUrl = API_URL + API_ENDPOINTS.UPLOAD_CHAT_MEDIA;
 
             // Prepare type field
             // Note: Cloudinary 'raw' is used for generic files, but for audio we often use 'video' or 'raw'
             // We'll stick to 'image' | 'video' | 'raw' as defined in backend
-            let uploadType = (media.type === 'audio' || media.type === 'document') ? 'raw' : media.type;
+            let uploadType = (preparedMedia.type === 'audio' || preparedMedia.type === 'document') ? 'raw' : preparedMedia.type;
 
-            console.log(`📤 Uploading ${media.type} to ${uploadUrl}`);
+            console.log(`📤 Uploading ${preparedMedia.type} to ${uploadUrl}`);
 
-            const response = await FileSystem.uploadAsync(uploadUrl, media.uri, {
+            const response = await FileSystem.uploadAsync(uploadUrl, preparedMedia.uri, {
                 httpMethod: 'POST',
                 uploadType: FileSystem.FileSystemUploadType.MULTIPART,
                 fieldName: 'file',
@@ -309,7 +380,7 @@ class MediaService {
                 parameters: {
                     type: uploadType,
                     // Nombre original con extensión (el URI local suele ser un cache sin extensión útil)
-                    fileName: media.fileName || `file_${Date.now()}`,
+                    fileName: preparedMedia.fileName || `file_${Date.now()}`,
                 },
             });
 
@@ -323,7 +394,7 @@ class MediaService {
 
             return {
                 publicId: data.public_id,
-                type: media.type,
+                type: preparedMedia.type,
                 url: data.url // Return full Cloudinary URL for direct playback
             };
 
@@ -425,19 +496,25 @@ class MediaService {
     /**
      * Get signed Cloudinary URL for media or documents
      */
-    async getSignedUrl(publicId: string, mediaType: 'image' | 'video' | 'audio' | 'document' | 'file' = 'image'): Promise<string | null> {
+    async getSignedUrl(
+        publicId: string,
+        mediaType: 'image' | 'video' | 'audio' | 'document' | 'file' = 'image',
+        resourceTypeOverride?: CloudinaryResourceType,
+    ): Promise<string | null> {
         try {
             if (!publicId) return null;
             if (publicId.startsWith('http://') || publicId.startsWith('https://')) return publicId;
 
             const token = await authService.getToken();
-            let resourceType: 'image' | 'video' | 'raw' = 'raw';
-            if (mediaType === 'image') resourceType = 'image';
-            else if (mediaType === 'video') resourceType = 'video';
-            else if (mediaType === 'audio' || mediaType === 'document' || mediaType === 'file') resourceType = 'raw';
+            let resourceType: CloudinaryResourceType = resourceTypeOverride || 'raw';
+            if (!resourceTypeOverride) {
+                if (mediaType === 'image') resourceType = 'image';
+                else if (mediaType === 'video') resourceType = 'video';
+                else if (mediaType === 'audio' || mediaType === 'document' || mediaType === 'file') resourceType = 'raw';
+            }
 
             const lower = publicId.toLowerCase();
-            if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp')) {
+            if (!resourceTypeOverride && (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp'))) {
                 resourceType = 'image';
             }
 
@@ -465,7 +542,11 @@ class MediaService {
      * @param storageKeyOrUrl - The public ID or URL of the media
      * @param mediaType - The type of media ('image' | 'video' | 'audio' | 'document') to determine resource type
      */
-    async downloadMedia(storageKeyOrUrl: string, mediaType?: 'image' | 'video' | 'audio' | 'document'): Promise<string | null> {
+    async downloadMedia(
+        storageKeyOrUrl: string,
+        mediaType?: 'image' | 'video' | 'audio' | 'document',
+        options: DownloadMediaOptions = {},
+    ): Promise<string | null> {
         try {
             if (!storageKeyOrUrl) return null;
 
@@ -479,6 +560,7 @@ class MediaService {
                 const fromKey = storageKeyOrUrl.match(/\.([a-z0-9]{1,8})$/i);
                 extension = fromKey ? fromKey[1] : 'bin';
             }
+            extension = extensionFromMimeType(options.mimeType) || extension;
             const fileUri = `${FileSystem.documentDirectory}${safeFilename}.${extension}`;
 
             // 2. Check if file already exists in persistent storage
@@ -493,7 +575,7 @@ class MediaService {
             // 3. If it's not a URL (doesn't start with http), it's a storage key (Public ID)
             if (!storageKeyOrUrl.startsWith('http')) {
                 console.log(`🔑 [MediaService] Fetching signed URL for key: ${storageKeyOrUrl}`);
-                const signedUrl = await this.getSignedUrl(storageKeyOrUrl, mediaType);
+                const signedUrl = await this.getSignedUrl(storageKeyOrUrl, mediaType, options.resourceType);
                 if (signedUrl) {
                     urlToDownload = signedUrl;
                 }
@@ -514,6 +596,33 @@ class MediaService {
             console.error('Download media error:', error);
             return null;
         }
+    }
+
+    /**
+     * Save an image to the device gallery. Remote media is downloaded first so
+     * MediaLibrary always receives a complete local file URI.
+     */
+    async saveImageToGallery(uri: string): Promise<void> {
+        if (!uri) throw new Error('No hay una imagen para guardar.');
+
+        const permission = await MediaLibrary.requestPermissionsAsync();
+        if (!permission.granted) {
+            throw new Error('Se requiere permiso para guardar imágenes en la galería.');
+        }
+
+        let localUri = uri;
+        if (!uri.startsWith('file://')) {
+            const downloaded = await this.downloadMedia(uri, 'image', { mimeType: 'image/jpeg' });
+            if (!downloaded) throw new Error('No se pudo descargar la imagen.');
+            localUri = downloaded;
+        }
+
+        const info = await FileSystem.getInfoAsync(localUri);
+        if (!info.exists || !('size' in info) || !info.size || info.size <= 0) {
+            throw new Error('La imagen todavía no está disponible completamente.');
+        }
+
+        await MediaLibrary.createAssetAsync(localUri);
     }
 }
 

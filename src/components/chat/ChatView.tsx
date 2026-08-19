@@ -260,22 +260,26 @@ export function ChatView(props: ChatViewProps) {
   const processAsset = async (asset: any) => {
     const tempId = `upload-${Date.now()}`;
     try {
+      // Camera/provider URIs can be returned before the native file is fully
+      // materialized. Prepare one stable copy before showing/uploading it.
+      const preparedAsset = await mediaService.prepareMediaForUpload(asset);
+
       setUploadingMessages(prev => [{
         id: tempId,
         content: '',
-        localUri: asset.uri,
-        type: asset.type === 'video' ? 'video' : (asset.type === 'document' ? 'document' : 'image'),
+        localUri: preparedAsset.uri,
+        type: preparedAsset.type === 'video' ? 'video' : (preparedAsset.type === 'document' ? 'document' : 'image'),
         status: 'uploading',
         createdAt: new Date().toISOString(),
         senderId: userId
       }, ...prev]);
 
-      const result = await mediaService.uploadMedia(asset);
-      await sendMessage(result.publicId, asset.type === 'video' ? 'video' : (asset.type === 'document' ? 'document' : 'image'), {
+      const result = await mediaService.uploadMedia(preparedAsset);
+      await sendMessage(result.publicId, preparedAsset.type === 'video' ? 'video' : (preparedAsset.type === 'document' ? 'document' : 'image'), {
         publicId: result.publicId,
-        fileName: asset.fileName,
-        mimeType: asset.mimeType,
-        fileSize: asset.fileSize,
+        fileName: preparedAsset.fileName,
+        mimeType: preparedAsset.mimeType,
+        fileSize: preparedAsset.fileSize,
       });
       setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {

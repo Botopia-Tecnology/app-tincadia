@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
+import { mediaService } from '../../../services/media.service';
 
 interface Props {
   visible: boolean;
@@ -116,6 +117,52 @@ export function DocumentViewerModal({
   const pdf = isPdfMime(mimeType, fileName);
   const [pdfSource, setPdfSource] = useState<string | null>(null);
   const [preparingPdf, setPreparingPdf] = useState(false);
+  const [imageSource, setImageSource] = useState<string | null>(null);
+  const [preparingImage, setPreparingImage] = useState(false);
+
+  // Las imágenes de documentos pueden estar almacenadas como raw en Cloudinary.
+  // Materializarlas localmente evita que Image intente pintar una respuesta
+  // remota incompleta o con un MIME/extensión incorrectos.
+  useEffect(() => {
+    let cancelled = false;
+
+    const prepare = async () => {
+      if (!visible || !image) {
+        setImageSource(null);
+        return;
+      }
+
+      const preferredLocal = localUri || (uri?.startsWith('file://') ? uri : null);
+      if (preferredLocal) {
+        setImageSource(preferredLocal);
+        return;
+      }
+
+      if (!uri) {
+        setImageSource(null);
+        return;
+      }
+
+      try {
+        setPreparingImage(true);
+        const local = await mediaService.downloadMedia(uri, 'document', {
+          mimeType,
+          resourceType: 'raw',
+        });
+        if (!cancelled) setImageSource(local || uri);
+      } catch (e) {
+        console.warn('Failed to prepare document image:', e);
+        if (!cancelled) setImageSource(uri);
+      } finally {
+        if (!cancelled) setPreparingImage(false);
+      }
+    };
+
+    prepare();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, image, uri, localUri, mimeType]);
 
   // Preferir HTTP para PDF.js; si solo hay file://, convertir a data URI base64.
   useEffect(() => {
@@ -166,7 +213,7 @@ export function DocumentViewerModal({
     return buildPdfHtml(pdfSource);
   }, [pdf, pdfSource]);
 
-  const imageUri = uri || localUri;
+  const imageUri = imageSource || (image ? null : localUri || uri);
 
   const handleShare = async () => {
     const shareUri = localUri || uri;
@@ -225,13 +272,29 @@ export function DocumentViewerModal({
             <Ionicons name="close" size={26} color="#FFF" />
           </TouchableOpacity>
           <Text style={styles.title} numberOfLines={1}>{fileName}</Text>
+          {image && (
+            <TouchableOpacity
+              onPress={handleOpenExternal}
+              style={styles.headerBtn}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir imagen con otra aplicación"
+            >
+              <Ionicons name="open-outline" size={23} color="#FFF" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={handleShare} style={styles.headerBtn} hitSlop={10}>
             <Ionicons name="share-outline" size={24} color="#FFF" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.body}>
-          {!imageUri && !pdfSource ? (
+          {preparingImage ? (
+            <View style={styles.loading}>
+              <ActivityIndicator color="#4CAF50" size="large" />
+              <Text style={styles.loadingText}>Preparando imagen…</Text>
+            </View>
+          ) : !imageUri && !pdfSource ? (
             <ActivityIndicator color="#FFF" size="large" />
           ) : image && imageUri ? (
             <Image source={{ uri: imageUri }} style={styles.image} resizeMode="contain" />

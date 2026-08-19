@@ -34,7 +34,8 @@
         ],
         "NSCameraUsageDescription": "Necesitamos acceso a tu cámara para videollamadas y enviar fotos.",
         "NSMicrophoneUsageDescription": "Necesitamos acceso a tu micrófono para llamadas de voz y mensajes de audio.",
-        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para enviar imágenes y videos."
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para enviar imágenes y videos.",
+        "NSPhotoLibraryAddUsageDescription": "Necesitamos permiso para guardar imágenes en tu galería."
       },
       "googleServicesFile": "./GoogleService-Info.plist"
     },
@@ -115,6 +116,13 @@
         {
           "photosPermission": "Tincadia necesita acceso a tu galería para cambiar tu foto de perfil.",
           "cameraPermission": "Tincadia necesita acceso a tu cámara para tomar fotos de perfil."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Necesitamos acceso a tu galería para seleccionar imágenes.",
+          "savePhotosPermission": "Necesitamos permiso para guardar imágenes en tu galería."
         }
       ],
       [

@@ -31,6 +31,11 @@ function resolveChatMediaKey(publicId: string | undefined, content: string, apiB
     return content;
 }
 
+function isImageAttachment(mimeType?: string, fileName?: string): boolean {
+    if (mimeType?.toLowerCase().startsWith('image/')) return true;
+    return /\.(png|jpe?g|gif|webp|bmp|heic)$/i.test(fileName || '');
+}
+
 const SENDER_COLORS = [
     '#4CAF50', '#E91E63', '#9C27B0', '#FF9800',
     '#00BCD4', '#3F51B5', '#FF5722', '#009688',
@@ -85,9 +90,12 @@ export function MessageBubble({
     const { canUseTranscription, recordTranscriptionUse, planTier } = useSubscription();
     const [mediaUri, setMediaUri] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isMediaRenderReady, setIsMediaRenderReady] = useState(false);
+    const mediaRequestRef = useRef(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [audioSound, setAudioSound] = useState<Audio.Sound | null>(null);
     const [showFullscreen, setShowFullscreen] = useState(false);
+    const [isSavingToGallery, setIsSavingToGallery] = useState(false);
     const [audioDuration, setAudioDuration] = useState<number | null>(null);
     const [transcription, setTranscription] = useState<string | null>(
         typeof metadata?.transcription === 'string' ? metadata.transcription : null
@@ -104,6 +112,12 @@ export function MessageBubble({
         mimeType?: string;
     }>({ visible: false, uri: null, localUri: null, fileName: 'Documento' });
 
+    const attachmentFileName = metadata?.fileName || (metadata as any)?.filename || 'Archivo adjunto';
+    const attachmentMimeType = metadata?.mimeType || (metadata as any)?.mime || undefined;
+    const isDocumentImage =
+        (type === 'document' || type === 'file') &&
+        isImageAttachment(attachmentMimeType, attachmentFileName);
+
     useEffect(() => {
         if (typeof metadata?.transcription === 'string' && metadata.transcription) {
             setTranscription(metadata.transcription);
@@ -111,13 +125,22 @@ export function MessageBubble({
         }
     }, [metadata?.transcription]);
 
-    // Auto-load media when component mounts
+    // Auto-load media. A request token prevents a slower previous URI from
+    // replacing the media selected by the current message.
     useEffect(() => {
+        const requestId = ++mediaRequestRef.current;
+        let cancelled = false;
+
+        setMediaUri(null);
+        setIsMediaRenderReady(false);
+
         const loadMedia = async () => {
-            if ((type === 'image' || type === 'video' || type === 'audio' || type === 'document') && content) {
+            if ((type === 'image' || type === 'video' || type === 'audio' || type === 'document' || type === 'file') && content) {
                 // 1. If it's a local file (e.g. pending upload), use it immediately
                 if (content.startsWith('file://')) {
+                    if (cancelled || requestId !== mediaRequestRef.current) return;
                     setMediaUri(content);
+                    setIsLoading(false);
                     return;
                 }
 
@@ -130,7 +153,15 @@ export function MessageBubble({
                 try {
 
                     const resolvedKey = resolveChatMediaKey(publicId, content, API_URL);
-                    const localUri = await mediaService.downloadMedia(resolvedKey, type as 'image' | 'video' | 'audio' | 'document');
+                    const localUri = await mediaService.downloadMedia(
+                        resolvedKey,
+                        isDocumentImage ? 'document' : type as 'image' | 'video' | 'audio' | 'document',
+                        isDocumentImage
+                            ? { mimeType: attachmentMimeType, resourceType: 'raw' }
+                            : undefined,
+                    );
+
+                    if (cancelled || requestId !== mediaRequestRef.current) return;
 
                     if (localUri) {
                         setMediaUri(localUri);
@@ -140,16 +171,23 @@ export function MessageBubble({
                         setMediaUri(playable ? resolvedKey : normalizeUrl(content));
                     }
                 } catch (e) {
+                    if (cancelled || requestId !== mediaRequestRef.current) return;
                     console.error('Failed to load/cache media:', e);
                     const key = resolveChatMediaKey(publicId, content, API_URL);
                     setMediaUri(key.startsWith('http') || key.startsWith('file://') ? key : normalizeUrl(content));
                 } finally {
-                    setIsLoading(false);
+                    if (!cancelled && requestId === mediaRequestRef.current) {
+                        setIsLoading(false);
+                    }
                 }
             }
         };
         loadMedia();
-    }, [content, type, publicId]);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [content, type, publicId, isDocumentImage, attachmentMimeType]);
 
     // Memoize audio wave heights to prevent jitter on re-renders
     const audioWaveHeights = useMemo(() => {
@@ -327,7 +365,7 @@ export function MessageBubble({
             );
         }
 
-        if (!mediaUri) {
+        if (!mediaUri || ((type === 'image' || isDocumentImage) && !isMediaRenderReady)) {
             return (
                 <View style={mediaStyles.placeholder}>
                     <Ionicons name="image-outline" size={32} color={isMine ? 'white' : 'gray'} />
@@ -341,7 +379,9 @@ export function MessageBubble({
                     <Image
                         source={{ uri: mediaUri }}
                         style={mediaStyles.thumbnail}
-                        resizeMode="cover"
+                        resizeMode="contain"
+                        onLoadEnd={() => setIsMediaRenderReady(true)}
+                        onError={() => setIsMediaRenderReady(false)}
                     />
                 </TouchableOpacity>
             );
@@ -450,8 +490,8 @@ export function MessageBubble({
         }
 
         if (type === 'document' || type === 'file') {
-            const fileName = metadata?.fileName || (metadata as any)?.filename || 'Archivo adjunto';
-            const mimeType = metadata?.mimeType || (metadata as any)?.mime || undefined;
+            const fileName = attachmentFileName;
+            const mimeType = attachmentMimeType;
 
             const ensureExtension = (name: string): string => {
                 if (/\.[a-z0-9]{1,8}$/i.test(name)) return name;
@@ -490,7 +530,11 @@ export function MessageBubble({
                     if (resolvedKey && resolvedKey.startsWith('http')) {
                         httpUrl = resolvedKey;
                     } else if (resolvedKey) {
-                        httpUrl = await mediaService.getSignedUrl(resolvedKey, type as 'document' | 'file');
+                        httpUrl = await mediaService.getSignedUrl(
+                            resolvedKey,
+                            type as 'document' | 'file',
+                            isDocumentImage ? 'raw' : undefined,
+                        );
                     }
 
                     if (!httpUrl && mediaUri && mediaUri.startsWith('http')) {
@@ -505,7 +549,9 @@ export function MessageBubble({
 
                     let targetFileUri: string | null = mediaUri && mediaUri.startsWith('file://') ? mediaUri : null;
 
-                    if (httpUrl) {
+                    // Preferir siempre la copia local ya validada. Solo descargar
+                    // desde la URL remota si todavía no hay una copia disponible.
+                    if (!targetFileUri && httpUrl) {
                         try {
                             const downloadRes = await FileSystem.downloadAsync(httpUrl, localPath);
                             if (downloadRes.status === 200) {
@@ -524,7 +570,7 @@ export function MessageBubble({
                     // Visor in-app (estilo WhatsApp). No abrir "Abrir con..." del sistema.
                     setDocViewer({
                         visible: true,
-                        uri: httpUrl || targetFileUri,
+                        uri: targetFileUri || httpUrl,
                         localUri: targetFileUri,
                         fileName,
                         mimeType,
@@ -536,6 +582,40 @@ export function MessageBubble({
                     setIsLoading(false);
                 }
             };
+
+            if (isDocumentImage) {
+                return (
+                    <>
+                        <TouchableOpacity
+                            onPress={handleOpenDocument}
+                            activeOpacity={0.9}
+                            style={mediaStyles.documentImageWrap}
+                        >
+                            <Image
+                                source={{ uri: mediaUri || undefined }}
+                                style={mediaStyles.thumbnail}
+                                resizeMode="contain"
+                                onLoadEnd={() => setIsMediaRenderReady(true)}
+                                onError={() => setIsMediaRenderReady(false)}
+                            />
+                            <View style={mediaStyles.documentImageLabel} pointerEvents="none">
+                                <Ionicons name="document-attach-outline" size={16} color="#FFF" />
+                                <Text style={mediaStyles.documentImageLabelText} numberOfLines={1}>
+                                    {fileName}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                        <DocumentViewerModal
+                            visible={docViewer.visible}
+                            onClose={() => setDocViewer(prev => ({ ...prev, visible: false }))}
+                            uri={docViewer.uri}
+                            localUri={docViewer.localUri}
+                            fileName={docViewer.fileName}
+                            mimeType={docViewer.mimeType}
+                        />
+                    </>
+                );
+            }
 
             return (
                 <>
@@ -581,6 +661,21 @@ export function MessageBubble({
             // ignore unload/seek errors while closing
         }
         setShowFullscreen(false);
+    };
+
+    const handleSaveImageToGallery = async () => {
+        if (type !== 'image' || !mediaUri || isSavingToGallery) return;
+
+        setIsSavingToGallery(true);
+        try {
+            await mediaService.saveImageToGallery(mediaUri);
+            Alert.alert('Imagen guardada', 'La imagen se guardó en tu galería.');
+        } catch (error) {
+            console.error('Save image to gallery failed:', error);
+            Alert.alert('No se pudo guardar', 'Verificá el permiso de galería e intentá nuevamente.');
+        } finally {
+            setIsSavingToGallery(false);
+        }
     };
 
     const handleVideoStatusUpdate = async (status: AVPlaybackStatus) => {
@@ -638,6 +733,21 @@ export function MessageBubble({
                     >
                         <Ionicons name="close" size={28} color="white" />
                     </TouchableOpacity>
+                    {type === 'image' && (
+                        <TouchableOpacity
+                            style={[mediaStyles.galleryButton, { top: insets.top + 12, right: 60 }]}
+                            onPress={handleSaveImageToGallery}
+                            disabled={isSavingToGallery}
+                            accessibilityRole="button"
+                            accessibilityLabel="Guardar imagen en la galería"
+                        >
+                            {isSavingToGallery ? (
+                                <ActivityIndicator color="#FFF" size="small" />
+                            ) : (
+                                <Ionicons name="download-outline" size={25} color="white" />
+                            )}
+                        </TouchableOpacity>
+                    )}
                 </View>
             </View>
         </Modal>
