@@ -249,6 +249,23 @@ export const messageBubbleMediaStyles = StyleSheet.create({
         height: 150,
         borderRadius: 10,
     },
+    imageFrame: {
+        maxWidth: 240,
+        maxHeight: 280,
+        minWidth: 120,
+        minHeight: 120,
+        borderRadius: 10,
+        overflow: 'hidden',
+        backgroundColor: '#8A8A8A',
+        position: 'relative',
+    },
+    imageLoadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#8A8A8A',
+        zIndex: 1,
+    },
     videoThumbWrap: {
         width: 200,
         height: 150,
@@ -412,6 +429,8 @@ export const messageBubbleMediaStyles = StyleSheet.create({
     documentImageWrap: {
         width: 210,
         height: 170,
+        maxWidth: 240,
+        maxHeight: 280,
         borderRadius: 10,
         overflow: 'hidden',
         backgroundColor: '#111',

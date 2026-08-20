@@ -91,6 +91,7 @@ export function MessageBubble({
     const [mediaUri, setMediaUri] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isMediaRenderReady, setIsMediaRenderReady] = useState(false);
+    const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
     const mediaRequestRef = useRef(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [audioSound, setAudioSound] = useState<Audio.Sound | null>(null);
@@ -133,6 +134,7 @@ export function MessageBubble({
 
         setMediaUri(null);
         setIsMediaRenderReady(false);
+        setImageSize(null);
 
         const loadMedia = async () => {
             if ((type === 'image' || type === 'video' || type === 'audio' || type === 'document' || type === 'file') && content) {
@@ -188,6 +190,25 @@ export function MessageBubble({
             cancelled = true;
         };
     }, [content, type, publicId, isDocumentImage, attachmentMimeType]);
+
+    useEffect(() => {
+        if (!mediaUri || (type !== 'image' && !isDocumentImage)) return;
+
+        let cancelled = false;
+        Image.getSize(
+            mediaUri,
+            (width, height) => {
+                if (!cancelled && width > 0 && height > 0) setImageSize({ width, height });
+            },
+            () => {
+                if (!cancelled) setImageSize(null);
+            },
+        );
+
+        return () => {
+            cancelled = true;
+        };
+    }, [mediaUri, type, isDocumentImage]);
 
     // Memoize audio wave heights to prevent jitter on re-renders
     const audioWaveHeights = useMemo(() => {
@@ -365,7 +386,7 @@ export function MessageBubble({
             );
         }
 
-        if (!mediaUri || ((type === 'image' || isDocumentImage) && !isMediaRenderReady)) {
+        if (!mediaUri) {
             return (
                 <View style={mediaStyles.placeholder}>
                     <Ionicons name="image-outline" size={32} color={isMine ? 'white' : 'gray'} />
@@ -373,12 +394,28 @@ export function MessageBubble({
             );
         }
 
+        const imageFrameStyle = imageSize
+            ? {
+                width: Math.min(240, imageSize.width),
+                height: Math.min(280, Math.max(120, imageSize.height * Math.min(240, imageSize.width) / imageSize.width)),
+            }
+            : mediaStyles.thumbnail;
+
         if (type === 'image') {
             return (
-                <TouchableOpacity onPress={() => setShowFullscreen(true)} activeOpacity={0.9}>
+                <TouchableOpacity
+                    onPress={() => setShowFullscreen(true)}
+                    activeOpacity={0.9}
+                    style={[mediaStyles.imageFrame, imageFrameStyle]}
+                >
+                    {!isMediaRenderReady && (
+                        <View style={mediaStyles.imageLoadingOverlay}>
+                            <ActivityIndicator color="#FFFFFF" />
+                        </View>
+                    )}
                     <Image
                         source={{ uri: mediaUri }}
-                        style={mediaStyles.thumbnail}
+                        style={[mediaStyles.thumbnail, imageFrameStyle, { opacity: isMediaRenderReady ? 1 : 0 }]}
                         resizeMode="contain"
                         onLoadEnd={() => setIsMediaRenderReady(true)}
                         onError={() => setIsMediaRenderReady(false)}
@@ -589,11 +626,16 @@ export function MessageBubble({
                         <TouchableOpacity
                             onPress={handleOpenDocument}
                             activeOpacity={0.9}
-                            style={mediaStyles.documentImageWrap}
+                            style={[mediaStyles.documentImageWrap, imageFrameStyle]}
                         >
+                            {!isMediaRenderReady && (
+                                <View style={mediaStyles.imageLoadingOverlay}>
+                                    <ActivityIndicator color="#FFFFFF" />
+                                </View>
+                            )}
                             <Image
                                 source={{ uri: mediaUri || undefined }}
-                                style={mediaStyles.thumbnail}
+                                style={[mediaStyles.thumbnail, imageFrameStyle, { opacity: isMediaRenderReady ? 1 : 0 }]}
                                 resizeMode="contain"
                                 onLoadEnd={() => setIsMediaRenderReady(true)}
                                 onError={() => setIsMediaRenderReady(false)}

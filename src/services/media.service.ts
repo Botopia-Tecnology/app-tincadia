@@ -565,7 +565,7 @@ class MediaService {
 
             // 2. Check if file already exists in persistent storage
             const fileInfo = await FileSystem.getInfoAsync(fileUri);
-            if (fileInfo.exists) {
+            if (fileInfo.exists && 'size' in fileInfo && typeof fileInfo.size === 'number' && fileInfo.size > 0) {
                 console.log(`📦 [MediaService] Using cached media: ${fileUri}`);
                 return fileUri;
             }
@@ -587,10 +587,16 @@ class MediaService {
                 return null;
             }
 
-            // 4. Download the file to persistent storage
+            // 4. Download to a temporary file first so a partial transfer is
+            // never exposed as a valid image in the chat cache.
             console.log(`📡 [MediaService] Downloading media to cache: ${urlToDownload}`);
-            const { uri } = await FileSystem.downloadAsync(urlToDownload, fileUri);
-            return uri;
+            const temporaryUri = `${fileUri}.part-${Date.now()}`;
+            await FileSystem.deleteAsync(temporaryUri, { idempotent: true });
+            const { uri: downloadedUri } = await FileSystem.downloadAsync(urlToDownload, temporaryUri);
+            await this.ensureLocalMediaReady(downloadedUri);
+            await FileSystem.deleteAsync(fileUri, { idempotent: true });
+            await FileSystem.moveAsync({ from: downloadedUri, to: fileUri });
+            return fileUri;
 
         } catch (error) {
             console.error('Download media error:', error);
