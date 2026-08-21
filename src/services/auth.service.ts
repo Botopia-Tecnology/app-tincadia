@@ -5,7 +5,10 @@
  */
 
 import { apiClient } from '../lib/api-client';
-import { tokenStorage, userStorage } from '../lib/secure-storage';
+import {
+    tokenStorage,
+    userStorage,
+} from '../lib/secure-storage';
 import { API_ENDPOINTS, API_URL } from '../config/api.config';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -266,7 +269,6 @@ export const authService = {
      */
     async logout(): Promise<void> {
         try {
-            // Retrieve data before clearing (to satisfy backend DTO)
             const token = await tokenStorage.getToken();
             const userData = await userStorage.getUser();
             let userId = '';
@@ -281,7 +283,11 @@ export const authService = {
             if (token && userId) {
                 await apiClient(API_ENDPOINTS.LOGOUT, {
                     method: 'POST',
-                    body: JSON.stringify({ userId, token })
+                    body: JSON.stringify({
+                        userId,
+                        token,
+                    }),
+                    suppressUnauthorizedHandling: true,
                 });
             } else {
                 // If we don't have enough info, just skip the API call or send what we have
@@ -323,6 +329,7 @@ export const authService = {
         }
         return null;
     },
+
     async updatePushToken(userId: string, pushToken: string): Promise<void> {
         await apiClient(API_ENDPOINTS.UPDATE_PUSH_TOKEN, {
             method: 'POST',

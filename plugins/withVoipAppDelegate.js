@@ -29,15 +29,12 @@ module.exports = function withVoipAppDelegate(config) {
       );
 
       // ── COLD-START REGISTRO NATIVO DEL PKPushRegistry ──
-      // Sin esto, el registry solo se crea desde JS (registerVoipToken), que no
-      // corre con la app terminada: iOS no tiene delegate al que entregar el push
-      // VoIP en frío, así que la llamada solo entra con la app abierta. Registrar
-      // el registry en didFinishLaunching hace que iOS despierte la app cerrada.
-      // Idempotente con el registro JS (mismo delegate, mismo token).
-      // Quita cualquier llamada de registro inyectada por una pasada anterior
-      // (prebuilds que reusan ios/), para no duplicarla al reinsertar.
+      // La librería react-native-voip-push-notification es dueña del único
+      // PKPushRegistry. Registrarlo aquí evita depender de JS/AuthContext con
+      // la app terminada; el registro posterior desde JS es idempotente dentro
+      // de RNVoipPushNotificationManager.
       contents = contents.replace(
-        /\n[ \t]*TincadiaVoipRegistry\.shared\.register\(delegate: self\)/g,
+        /\n[ \t]*TincadiaRegisterVoipPush\(\)/g,
         ''
       );
 
@@ -50,7 +47,7 @@ module.exports = function withVoipAppDelegate(config) {
       if (didFinishReturnRegex.test(contents)) {
         contents = contents.replace(
           didFinishReturnRegex,
-          `$1TincadiaVoipRegistry.shared.register(delegate: self)$1$2`
+          `$1TincadiaRegisterVoipPush()$1$2`
         );
       } else {
         console.warn(
@@ -66,21 +63,6 @@ import CallKit
 #if canImport(RNCallKeep)
 import RNCallKeep
 #endif
-
-// Retiene el PKPushRegistry a nivel de proceso: si se libera, iOS deja de
-// entregar pushes VoIP. Registra el delegate en el arranque nativo (cold start).
-final class TincadiaVoipRegistry {
-    static let shared = TincadiaVoipRegistry()
-    private var registry: PKPushRegistry?
-
-    func register(delegate: PKPushRegistryDelegate) {
-        if registry != nil { return }
-        let reg = PKPushRegistry(queue: .main)
-        reg.delegate = delegate
-        reg.desiredPushTypes = [.voIP]
-        registry = reg
-    }
-}
 
 // Último recurso si RNCallKeep no es importable: PushKit exige reportar una
 // llamada por CADA push VoIP o iOS mata el proceso (assert en PKPushRegistry.m).
@@ -104,6 +86,18 @@ final class TincadiaFallbackCallReporter {
 }
 
 extension AppDelegate: PKPushRegistryDelegate {
+    private func tincadiaRegisterVoipPush() {
+        // Use the registry owned by RNVoipPushNotificationManager. Calling the
+        // package's native method from cold start avoids creating a second
+        // PKPushRegistry alongside the JS registration path.
+        if let managerClass = NSClassFromString("RNVoipPushNotificationManager") as? NSObject.Type {
+            let selector = NSSelectorFromString("voipRegistration")
+            if managerClass.responds(to: selector) {
+                managerClass.perform(selector)
+            }
+        }
+    }
+
     private func tincadiaEnsureCallKeepSetup() {
         #if canImport(RNCallKeep)
         // Método de clase de RNCallKeep: síncrono y sin bridge, seguro en cold start.
@@ -116,6 +110,13 @@ extension AppDelegate: PKPushRegistryDelegate {
             "maximumCallsPerCallGroup": 1
         ])
         #endif
+    }
+
+    private func tincadiaBoundedString(_ value: Any?, maxLength: Int) -> String? {
+        guard let value = value as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(maxLength))
     }
 
     // Una llamada con este UUID ya está registrada en CallKit (sonando o activa).
@@ -152,11 +153,11 @@ extension AppDelegate: PKPushRegistryDelegate {
         // antes de cualquier otro trabajo. Hasta reportNewIncomingCall solo se
         // lee el diccionario del push — nada de bridge de React Native.
         var payloadDict = payload.dictionaryPayload
-        let rawUUID = (payloadDict["callUUID"] as? String) ?? (payloadDict["uuid"] as? String) ?? UUID().uuidString
+        let rawUUID = tincadiaBoundedString(payloadDict["callUUID"], maxLength: 128) ?? tincadiaBoundedString(payloadDict["uuid"], maxLength: 128) ?? UUID().uuidString
         let callUUID = UUID(uuidString: rawUUID)?.uuidString ?? UUID().uuidString
-        let callerName = (payloadDict["callerName"] as? String) ?? (payloadDict["senderName"] as? String) ?? "Tincadia"
-        let handle = (payloadDict["handle"] as? String) ?? (payloadDict["senderName"] as? String) ?? "Tincadia Call"
-        let pushType = (payloadDict["type"] as? String) ?? ""
+        let callerName = tincadiaBoundedString(payloadDict["callerName"], maxLength: 120) ?? tincadiaBoundedString(payloadDict["senderName"], maxLength: 120) ?? "Tincadia"
+        let handle = tincadiaBoundedString(payloadDict["handle"], maxLength: 120) ?? tincadiaBoundedString(payloadDict["senderName"], maxLength: 120) ?? "Tincadia Call"
+        let pushType = tincadiaBoundedString(payloadDict["type"], maxLength: 32) ?? ""
         let isTerminal = pushType == "call_ended" || pushType == "call_missed" || pushType == "call_rejected"
 
         // Los pushes terminales llegan con el MISMO UUID que el push de ringing
@@ -238,10 +239,17 @@ extension AppDelegate: PKPushRegistryDelegate {
 #import "RNCallKeep.h"
 #import <CallKit/CallKit.h>
 
+static NSString *TincadiaBoundedString(id value, NSUInteger maxLength) {
+    if (![value isKindOfClass:[NSString class]]) { return nil; }
+    NSString *trimmed = [(NSString *)value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (trimmed.length == 0) { return nil; }
+    return [trimmed substringToIndex:MIN(trimmed.length, maxLength)];
+}
+
 static NSString *TincadiaValidCallUUID(NSDictionary *payload) {
-    id rawUUID = payload[@"callUUID"] ?: payload[@"uuid"];
-    if ([rawUUID isKindOfClass:[NSString class]] && [[NSUUID alloc] initWithUUIDString:(NSString *)rawUUID]) {
-        return (NSString *)rawUUID;
+    NSString *rawUUID = TincadiaBoundedString(payload[@"callUUID"] ?: payload[@"uuid"], 128);
+    if (rawUUID != nil && [[NSUUID alloc] initWithUUIDString:rawUUID]) {
+        return rawUUID;
     }
     return [[NSUUID UUID] UUIDString];
 }
@@ -266,11 +274,11 @@ static BOOL TincadiaCallAlreadyReported(NSString *uuidString) {
     // CallKit en ESTE run loop, antes de cualquier otro trabajo. Hasta
     // reportNewIncomingCall solo se lee el diccionario del push.
     NSMutableDictionary *payloadDict = [payload.dictionaryPayload mutableCopy] ?: [NSMutableDictionary dictionary];
-    id rawUUID = payloadDict[@"callUUID"] ?: payloadDict[@"uuid"];
+    NSString *rawUUID = TincadiaBoundedString(payloadDict[@"callUUID"] ?: payloadDict[@"uuid"], 128);
     NSString *uuid = TincadiaValidCallUUID(payloadDict);
-    NSString *callerName = payloadDict[@"callerName"] ?: payloadDict[@"senderName"] ?: @"Tincadia";
-    NSString *handle = payloadDict[@"handle"] ?: payloadDict[@"senderName"] ?: @"Tincadia Call";
-    NSString *pushType = [payloadDict[@"type"] isKindOfClass:[NSString class]] ? payloadDict[@"type"] : @"";
+    NSString *callerName = TincadiaBoundedString(payloadDict[@"callerName"], 120) ?: TincadiaBoundedString(payloadDict[@"senderName"], 120) ?: @"Tincadia";
+    NSString *handle = TincadiaBoundedString(payloadDict[@"handle"], 120) ?: TincadiaBoundedString(payloadDict[@"senderName"], 120) ?: @"Tincadia Call";
+    NSString *pushType = TincadiaBoundedString(payloadDict[@"type"], 32) ?: @"";
     BOOL isTerminal = [pushType isEqualToString:@"call_ended"] || [pushType isEqualToString:@"call_missed"] || [pushType isEqualToString:@"call_rejected"];
 
     // Los pushes terminales llegan con el MISMO UUID que el push de ringing.

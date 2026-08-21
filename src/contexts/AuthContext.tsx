@@ -229,7 +229,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const logout = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Unregister push token before logging out to avoid cross-user notification leaks
+            // Clear the legacy push token before ending the session so this
+            // device does not keep receiving notifications for the account.
             if (user?.id) {
                 try {
                     await authService.updatePushToken(user.id, '');
