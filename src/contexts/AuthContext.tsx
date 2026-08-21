@@ -229,6 +229,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const logout = useCallback(async () => {
         setIsLoading(true);
         try {
+            // Clear the legacy push token before ending the session so this
+            // device does not keep receiving notifications for the account.
+            if (user?.id) {
+                try {
+                    await authService.updatePushToken(user.id, '');
+                    console.log('📱 Cleared push token for user');
+                } catch (e) {
+                    console.warn('Could not clear push token:', e);
+                }
+            }
+
             await authService.logout();
             // Clear local chat database when logging out
             try {
