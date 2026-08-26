@@ -6,11 +6,13 @@ import messaging from '@react-native-firebase/messaging';
 import { CallState, HANDOFF_ACTIVE_CALL_EVENT } from '../lib/callState';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { User } from '../types/auth.types';
 import { NavigationParams } from '../types/navigation.types';
 import { callKeepService } from '../services/callkeep.service';
 import { chatService } from '../services/chat.service';
 import { saveMessage, updateConversationPreview, deleteMessage, getMessages } from '../database/chatDatabase';
+import { pendingCallActionStorage, pendingInviteStorage } from '../lib/secure-storage';
 
 /** Realtime/API payloads may use snake_case or camelCase; UUIDs may differ in casing. */
 function isSameUserId(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -48,6 +50,15 @@ function getLatestLocalCallMetadata(conversationId?: string) {
   }
 }
 
+/**
+ * Identity of an interpreter invite for dedup purposes. A cold-start replay and
+ * the live Expo listener can both surface the same tap, and claiming twice would
+ * make the second claim fail against the interpreter's own session.
+ */
+function inviteKeyOf(roomName?: string, inviteId?: string): string {
+  return `${inviteId || ''}:${String(roomName || '').toLowerCase()}`;
+}
+
 function asSafeRoomName(value?: string, nativeCallUUID?: string): string | undefined {
   if (!value) return undefined;
   if (UUID_REGEX.test(value)) return undefined;
@@ -68,6 +79,12 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   const activeCallRef = useRef<string | null>(null);
   const activeIncomingCallRef = useRef<string | null>(null);
   const lastInviteKeyRef = useRef<string | null>(null);
+  const consumedInviteKeysRef = useRef<Set<string>>(new Set());
+
+  // Distinguishes "no session" from "session still being restored" — a
+  // cold-start invite must survive the latter. useNotifications is always
+  // rendered inside AuthProvider, so this is safe.
+  const { isLoading: isAuthLoading } = useAuth();
 
   const isInterpreter = useCallback(() => {
     return String(user?.role || '').toLowerCase() === 'interpreter';
@@ -447,6 +464,57 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     };
   }, [user]);
 
+  /**
+   * Tocar la notificación de solicitud de intérprete: claim atómico y entrada a
+   * la sala. Compartido por el tap en caliente (listener de Expo) y por el tap
+   * en frío (replay desde pendingInviteStorage), para que ambos caminos hagan
+   * exactamente lo mismo — incluido avisar cuando otro intérprete ya la tomó.
+   */
+  const acceptInterpreterInviteFromTap = useCallback((raw: {
+    roomName?: unknown;
+    room_name?: unknown;
+    inviteId?: unknown;
+    invite_id?: unknown;
+  }) => {
+    if (!user) return;
+
+    const roomName = getStringValue(raw.roomName || raw.room_name);
+    if (!roomName) return;
+
+    setInterpreterInvite(null);
+    lastInviteKeyRef.current = null;
+
+    const baseName = user.firstName || user.email?.split('@')[0] || 'Usuario';
+    const joinCall = () => onNavigateToCall({
+      roomName,
+      // Mismo formato de identity que el modal in-app: el backend usa el
+      // prefijo "Intérprete:" para aplicar la regla de un intérprete por llamada.
+      username: isInterpreter() ? `Intérprete: ${baseName}` : baseName,
+      conversationId: roomName,
+      userId: user.id
+    });
+
+    const inviteId = getStringValue(raw.inviteId || raw.invite_id);
+    if (isInterpreter() && inviteId) {
+      chatService.claimInterpreterInvite(inviteId, user.id)
+        .then((result) => {
+          if (result.success) {
+            joinCall();
+          } else {
+            Alert.alert('Llamada ocupada', result.message || 'Esta sala ya se encuentra ocupada por otro intérprete.', [{ text: 'Entendido', onPress: onNavigateHome }]);
+          }
+        })
+        .catch(() => {
+          Alert.alert('Error', 'No se pudo procesar la solicitud de intérprete.');
+        });
+    } else if (isInterpreter()) {
+      chatService.updateInterpreterStatus(user.id, true).catch(() => { });
+      joinCall();
+    } else {
+      joinCall();
+    }
+  }, [user, onNavigateToCall, onNavigateHome, isInterpreter]);
+
   // 4. Handle Expo Push Notification responses (for chat and interpreter invites)
   useEffect(() => {
     if (!user) return;
@@ -456,41 +524,18 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => { });
 
       if (data?.type === 'call_invite' && data?.roomName) {
-        setInterpreterInvite(null);
-        lastInviteKeyRef.current = null;
-
-        const baseName = user.firstName || user.email?.split('@')[0] || 'Usuario';
-        const joinCall = () => onNavigateToCall({
-          roomName: String(data.roomName),
-          // Mismo formato de identity que el modal in-app: el backend usa el
-          // prefijo "Intérprete:" para aplicar la regla de un intérprete por llamada.
-          username: isInterpreter() ? `Intérprete: ${baseName}` : baseName,
-          conversationId: String(data.roomName),
-          userId: user.id
-        });
-
         // Tocar la notificación debe pasar por el mismo claim atómico que el
         // modal: si otro intérprete ya tomó la llamada, avisar y no entrar.
         // Solo Expo / Claim — nunca CallKeep.
         const inviteId = data.inviteId ? String(data.inviteId) : undefined;
-        if (isInterpreter() && inviteId) {
-          chatService.claimInterpreterInvite(inviteId, user.id)
-            .then((result) => {
-              if (result.success) {
-                joinCall();
-              } else {
-                Alert.alert('Llamada ocupada', result.message || 'Esta sala ya se encuentra ocupada por otro intérprete.', [{ text: 'Entendido', onPress: onNavigateHome }]);
-              }
-            })
-            .catch(() => {
-              Alert.alert('Error', 'No se pudo procesar la solicitud de intérprete.');
-            });
-        } else if (isInterpreter()) {
-          chatService.updateInterpreterStatus(user.id, true).catch(() => { });
-          joinCall();
-        } else {
-          joinCall();
-        }
+
+        // Este tap llegó en caliente: descartar cualquier pendiente de arranque
+        // en frío con el mismo invite para no reclamar la sala dos veces.
+        if (consumedInviteKeysRef.current.has(inviteKeyOf(String(data.roomName), inviteId))) return;
+        consumedInviteKeysRef.current.add(inviteKeyOf(String(data.roomName), inviteId));
+        void pendingInviteStorage.clear();
+
+        acceptInterpreterInviteFromTap(data);
       } else if (data?.conversationId && data?.senderId) {
         onNavigateToChat({
           conversationId: String(data.conversationId),
@@ -518,7 +563,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       if (notificationListener.current) notificationListener.current.remove();
       if (responseListener.current) responseListener.current.remove();
     };
-  }, [user, onNavigateToCall, onNavigateToChat, onNavigateHome, isInterpreter, showInterpreterInvite]);
+  }, [user, onNavigateToChat, isInterpreter, showInterpreterInvite, acceptInterpreterInviteFromTap]);
 
   // 5. Handle Realtime Supabase Broadcasts (fast cancellation)
   useEffect(() => {
@@ -744,6 +789,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       // CallKeep_EndCall con wasInsideCallScreen.
 
       CallState.clearIncomingCall(routing.conversationId);
+      void pendingCallActionStorage.clear();
       navigateToAnsweredIncomingCall(routing);
     });
 
@@ -854,6 +900,86 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       subEnd.remove();
     };
   }, [user, onNavigateToCall]);
+
+  // A CallKeep answer can arrive through the Android headless task before
+  // React mounts. Replay that action once authentication and this listener
+  // are ready, then dismiss the native call UI.
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    void pendingCallActionStorage.get().then((pending) => {
+      if (cancelled || !pending) return;
+
+      const routing = resolveIncomingCallRouting(pending);
+      if (!routing.roomName || !routing.conversationId) {
+        console.warn('[useNotifications] Dropping pending answer without call routing:', pending.callUUID);
+        void pendingCallActionStorage.clear();
+        return;
+      }
+
+      activeIncomingCallRef.current = null;
+      try {
+        callKeepService.endCallSilently(pending.callUUID);
+      } catch (error) {
+        console.warn('[useNotifications] Could not dismiss cold-start native call:', error);
+      }
+      void pendingCallActionStorage.clear();
+      navigateToAnsweredIncomingCall(routing);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, onNavigateToCall]);
+
+  // 9. Replay an interpreter invite whose notification tap launched the app.
+  // index.ts captured it before React mounted; by the time we get here the
+  // session is restored, so the claim can finally run.
+  //
+  // The entry is only dropped once auth has finished restoring (isAuthLoading
+  // false): while it is still in flight `user` is legitimately null, and
+  // discarding then would recreate the very bug this fixes.
+  useEffect(() => {
+    if (isAuthLoading) return;
+
+    if (!user || !isInterpreter()) {
+      // Session resolved to something that cannot claim this invite; drop it so
+      // it never replays into an unrelated login.
+      void pendingInviteStorage.get().then((pending) => {
+        if (pending) void pendingInviteStorage.clear();
+      });
+      return;
+    }
+
+    let cancelled = false;
+    void pendingInviteStorage.get().then((pending) => {
+      if (cancelled || !pending) return;
+
+      const key = inviteKeyOf(pending.roomName, pending.inviteId);
+      if (consumedInviteKeysRef.current.has(key)) {
+        void pendingInviteStorage.clear();
+        return;
+      }
+      consumedInviteKeysRef.current.add(key);
+
+      // Clear before navigating: a failed claim must not leave the entry behind
+      // to be replayed on the next launch.
+      void pendingInviteStorage.clear();
+
+      console.log('[useNotifications] Replaying cold-start interpreter invite:', {
+        roomName: pending.roomName,
+        inviteId: pending.inviteId,
+        ageMs: Date.now() - pending.createdAt,
+      });
+
+      acceptInterpreterInviteFromTap(pending);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, isAuthLoading, isInterpreter, acceptInterpreterInviteFromTap]);
 
   return {
     interpreterInvite,
