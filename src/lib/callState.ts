@@ -10,8 +10,10 @@ function normalizeId(value?: string | null): string | null {
 }
 
 // conversationId -> timestamp when the incoming call was flagged; rings last at
-// most ~35s, so entries much older than that are stale markers left by events
-// lost while the JS runtime was suspended in background.
+// most ~65s (INCOMING_CALL_RING_TIMEOUT_MS), so entries much older than that are
+// stale markers left by events lost while the JS runtime was suspended in
+// background. The sweep window below must stay above that ring duration, or it
+// would clear calls that are still legitimately ringing.
 const activeIncomingConversations = new Map<string, number>();
 const incomingCallByNativeId = new Map<string, string>();
 let activeCallScreenContext: {
@@ -131,7 +133,7 @@ export const CallState = {
     emitCallStateChanged();
   },
 
-  getStaleIncomingConversationIds(maxAgeMs = 60_000): string[] {
+  getStaleIncomingConversationIds(maxAgeMs = 90_000): string[] {
     const now = Date.now();
     const stale: string[] = [];
     for (const [conversationId, since] of activeIncomingConversations.entries()) {

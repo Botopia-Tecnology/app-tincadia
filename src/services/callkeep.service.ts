@@ -3,6 +3,7 @@ import RNCallKeep, { CONSTANTS } from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 import { DeviceEventEmitter } from 'react-native';
 import { CallState } from '../lib/callState';
+import { pendingCallActionStorage } from '../lib/secure-storage';
 
 type NativeCallContext = {
   roomName?: string;
@@ -43,6 +44,17 @@ function asPayloadObject(value: unknown): Record<string, any> {
 
 const CALL_NOTIFICATION_TYPES = new Set(['call', 'incoming_call', 'call_ended', 'call_missed', 'call_rejected']);
 const TERMINAL_CALL_NOTIFICATION_TYPES = new Set(['call_ended', 'call_missed', 'call_rejected']);
+/** Matches the 30s cutoff the Android FCM handlers already apply to call pushes. */
+const STALE_CALL_PUSH_MS = 30_000;
+/**
+ * How long the native incoming banner stays up before it is dismissed as missed.
+ *
+ * Deliberately longer than the caller's UNANSWERED_CALL_TIMEOUT_MS in
+ * CallScreen.tsx (60s): the caller gives up first and its terminal event lands
+ * while this banner is still alive. Shortening this below the caller's timeout
+ * would leave a ghost banner ringing after the caller already hung up.
+ */
+const INCOMING_CALL_RING_TIMEOUT_MS = 65_000;
 
 function getBoundedString(value: unknown, maxLength = 256): string | undefined {
   const text = getStringValue(value);
@@ -121,6 +133,18 @@ class CallKeepService {
   private nativeCallContexts: Map<string, NativeCallContext> = new Map();
   private nativeCallAliases: Map<string, string> = new Map();
   private displayedNativeCallUUIDs: Set<string> = new Set();
+  /**
+   * Tombstones for call sessions that already ended on this device.
+   *
+   * The backend derives a stable CallKit UUID from callSessionId, so a VoIP
+   * push still in flight when the user hangs up (or APNs retrying one) arrives
+   * carrying the UUID of the call that just ended. forgetNativeCall() wipes
+   * displayedNativeCallUUIDs, so the duplicate guard in displayIncomingCall no
+   * longer recognises it and CallKit paints a ghost incoming banner that
+   * disappears a second later. Keys are UUID + every alias (conversationId,
+   * roomName, callSessionId) so a late push can be matched by any of them.
+   */
+  private endedCallKeys: Map<string, number> = new Map();
 
   resolveCallUUID(uuid: string) {
     return this.nativeCallAliases.get(normalizeCallKey(uuid)) || uuid;
@@ -212,10 +236,69 @@ class CallKeepService {
     }
   }
 
+  /**
+   * Longer than both the APNs retry window for a VoIP push and a full ring
+   * (INCOMING_CALL_RING_TIMEOUT_MS), so a delayed delivery of the call that just
+   * ended is still recognised. A genuine callback is matched by callSessionId
+   * rather than by this window, so it is never blocked by the TTL.
+   */
+  private static readonly ENDED_CALL_TTL_MS = 90_000;
+
+  private pruneEndedCallKeys() {
+    const now = Date.now();
+    for (const [key, endedAt] of Array.from(this.endedCallKeys.entries())) {
+      if (now - endedAt > CallKeepService.ENDED_CALL_TTL_MS) {
+        this.endedCallKeys.delete(key);
+      }
+    }
+  }
+
+  /** Records a finished session under every identifier a later push may use. */
+  private markCallEnded(nativeUUID: string, context?: NativeCallContext) {
+    this.pruneEndedCallKeys();
+    const now = Date.now();
+    [nativeUUID, context?.conversationId, context?.roomName, context?.callSessionId]
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .forEach((value) => this.endedCallKeys.set(normalizeCallKey(value), now));
+  }
+
+  /**
+   * True when this payload belongs to a session already ended here.
+   *
+   * A genuine callback carries a fresh callSessionId, so it is cleared as a new
+   * session rather than matched — blocking those would turn this fix into a
+   * worse bug (unable to call back after hanging up).
+   */
+  private isEndedCall(identifiers: Array<string | undefined>, callSessionId?: string): boolean {
+    this.pruneEndedCallKeys();
+    if (this.endedCallKeys.size === 0) return false;
+
+    if (callSessionId) {
+      const sessionKey = normalizeCallKey(callSessionId);
+      // A new session id on a conversation whose previous call ended: this is a
+      // legitimate new call, so retire the old tombstones for it.
+      if (!this.endedCallKeys.has(sessionKey)) {
+        identifiers
+          .filter((value): value is string => typeof value === 'string' && value.length > 0)
+          .forEach((value) => this.endedCallKeys.delete(normalizeCallKey(value)));
+        return false;
+      }
+      return true;
+    }
+
+    return identifiers
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .some((value) => this.endedCallKeys.has(normalizeCallKey(value)));
+  }
+
   private forgetNativeCall(uuid: string) {
     const nativeUUID = this.resolveCallUUID(uuid);
     const nativeKey = normalizeCallKey(nativeUUID);
     const context = this.nativeCallContexts.get(nativeKey);
+
+    // Must happen before the aliases below are dropped: once they are gone
+    // there is no way left to recognise a late push for this same session.
+    this.markCallEnded(nativeUUID, context);
 
     this.clearIncomingCallTimeout(nativeUUID);
     this.displayedNativeCallUUIDs.delete(nativeUUID);
@@ -232,6 +315,12 @@ class CallKeepService {
   }
 
   private clearNativeCallMemory() {
+    // CallScreen unmounting on hangup lands here; tombstone every live call
+    // before its context is discarded.
+    this.displayedNativeCallUUIDs.forEach((nativeUUID) => {
+      this.markCallEnded(nativeUUID, this.nativeCallContexts.get(normalizeCallKey(nativeUUID)));
+    });
+
     this.incomingCallTimeouts.forEach(clearTimeout);
     this.incomingCallTimeouts.clear();
     this.nativeCallAliases.clear();
@@ -371,7 +460,7 @@ class CallKeepService {
         const data = (event as any)?.data;
         if (name === 'RNCallKeepPerformAnswerCallAction') {
           const callUUID = getBoundedString(data?.callUUID, 128);
-          if (callUUID) this.handleAnswerCall({ callUUID });
+          if (callUUID) await this.handleAnswerCall({ callUUID });
         } else if (name === 'RNCallKeepPerformEndCallAction') {
           const callUUID = getBoundedString(data?.callUUID, 128);
           if (callUUID) await this.handleEndCall({ callUUID });
@@ -388,7 +477,7 @@ class CallKeepService {
     }
   }
 
-  private handleAnswerCall = ({ callUUID }: { callUUID: string }) => {
+  private handleAnswerCall = async ({ callUUID }: { callUUID: string }) => {
     if (this.consumeSuppressedAnswerCall(callUUID)) {
       console.log('[CallKeep] Suppressing answerCall for UUID answered by app UI:', callUUID);
       return;
@@ -406,6 +495,17 @@ class CallKeepService {
     if (Platform.OS === 'android') {
       RNCallKeep.backToForeground();
     }
+
+    await pendingCallActionStorage.set({
+      type: 'answer',
+      callUUID,
+      roomName: context?.roomName,
+      conversationId: context?.conversationId || fallbackConversationId,
+      callSessionId: context?.callSessionId,
+      senderId: context?.senderId,
+      senderName: context?.senderName,
+      createdAt: Date.now(),
+    }).catch((error) => console.warn('[CallKeep] Could not persist pending answer action:', error));
 
     DeviceEventEmitter.emit('CallKeep_AnswerCall', {
       callUUID,
@@ -439,6 +539,12 @@ class CallKeepService {
       });
     CallState.clearIncomingCall(context?.conversationId || fallbackConversationId || callUUID);
     this.displayedNativeCallUUIDs.delete(nativeUUID);
+    // Covers the rejected-without-answering path too: the duplicate guard is
+    // dropped here, before any of the returns below reach forgetNativeCall.
+    this.markCallEnded(nativeUUID, {
+      ...context,
+      conversationId: context?.conversationId || fallbackConversationId,
+    });
     DeviceEventEmitter.emit('CallKeep_EndCall', {
       callUUID,
       ...context,
@@ -513,6 +619,15 @@ class CallKeepService {
 
   displayIncomingCall(uuid: string, handle: string, localizedCallerName: string, context: NativeCallContext = {}) {
     const resolvedUUID = this.resolveCallUUID(uuid);
+
+    // A push for a session that already ended here would otherwise ring again:
+    // forgetNativeCall() dropped the duplicate guard, and the backend reuses the
+    // same CallKit UUID for the whole session.
+    if (this.isEndedCall([uuid, resolvedUUID, context.conversationId, context.roomName], context.callSessionId)) {
+      console.log('[CallKeep] Ignoring displayIncomingCall for a call that already ended here:', resolvedUUID);
+      return resolvedUUID;
+    }
+
     const nativeUUID = Platform.OS === 'ios' && !UUID_REGEX.test(resolvedUUID) ? createUuid() : resolvedUUID;
     this.rememberNativeCall(nativeUUID, uuid, context);
     if (!this.canUseNativeUUID(nativeUUID, 'displayIncomingCall')) return nativeUUID;
@@ -531,9 +646,9 @@ class CallKeepService {
       // disparaba el evento nativo endCall → handleEndCall enviaba un
       // call_rejected espurio y, si el usuario ya estaba en OTRA llamada de la
       // misma conversación, wasInsideCallScreen cerraba ese CallScreen activo.
-      console.log(`[CallKeepService] Dismissing unanswered incoming call ${nativeUUID} after 35s timeout.`);
+      console.log(`[CallKeepService] Dismissing unanswered incoming call ${nativeUUID} after ${INCOMING_CALL_RING_TIMEOUT_MS}ms timeout.`);
       this.reportCallEndedSilently(nativeUUID, CONSTANTS.END_CALL_REASONS.MISSED);
-    }, 35000);
+    }, INCOMING_CALL_RING_TIMEOUT_MS);
     this.incomingCallTimeouts.set(nativeUUID, timeout);
     return nativeUUID;
   }
@@ -564,6 +679,16 @@ class CallKeepService {
           // Native CallKit may already have dismissed this identifier.
         }
       });
+
+      // Tombstone explicitly: forgetNativeCall() can only record what it still
+      // has in memory, and a terminal push may arrive before (or instead of) any
+      // locally tracked call — the ordering that lets a delayed 'call' push for
+      // the same session ring afterwards.
+      this.markCallEnded(this.resolveCallUUID(requestedUUID || ''), {
+        conversationId: getBoundedString(notification.conversationId, 128),
+        roomName: getBoundedString(notification.roomName, 256),
+        callSessionId: getBoundedString(notification.callSessionId || notification.call_session_id, 128),
+      });
       if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
         VoipPushNotification.onVoipNotificationCompleted(completionUUID);
       }
@@ -575,6 +700,42 @@ class CallKeepService {
     const context = this.buildContextFromPayload(notification);
     const callerName = getBoundedString(notification.callerName || notification.senderName, 120) || 'Tincadia';
     const handle = getBoundedString(notification.handle || notification.senderName, 120) || 'Tincadia Call';
+
+    // A push the OS queued past the ring window would ring for a call nobody is
+    // still placing. Android already does this via remoteMessage.sentTime in its
+    // FCM handlers; PushKit carries the timestamp in the payload instead.
+    const sentAt = Number(asPayloadObject(notification).sentAt);
+    if (Number.isFinite(sentAt) && sentAt > 0 && Date.now() - sentAt > STALE_CALL_PUSH_MS) {
+      console.log('[CallKeep] Dropping stale incoming call push (delayed by OS):', requestedUUID);
+      if (options.nativeAlreadyDisplayed) {
+        await this.ensureReady();
+        this.reportCallEndedSilently(requestedUUID, CONSTANTS.END_CALL_REASONS.MISSED);
+      }
+      if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
+        VoipPushNotification.onVoipNotificationCompleted(completionUUID);
+      }
+      return true;
+    }
+
+    // Late VoIP push for a session that already ended on this device (the user
+    // hung up or rejected while it was in flight). Android filters these by age
+    // in its FCM handlers; the PushKit path had no equivalent guard.
+    if (this.isEndedCall(
+      [requestedUUID, this.resolveCallUUID(requestedUUID), context.conversationId, context.roomName],
+      context.callSessionId,
+    )) {
+      console.log('[CallKeep] Dropping incoming call push for an already-ended session:', requestedUUID);
+      if (options.nativeAlreadyDisplayed) {
+        // iOS requires every VoIP push to report a call, so the banner CallKit
+        // already showed must be ended explicitly rather than just ignored.
+        await this.ensureReady();
+        this.reportCallEndedSilently(requestedUUID, CONSTANTS.END_CALL_REASONS.REMOTE_ENDED);
+      }
+      if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
+        VoipPushNotification.onVoipNotificationCompleted(completionUUID);
+      }
+      return true;
+    }
 
     if (options.nativeAlreadyDisplayed) {
       this.registerIncomingCallContext(this.resolveCallUUID(requestedUUID), requestedUUID, {
@@ -609,7 +770,7 @@ class CallKeepService {
     if (!callUUID) return;
 
     if (data.name === 'RNCallKeepPerformAnswerCallAction' || data.action === 'answer') {
-      this.handleAnswerCall({ callUUID });
+      await this.handleAnswerCall({ callUUID });
     } else if (data.name === 'RNCallKeepPerformEndCallAction' || data.action === 'end') {
       await this.handleEndCall({ callUUID });
     }
@@ -622,6 +783,7 @@ class CallKeepService {
     this.clearIncomingCallTimeout(nativeUUID);
     RNCallKeep.endCall(nativeUUID);
     this.displayedNativeCallUUIDs.delete(nativeUUID);
+    this.markCallEnded(nativeUUID, context);
     CallState.clearIncomingCall(context?.conversationId || nativeUUID);
   }
 

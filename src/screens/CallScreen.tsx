@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, ActivityIndicator, TouchableOpacity, Alert, Image, Dimensions, DeviceEventEmitter, Platform, ScrollView, Keyboard, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -51,6 +51,31 @@ const CaptionsVisibilityContext = React.createContext<{
 });
 
 /**
+ * Visibilidad de la barra de controles. VideoView la necesita —aunque no la
+ * renderice— porque los nombres y subtítulos se posicionan reservando el alto
+ * de la barra: con la barra oculta ese hueco los deja "volando" sobre el vídeo.
+ *
+ * `controlsVisible` es la preferencia del usuario (la que alterna la pestañita).
+ * `controlsOccupySpace` es si la barra ocupa REALMENTE sitio abajo: en PiP se
+ * renderiza reducida aunque el usuario la hubiera ocultado. VideoView usa esta
+ * segunda para no bajar los nombres sobre una barra que sí está visible.
+ */
+const ControlsVisibilityContext = React.createContext<{
+    controlsVisible: boolean;
+    controlsOccupySpace: boolean;
+    setControlsVisible: (visible: boolean) => void;
+}>({
+    controlsVisible: true,
+    controlsOccupySpace: true,
+    setControlsVisible: () => undefined,
+});
+
+/** Alto aproximado que ocupa la barra de controles sobre el borde inferior. */
+const CONTROLS_BAR_HEIGHT = 110;
+/** Alto de la pestañita que queda cuando la barra está oculta. */
+const CONTROLS_TAB_HEIGHT = 34;
+
+/**
  * Colores bien diferenciados sobre fondo oscuro (nombre = un color estable por hash).
  * Tonos saturados para que se note la diferencia entre personas.
  */
@@ -68,6 +93,15 @@ const SPEAKER_NAME_COLORS = [
     '#FFD43B',
     '#FF8787',
 ];
+
+/**
+ * How long the caller keeps ringing before giving up on an unanswered call.
+ *
+ * Must stay below the callee's native ring timeout in callkeep.service.ts: the
+ * caller has to hang up while the incoming banner is still on screen, otherwise
+ * the callee keeps ringing for a call nobody is placing any more.
+ */
+const UNANSWERED_CALL_TIMEOUT_MS = 60_000;
 
 function colorForSpeakerName(name: string): string {
     const key = name.trim().toLowerCase() || '_';
@@ -203,6 +237,22 @@ export const CallScreen = ({
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
     const [isFrontCamera, setIsFrontCamera] = useState(true);
     const [captionsVisible, setCaptionsVisible] = useState(true);
+    // La barra arranca visible y solo se oculta/muestra con su pestañita, igual
+    // que el patrón de los subtítulos (CC). No hay auto-ocultado por inactividad:
+    // durante una llamada en lengua de señas las manos están ocupadas y una barra
+    // que desaparece sola obligaría a tocar la pantalla para recuperarla.
+    const [controlsVisible, setControlsVisible] = useState(true);
+    // En PiP la barra se renderiza siempre (reducida), así que ahí sigue
+    // ocupando sitio abajo aunque el usuario la hubiera ocultado. Se expone
+    // aparte de la preferencia para que ocultar + entrar y salir de PiP no
+    // "resucite" la barra: al volver se respeta lo que el usuario eligió.
+    const controlsOccupySpace = controlsVisible || isManualPipMode;
+    // Memoizado: sin esto, un objeto nuevo en cada render invalidaría el
+    // contexto y volvería a renderizar todo el árbol de vídeo en cada tick.
+    const controlsVisibilityValue = useMemo(
+        () => ({ controlsVisible, controlsOccupySpace, setControlsVisible }),
+        [controlsVisible, controlsOccupySpace]
+    );
     const [roomRenderKey, setRoomRenderKey] = useState(0);
     const [isRoomConnected, setIsRoomConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -437,7 +487,7 @@ export const CallScreen = ({
     }, [conversationId, roomName, userId, callSessionId, safeOnBack, persistRemoteEndLocally, shouldKeepGroupCallAlive]);
 
     const handleCallTimeout = useCallback(() => {
-        console.log('Call timed out after 30s. Disconnecting...');
+        console.log(`Call timed out after ${UNANSWERED_CALL_TIMEOUT_MS}ms. Disconnecting...`);
         if (conversationId && userId) {
             // 1. Optimistic Local Save for Instant UI Feedback
             const tempId = `call_${Date.now()}`;
@@ -815,6 +865,7 @@ export const CallScreen = ({
                     </View>
                 ) : (
                     <CaptionsVisibilityContext.Provider value={{ captionsVisible, setCaptionsVisible }}>
+                    <ControlsVisibilityContext.Provider value={controlsVisibilityValue}>
                         <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
                         <ControlsView
                             onHangup={safeOnBack}
@@ -839,6 +890,7 @@ export const CallScreen = ({
                             onRemoteHumanCountChange={handleRemoteHumanCountChange}
                             onLastHumanLeft={emitTerminalAsLastHuman}
                         />
+                    </ControlsVisibilityContext.Provider>
                     </CaptionsVisibilityContext.Provider>
                 )}
             </LiveKitRoom>
@@ -983,7 +1035,8 @@ function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 3
 
 // Periodo de gracia tras conectar para que el otro participante aparezca (la
 // negociación WebRTC no es instantánea). Si nunca llega, el otro colgó durante
-// la conexión y hay que salir de inmediato, no esperar el timeout de 30s.
+// la conexión y hay que salir de inmediato, no esperar el timeout de llamada
+// sin contestar (UNANSWERED_CALL_TIMEOUT_MS).
 const EMPTY_ROOM_GRACE_MS = 3500;
 
 function isHumanParticipant(participant: RemoteParticipant): boolean {
@@ -1051,10 +1104,10 @@ function RoomEvents({ onLeave, exitIfEmptyAfterGrace, onRemoteHumanCountChange, 
     // 2. Carrera "el receptor entra justo cuando el llamante cuelga": el otro
     // pudo colgar antes de aparecer en la sala, así que participantDisconnected
     // nunca dispara. Si tras un periodo de gracia sigue sin haber otro humano,
-    // salir de inmediato en vez de quedar 30s en una llamada fantasma.
+    // salir de inmediato en vez de quedar un minuto en una llamada fantasma.
     // SOLO para quien se une a una llamada ya existente (receptor): el llamante
     // espera legítimamente solo en la sala mientras al otro le suena — su caso
-    // "nadie contesta" lo cubre el timeout de 30s del RingingSoundManager.
+    // "nadie contesta" lo cubre UNANSWERED_CALL_TIMEOUT_MS del RingingSoundManager.
     useEffect(() => {
         if (!room || !exitIfEmptyAfterGrace) return;
 
@@ -1090,6 +1143,7 @@ function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () 
     const room = useRoomContext();
     const soundRef = useRef<Audio.Sound | null>(null);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const soundGenerationRef = useRef(0);
 
     // Keep a fresh reference to onTimeout to avoid re-triggering effects or stale closures
     const onTimeoutRef = useRef(onTimeout);
@@ -1099,8 +1153,23 @@ function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () 
 
     const humanCount = participants.filter(p => !p.identity.toLowerCase().startsWith('transcriber-')).length;
 
+    const stopRingingSound = async () => {
+        soundGenerationRef.current += 1;
+        const sound = soundRef.current;
+        soundRef.current = null;
+        if (!sound) return;
+
+        try {
+            await sound.stopAsync();
+        } catch { }
+        try {
+            await sound.unloadAsync();
+        } catch { }
+    };
+
     useEffect(() => {
         let isMounted = true;
+        const generation = ++soundGenerationRef.current;
 
         const playSound = async () => {
             try {
@@ -1112,7 +1181,7 @@ function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () 
                                 room.disconnect().catch(e => console.error('Error disconnecting room on timeout:', e));
                                 onTimeoutRef.current();
                             }
-                        }, 30000);
+                        }, UNANSWERED_CALL_TIMEOUT_MS);
                     }
 
                     if (!soundRef.current && shouldRing) {
@@ -1120,7 +1189,7 @@ function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () 
                             require('../../assets/ringing.wav'),
                             { shouldPlay: true, isLooping: true }
                         );
-                        if (isMounted) {
+                        if (isMounted && generation === soundGenerationRef.current) {
                             soundRef.current = sound;
                             // expo-av re-aplica PlayAndRecord sin .defaultToSpeaker
                             // (allowsRecordingIOS) y iOS enruta al auricular, donde
@@ -1130,7 +1199,8 @@ function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () 
                                 AudioSession.selectAudioOutput('force_speaker').catch(() => undefined);
                             }
                         } else {
-                            sound.unloadAsync();
+                            await sound.stopAsync().catch(() => undefined);
+                            await sound.unloadAsync().catch(() => undefined);
                         }
                     }
                 } else {
@@ -1139,11 +1209,7 @@ function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () 
                         clearTimeout(timeoutRef.current);
                         timeoutRef.current = null;
                     }
-                    if (soundRef.current) {
-                        await soundRef.current.stopAsync();
-                        await soundRef.current.unloadAsync();
-                        soundRef.current = null;
-                    }
+                    await stopRingingSound();
                 }
             } catch (error) {
                 console.log('Error managing ringing sound', error);
@@ -1154,18 +1220,17 @@ function RingingSoundManager({ onTimeout, shouldRing = true }: { onTimeout?: () 
 
         return () => {
             isMounted = false;
+            void stopRingingSound();
         };
     }, [humanCount, room, shouldRing]);
 
     useEffect(() => {
         return () => {
-            if (soundRef.current) {
-                soundRef.current.stopAsync();
-                soundRef.current.unloadAsync();
-            }
             if (timeoutRef.current) {
                 clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
             }
+            void stopRingingSound();
         };
     }, []);
 
@@ -1195,6 +1260,9 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
     const tracks = useTracks([Track.Source.Camera]);
     const { height: screenHeight } = Dimensions.get('window');
     const insets = useSafeAreaInsets();
+    // Se usa controlsOccupySpace (no la preferencia): en PiP la barra sigue
+    // ocupando sitio, y bajar los nombres ahí los solaparía con ella.
+    const { controlsOccupySpace } = React.useContext(ControlsVisibilityContext);
 
     const interpreterTracks = tracks.filter(t => isInterpreterIdentity(t.participant.identity));
     const otherTracks = tracks.filter(t => !isInterpreterIdentity(t.participant.identity));
@@ -1203,13 +1271,24 @@ function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFr
         // Use percentage-based offsets relative to the tile height so labels
         // render consistently across devices regardless of screen size / density.
         const numericHeight = typeof height === 'number' ? height : undefined;
-        // The controls container takes up ~100px + insets.bottom. 
+        // Con la barra oculta solo queda la pestañita, así que el hueco que hay
+        // que reservar abajo es mucho menor: si se mantuviera el de la barra,
+        // el nombre se quedaría flotando en mitad del vídeo.
+        const reservedBottom = controlsOccupySpace ? CONTROLS_BAR_HEIGHT : CONTROLS_TAB_HEIGHT;
+        // The controls container takes up ~100px + insets.bottom.
         // We position the label safely above it using absolute math so they never cross.
+        // El mínimo proporcional (18%/25%) solo aplica con la barra visible: es
+        // un colchón para pantallas grandes, pero con la barra oculta volvería a
+        // levantar el nombre justo lo que se pretende evitar.
         const labelBottom = isBottomRow
-            ? Math.max(110 + insets.bottom, numericHeight ? numericHeight * 0.18 : 110)
+            ? (controlsOccupySpace
+                ? Math.max(reservedBottom + insets.bottom, numericHeight ? numericHeight * 0.18 : reservedBottom)
+                : reservedBottom + insets.bottom)
             : 8;
         const transcriptionBottom = isBottomRow
-            ? Math.max(140 + insets.bottom, numericHeight ? numericHeight * 0.25 : 140)
+            ? (controlsOccupySpace
+                ? Math.max(140 + insets.bottom, numericHeight ? numericHeight * 0.25 : 140)
+                : reservedBottom + insets.bottom + 30)
             : 40;
         const displayName = formatParticipantDisplayName(track.participant.identity);
 
@@ -1384,6 +1463,9 @@ function ControlsView({
     const { captionsVisible, setCaptionsVisible } = React.useContext(CaptionsVisibilityContext);
     const { canUseInterpreter } = useSubscription(userId);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    // Vive en el contexto (no en estado local) porque VideoView también lo
+    // necesita para bajar los nombres y subtítulos cuando la barra se oculta.
+    const { controlsVisible, setControlsVisible } = React.useContext(ControlsVisibilityContext);
     const insets = useSafeAreaInsets();
     const hasDisconnectedRef = useRef(false);
 
@@ -1656,6 +1738,25 @@ function ControlsView({
                 </TouchableOpacity>
             )}
 
+            {/* Con la barra oculta esta pestañita es el ÚNICO modo de traerla de
+                vuelta, así que se renderiza siempre que la barra no esté visible.
+                En PiP no aplica: ahí la barra se muestra reducida y sin toggle. */}
+            {!controlsVisible && !isManualPipMode && (
+                <TouchableOpacity
+                    style={[
+                        styles.controlsShowTab,
+                        { marginBottom: Math.max(insets.bottom, 10) },
+                    ]}
+                    onPress={() => setControlsVisible(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Mostrar barra de controles"
+                    hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}
+                >
+                    <Text style={styles.controlsTabText}>▲</Text>
+                </TouchableOpacity>
+            )}
+
+            {(controlsVisible || isManualPipMode) && (
             <View style={[
                 styles.controlsContainer,
                 { paddingBottom: Math.max(insets.bottom, 10) + 16 },
@@ -1666,6 +1767,17 @@ function ControlsView({
                 },
                 isManualPipMode && styles.controlsContainerMini
             ]}>
+                {!isManualPipMode && (
+                    <TouchableOpacity
+                        style={styles.controlsHideTab}
+                        onPress={() => setControlsVisible(false)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Ocultar barra de controles"
+                        hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
+                    >
+                        <Text style={styles.controlsTabText}>▼</Text>
+                    </TouchableOpacity>
+                )}
                 {!captionsVisible && !isManualPipMode && (
                     <TouchableOpacity
                         style={styles.ccToggleBar}
@@ -1714,6 +1826,7 @@ function ControlsView({
                     <SyncIcon size={24} color={isCameraEnabled ? '#000' : '#fff'} />
                 </TouchableOpacity>
             </View>
+            )}
 
             {/* Imported Modal Component for feature lock */}
             <UpgradeModal

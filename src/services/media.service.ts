@@ -112,7 +112,9 @@ class MediaService {
 
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.All, // Images and Videos
-            allowsEditing: false, // Don't force editing for videos
+            // Android/iOS show the native crop editor for images and leave
+            // videos unchanged. The user confirms the crop before upload.
+            allowsEditing: true,
             quality: 0.8,
             base64: false, // We don't need base64 for file upload
             videoMaxDuration: 60, // 1 minute max for videos
@@ -196,7 +198,8 @@ class MediaService {
 
         const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: false,
+            // Open the native crop editor after taking the photo.
+            allowsEditing: true,
             quality: 0.8,
         });
 

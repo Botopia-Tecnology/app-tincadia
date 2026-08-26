@@ -261,6 +261,45 @@ export const callScreenStyles = StyleSheet.create({
         width: '100%',
         maxHeight: 50,
     },
+    // Botón para ocultar la barra de controles. Va dentro de la barra, alineado
+    // con la pestañita de CC pero al lado opuesto para que no se solapen cuando
+    // ambos están visibles.
+    controlsHideTab: {
+        position: 'absolute',
+        top: -26,
+        right: 16,
+        backgroundColor: 'rgba(15, 15, 20, 0.92)',
+        paddingHorizontal: 12,
+        paddingVertical: 3,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.22)',
+        zIndex: 2,
+    },
+    // Pestañita que queda cuando la barra está oculta: único punto de retorno,
+    // así que se ancla al borde inferior y por encima del resto de overlays.
+    controlsShowTab: {
+        position: 'absolute',
+        bottom: 0,
+        alignSelf: 'center',
+        backgroundColor: 'rgba(15, 15, 20, 0.92)',
+        paddingHorizontal: 22,
+        paddingVertical: 6,
+        borderTopLeftRadius: 10,
+        borderTopRightRadius: 10,
+        borderWidth: 1,
+        borderBottomWidth: 0,
+        borderColor: 'rgba(255, 255, 255, 0.22)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 50,
+    },
+    controlsTabText: {
+        color: 'rgba(255, 255, 255, 0.95)',
+        fontSize: 11,
+        fontWeight: '700',
+        letterSpacing: 0.8,
+    },
     ccToggleBar: {
         position: 'absolute',
         top: -26,

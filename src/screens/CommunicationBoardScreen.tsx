@@ -1,5 +1,16 @@
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  ScrollView,
+  type LayoutChangeEvent,
+  type TextLayoutEvent,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useCommunicationBoard } from '../hooks/useCommunicationBoard';
@@ -46,6 +57,112 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
 
   const styles = getStyles(colors, isDark);
 
+  const isPlayingOrPaused = isSpeaking || isPaused;
+
+  // ── Auto-scroll del karaoke ──
+  // El texto resaltado se renderiza como <Text> anidados dentro de un <Text>
+  // padre. Los <Text> anidados no reportan onLayout de forma fiable (en Android
+  // directamente no se dispara), así que no se puede medir la palabra activa.
+  // En su lugar se usa onTextLayout, que entrega las líneas YA calculadas por el
+  // motor nativo: para cada línea, su texto y su posición `y` real. Con eso se
+  // mapea palabra -> línea sin estimar anchos ni depender de la fuente.
+  const scrollRef = useRef<ScrollView>(null);
+  // Offset `y` del inicio de cada línea, indexado por línea.
+  const lineOffsetsRef = useRef<number[]>([]);
+  // Índice de la primera palabra (posición en `text`) que abre cada línea.
+  const lineStartCharsRef = useRef<number[]>([]);
+  const viewportHeightRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const lastScrolledLineRef = useRef(-1);
+  // Las medidas llegan por eventos nativos (refs), que no re-disparan el efecto.
+  // Si el layout llega DESPUÉS de que la palabra activa ya cambió —al arrancar,
+  // o al usar "Avanzar" antes del primer layout— sin esto el scroll se perdería.
+  const [layoutVersion, setLayoutVersion] = useState(0);
+
+  const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {
+    viewportHeightRef.current = event.nativeEvent.layout.height;
+    setLayoutVersion((v) => v + 1);
+  }, []);
+
+  const handleTextLayout = useCallback((event: TextLayoutEvent) => {
+    const lines = event.nativeEvent.lines;
+    const offsets: number[] = [];
+    const startChars: number[] = [];
+
+    // `line.text` reconstruye el contenido en orden, así que acumular su
+    // longitud da el índice de carácter donde arranca cada línea. Se compara
+    // contra token.start (mismo espacio de índices que `text`).
+    let charCursor = 0;
+    for (const line of lines) {
+      offsets.push(line.y);
+      startChars.push(charCursor);
+      charCursor += line.text.length;
+    }
+
+    lineOffsetsRef.current = offsets;
+    lineStartCharsRef.current = startChars;
+    // Un relayout (rotación, cambio de texto) invalida el último scroll hecho:
+    // hay que reposicionar sobre las líneas nuevas aunque el índice no cambie.
+    lastScrolledLineRef.current = -1;
+    setLayoutVersion((v) => v + 1);
+  }, []);
+
+  const handleContentSizeChange = useCallback((_w: number, h: number) => {
+    contentHeightRef.current = h;
+  }, []);
+
+  // Al salir de reproducción el ScrollView se desmonta y sus medidas dejan de
+  // ser válidas. Sin este reset, una reproducción posterior que arranque en la
+  // misma línea se saltaría el scroll inicial por el guard de deduplicación.
+  useEffect(() => {
+    if (isPlayingOrPaused) return;
+    lastScrolledLineRef.current = -1;
+    lineOffsetsRef.current = [];
+    lineStartCharsRef.current = [];
+    contentHeightRef.current = 0;
+  }, [isPlayingOrPaused]);
+
+  useEffect(() => {
+    if (!isPlayingOrPaused) return;
+
+    const token = words[currentWordIndex];
+    if (!token) return;
+
+    const lineStarts = lineStartCharsRef.current;
+    const offsets = lineOffsetsRef.current;
+    if (lineStarts.length === 0 || offsets.length === 0) return;
+
+    // Última línea cuyo primer carácter no supera el inicio de la palabra.
+    let lineIndex = 0;
+    for (let i = 0; i < lineStarts.length; i++) {
+      if (lineStarts[i] <= token.start) lineIndex = i;
+      else break;
+    }
+
+    // Sin esto, cada palabra de la misma línea repetiría el scrollTo.
+    if (lineIndex === lastScrolledLineRef.current) return;
+    lastScrolledLineRef.current = lineIndex;
+
+    const viewportHeight = viewportHeightRef.current;
+    if (viewportHeight <= 0) return;
+
+    // Se mantiene la línea activa a un tercio de la altura visible: deja
+    // contexto de lo ya leído arriba y anticipa lo que viene abajo.
+    const lineY = offsets[lineIndex];
+    let target = lineY - viewportHeight / 3;
+
+    // Sin clamp, scrollTo con un offset mayor al máximo provoca rebote al
+    // final del texto en iOS. Solo se aplica si ya se midió el contenido:
+    // con contentHeight aún en 0 el clamp forzaría target = 0.
+    if (contentHeightRef.current > 0) {
+      const maxOffset = Math.max(0, contentHeightRef.current - viewportHeight);
+      target = Math.min(target, maxOffset);
+    }
+    target = Math.max(0, target);
+
+    scrollRef.current?.scrollTo({ y: target, animated: true });
+  }, [currentWordIndex, words, isPlayingOrPaused, layoutVersion]);
+
   const renderTextWithHighlight = () => {
     const elements: React.ReactNode[] = [];
     let lastIndex = 0;
@@ -86,13 +203,11 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     }
 
     return (
-      <Text style={styles.textDisplay}>
+      <Text style={styles.textDisplay} onTextLayout={handleTextLayout}>
         {elements}
       </Text>
     );
   };
-
-  const isPlayingOrPaused = isSpeaking || isPaused;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -119,9 +234,12 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
               onChangeText={setText}
             />
           ) : (
-            <ScrollView 
+            <ScrollView
+              ref={scrollRef}
               style={styles.displayScrollView}
               contentContainerStyle={styles.displayScrollViewContent}
+              onLayout={handleViewportLayout}
+              onContentSizeChange={handleContentSizeChange}
             >
               {renderTextWithHighlight()}
             </ScrollView>
