@@ -338,20 +338,66 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
         });
       }
 
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
+      // Cada rama registra por que no hubo token: sin esto el fallo era mudo
+      // (permiso denegado salia por el mismo camino que el exito) y el token
+      // simplemente no aparecia en la base de datos, sin rastro en consola.
+      const permissions = await Notifications.getPermissionsAsync();
+      let finalStatus = permissions.status;
+      const alreadyGranted = finalStatus === 'granted';
+
+      if (!alreadyGranted) {
+        // En iOS el dialogo solo se muestra una vez: si el permiso se nego
+        // antes, esto devuelve 'denied' de inmediato sin preguntar nada, y
+        // hay que reactivarlo desde Ajustes.
+        if (!permissions.canAskAgain) {
+          console.warn(
+            '[PUSH_REGISTER] Permiso denegado permanentemente. El usuario debe activarlo en Ajustes del sistema.',
+            { status: finalStatus, ios: permissions.ios?.status },
+          );
+          return;
+        }
+
+        const requested = await Notifications.requestPermissionsAsync();
+        finalStatus = requested.status;
       }
 
-      if (finalStatus === 'granted') {
-        const token = (await Notifications.getExpoPushTokenAsync({
+      if (finalStatus !== 'granted') {
+        console.warn('[PUSH_REGISTER] Sin permiso de notificaciones, no se genera Expo push token.', {
+          status: finalStatus,
+          previo: permissions.status,
+          canAskAgain: permissions.canAskAgain,
+        });
+        return;
+      }
+
+      // Con el permiso concedido el token todavia puede fallar: credenciales
+      // de APNs, projectId que no corresponde al build, o falta de
+      // aps-environment. Se aisla para distinguirlo de un permiso denegado.
+      let token: string | undefined;
+      try {
+        token = (await Notifications.getExpoPushTokenAsync({
           projectId: '8bf6b071-622c-4428-a2f8-b83b95fa2d99',
         })).data;
-        if (token && !cancelled) {
-          await authService.updatePushToken(user.id, token);
-        }
+      } catch (error) {
+        console.error(
+          '[PUSH_REGISTER] Permiso concedido pero getExpoPushTokenAsync fallo (revisar credenciales APNs/FCM y projectId):',
+          error,
+        );
+        return;
+      }
+
+      if (!token) {
+        console.warn('[PUSH_REGISTER] getExpoPushTokenAsync devolvio un token vacio.');
+        return;
+      }
+
+      if (cancelled) return;
+
+      try {
+        await authService.updatePushToken(user.id, token);
+        console.log('[PUSH_REGISTER] Expo push token registrado:', token.substring(0, 25) + '...');
+      } catch (error) {
+        console.error('[PUSH_REGISTER] El backend rechazo el Expo push token:', error);
       }
     };
     registerForPush().catch(e => {
