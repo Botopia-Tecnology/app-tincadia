@@ -99,9 +99,13 @@ export const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     color: colors.text,
     opacity: 0.3,
   },
+  // Solo color/opacidad: cambiar fontWeight altera el ancho de la palabra y
+  // obliga al motor nativo a recalcular el flujo del texto ENTERO en cada
+  // avance del karaoke. En textos largos eso bloquea el hilo de UI (subrayado
+  // congelado y botones lentos). El contraste lo da el salto de opacidad
+  // 0.3 -> 1 más el amarillo, sin tocar la métrica.
   sentenceTextActive: {
     color: '#EAB308',
-    fontWeight: 'bold',
     opacity: 1,
   }
 });

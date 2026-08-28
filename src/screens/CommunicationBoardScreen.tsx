@@ -55,14 +55,18 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     dismissUpgradeModal,
   } = useCommunicationBoard(onBack);
 
-  const styles = getStyles(colors, isDark);
+  // Sin memo esto reconstruye todos los estilos en cada avance del karaoke (20
+  // veces por segundo) y, al devolver objetos nuevos, anula el React.memo de
+  // las palabras: se repintaba el texto entero y los botones se sentían lentos.
+  const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
   const isPlayingOrPaused = isSpeaking || isPaused;
 
   // ── Auto-scroll del karaoke ──
   // El texto resaltado se renderiza como <Text> anidados dentro de un <Text>
-  // padre. Los <Text> anidados no reportan onLayout de forma fiable (en Android
-  // directamente no se dispara), así que no se puede medir la palabra activa.
+  // padre (tres: antes, palabra activa, después). Los <Text> anidados no
+  // reportan onLayout de forma fiable (en Android directamente no se dispara),
+  // así que no se puede medir la palabra activa.
   // En su lugar se usa onTextLayout, que entrega las líneas YA calculadas por el
   // motor nativo: para cada línea, su texto y su posición `y` real. Con eso se
   // mapea palabra -> línea sin estimar anchos ni depender de la fuente.
@@ -98,6 +102,19 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
       startChars.push(charCursor);
       charCursor += line.text.length;
     }
+
+    // onTextLayout se dispara en cada avance del karaoke, porque resaltar una
+    // palabra cambia los hijos del <Text> padre. Como el resaltado no altera
+    // métricas, la geometría es idéntica entre palabras: salir aquí evita un
+    // setLayoutVersion (y su re-render) por cada palabra del texto. Solo
+    // reaccionamos cuando cambia de verdad (rotación, edición del texto).
+    const previous = lineOffsetsRef.current;
+    const sameLayout =
+      previous.length === offsets.length &&
+      previous.every((y, i) => y === offsets[i]) &&
+      lineStartCharsRef.current.every((c, i) => c === startChars[i]);
+
+    if (sameLayout) return;
 
     lineOffsetsRef.current = offsets;
     lineStartCharsRef.current = startChars;
@@ -160,51 +177,38 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     }
     target = Math.max(0, target);
 
-    scrollRef.current?.scrollTo({ y: target, animated: true });
+    // Sin animar: una animación de scroll por cada cambio de línea compite con
+    // los ticks del karaoke por el hilo de UI en textos largos.
+    scrollRef.current?.scrollTo({ y: target, animated: false });
   }, [currentWordIndex, words, isPlayingOrPaused, layoutVersion]);
 
+  // El texto se parte en TRES nodos (antes / palabra activa / después) en vez
+  // de uno por palabra. Con un nodo por palabra, cada avance del karaoke
+  // reconstruía y reconciliaba los N nodos y el motor nativo remedía el bloque
+  // entero: recorrer un texto de N palabras costaba O(N²) y en textos largos
+  // ahogaba el hilo de UI (subrayado a trompicones y móvil lento). Así el coste
+  // de cada avance es constante, no depende de la longitud del texto.
+  const activeToken = currentWordIndex >= 0 ? words[currentWordIndex] : undefined;
+
   const renderTextWithHighlight = () => {
-    const elements: React.ReactNode[] = [];
-    let lastIndex = 0;
-
-    words.forEach((token, index) => {
-      // Añadimos el espacio/texto que hay entre el token anterior y el actual
-      if (token.start > lastIndex) {
-        const interstitial = text.substring(lastIndex, token.start);
-        elements.push(
-          <Text key={`inter-${index}`} style={styles.sentenceText}>
-            {interstitial}
-          </Text>
-        );
-      }
-
-      const isActive = index === currentWordIndex;
-      elements.push(
+    if (!activeToken) {
+      return (
         <Text
-          key={`word-${index}`}
-          style={[
-            styles.sentenceText,
-            isActive && styles.sentenceTextActive
-          ]}
+          style={[styles.textDisplay, styles.sentenceText]}
+          onTextLayout={handleTextLayout}
         >
-          {token.word}
-        </Text>
-      );
-      lastIndex = token.end;
-    });
-
-    // Añadimos cualquier texto que quede al final (espacios finales, etc.)
-    if (lastIndex < text.length) {
-      elements.push(
-        <Text key="tail" style={styles.sentenceText}>
-          {text.substring(lastIndex)}
+          {text}
         </Text>
       );
     }
 
     return (
       <Text style={styles.textDisplay} onTextLayout={handleTextLayout}>
-        {elements}
+        <Text style={styles.sentenceText}>{text.substring(0, activeToken.start)}</Text>
+        <Text style={styles.sentenceTextActive}>
+          {text.substring(activeToken.start, activeToken.end)}
+        </Text>
+        <Text style={styles.sentenceText}>{text.substring(activeToken.end)}</Text>
       </Text>
     );
   };
