@@ -51,6 +51,111 @@ const CaptionsVisibilityContext = React.createContext<{
 });
 
 /**
+ * Transcripciones de TODOS los participantes, indexadas por identity.
+ *
+ * Antes cada overlay se suscribía por su cuenta a RoomEvent.DataReceived y
+ * descartaba lo que no fuera suyo. Como los overlays cuelgan de los tracks de
+ * cámara (useTracks([Track.Source.Camera])), quien tuviera la cámara apagada
+ * —o cuyo vídeo aún no hubiera llegado— no tenía overlay montado, así que sus
+ * subtítulos se descartaban sin que nadie los mostrara: el bot los publicaba
+ * bien, pero no había quien escuchara por esa identidad.
+ *
+ * Ahora hay un único listener a nivel de sala que reparte por speakerId. El
+ * estado existe aunque el participante no tenga vídeo, y el overlay solo lee
+ * lo que le corresponde.
+ */
+type TranscriptState = {
+    finals: TranscriptCaption[];
+    partial: PartialCaption | null;
+};
+
+const TranscriptionsContext = React.createContext<Record<string, TranscriptState>>({});
+
+function TranscriptionsProvider({ children }: { children: React.ReactNode }) {
+    const room = useRoomContext();
+    const [bySpeaker, setBySpeaker] = useState<Record<string, TranscriptState>>({});
+    const captionIdRef = useRef(0);
+
+    useEffect(() => {
+        if (!room) return;
+
+        const onDataReceived = (
+            payload: Uint8Array,
+            participant?: RemoteParticipant,
+            _kind?: unknown,
+            _topic?: string,
+        ) => {
+            const bytes = payloadToUint8Array(payload);
+            if (!bytes || bytes.byteLength === 0) return;
+            try {
+                // Decodificación robusta para React Native (UTF-8)
+                const str = decodeURIComponent(
+                    Array.from(bytes)
+                        .map(b => '%' + ('00' + b.toString(16)).slice(-2))
+                        .join('')
+                );
+
+                const data = JSON.parse(str) as {
+                    type?: string;
+                    text?: string;
+                    isFinal?: boolean;
+                    speakerId?: string;
+                };
+
+                if (data.type !== 'transcription' || typeof data.text !== 'string') return;
+                const trimmed = data.text.trim();
+                if (!trimmed) return;
+
+                const rawSpeaker = data.speakerId || participant?.identity || '';
+                if (!rawSpeaker) return;
+
+                // Clean up identity labels (transcriber-room-identity)
+                const speaker = rawSpeaker
+                    .replace(/^transcriber-[^-]+-?/i, '')
+                    .replace(/^transcriber-/i, '')
+                    .split('-')[0] || 'AI';
+
+                setBySpeaker((prev) => {
+                    const current = prev[rawSpeaker] ?? { finals: [], partial: null };
+
+                    if (data.isFinal === true) {
+                        captionIdRef.current += 1;
+                        return {
+                            ...prev,
+                            [rawSpeaker]: {
+                                finals: [
+                                    ...current.finals.slice(-8),
+                                    { id: `cc-${captionIdRef.current}`, speaker, text: trimmed },
+                                ],
+                                partial: null,
+                            },
+                        };
+                    }
+
+                    return {
+                        ...prev,
+                        [rawSpeaker]: { ...current, partial: { speaker, text: trimmed } },
+                    };
+                });
+            } catch (err) {
+                console.log('Error parsing transcription packet:', err);
+            }
+        };
+
+        room.on(RoomEvent.DataReceived, onDataReceived);
+        return () => {
+            room.off(RoomEvent.DataReceived, onDataReceived);
+        };
+    }, [room]);
+
+    return (
+        <TranscriptionsContext.Provider value={bySpeaker}>
+            {children}
+        </TranscriptionsContext.Provider>
+    );
+}
+
+/**
  * Visibilidad de la barra de controles. VideoView la necesita —aunque no la
  * renderice— porque los nombres y subtítulos se posicionan reservando el alto
  * de la barra: con la barra oculta ese hueco los deja "volando" sobre el vídeo.
@@ -865,6 +970,7 @@ export const CallScreen = ({
                     </View>
                 ) : (
                     <CaptionsVisibilityContext.Provider value={{ captionsVisible, setCaptionsVisible }}>
+                    <TranscriptionsProvider>
                     <ControlsVisibilityContext.Provider value={controlsVisibilityValue}>
                         <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
                         <ControlsView
@@ -891,6 +997,7 @@ export const CallScreen = ({
                             onLastHumanLeft={emitTerminalAsLastHuman}
                         />
                     </ControlsVisibilityContext.Provider>
+                    </TranscriptionsProvider>
                     </CaptionsVisibilityContext.Provider>
                 )}
             </LiveKitRoom>
@@ -907,11 +1014,16 @@ function payloadToUint8Array(payload: Uint8Array | ArrayBuffer | undefined): Uin
 function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 30 }: { participantIdentity: string, bottomOffset?: number }) {
     const room = useRoomContext();
     const { captionsVisible, setCaptionsVisible } = React.useContext(CaptionsVisibilityContext);
+    const transcriptions = React.useContext(TranscriptionsContext);
     const [isLivekitConnected, setIsLivekitConnected] = useState(false);
-    const [finalLines, setFinalLines] = useState<TranscriptCaption[]>([]);
-    const [partialLine, setPartialLine] = useState<PartialCaption | null>(null);
     const scrollRef = useRef<ScrollView>(null);
-    const captionIdRef = useRef(0);
+
+    // La recepción vive en TranscriptionsProvider (un solo listener por sala).
+    // Aquí solo se lee lo de este participante, así que un participante sin
+    // vídeo ya no pierde sus subtítulos.
+    const entry = transcriptions[participantIdentity];
+    const finalLines = entry?.finals ?? [];
+    const partialLine = entry?.partial ?? null;
 
     // Auto-scroll to bottom when new text arrives
     useEffect(() => {
@@ -922,75 +1034,15 @@ function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 3
         }
     }, [finalLines, partialLine]);
 
-    // En React Native suele no existir `window`; hooks como useDataChannel no suscriben el observable y no reciben datos.
     useEffect(() => {
         if (!room) return;
-
         const syncConnected = () => {
             setIsLivekitConnected(room.state === ConnectionState.Connected);
         };
         syncConnected();
-
-        const onDataReceived = (
-            payload: Uint8Array,
-            participant?: RemoteParticipant,
-            _kind?: unknown,
-            _topic?: string,
-        ) => {
-            const bytes = payloadToUint8Array(payload);
-            if (!bytes || bytes.byteLength === 0) return;
-            try {
-                // Decodificación robusta para React Native (UTF-8)
-                const str = decodeURIComponent(
-                    Array.from(bytes)
-                        .map(b => '%' + ('00' + b.toString(16)).slice(-2))
-                        .join('')
-                );
-
-                const data = JSON.parse(str) as {
-                    type?: string;
-                    text?: string;
-                    isFinal?: boolean;
-                    speakerId?: string;
-                };
-
-                if (data.type !== 'transcription' || typeof data.text !== 'string') return;
-                const trimmed = data.text.trim();
-                if (!trimmed) return;
-
-                const rawSpeaker = data.speakerId || participant?.identity || '';
-
-                // Only process transcription if it matches this participant
-                if (rawSpeaker !== participantIdentity) return;
-
-                // Clean up identity labels (transcriber-room-identity)
-                const speaker = rawSpeaker
-                    .replace(/^transcriber-[^-]+-?/i, '')
-                    .replace(/^transcriber-/i, '')
-                    .split('-')[0] || 'AI';
-
-                if (data.isFinal === true) {
-                    captionIdRef.current += 1;
-                    const id = `cc-${captionIdRef.current}`;
-                    setFinalLines((prev) => [
-                        ...prev.slice(-8),
-                        { id, speaker, text: trimmed },
-                    ]);
-                    setPartialLine(null);
-                } else {
-                    setPartialLine({ speaker, text: trimmed });
-                }
-            } catch (err) {
-                console.log('Error parsing transcription packet:', err);
-            }
-        };
-
         room.on(RoomEvent.ConnectionStateChanged, syncConnected);
-        room.on(RoomEvent.DataReceived, onDataReceived);
-
         return () => {
             room.off(RoomEvent.ConnectionStateChanged, syncConnected);
-            room.off(RoomEvent.DataReceived, onDataReceived);
         };
     }, [room]);
 
