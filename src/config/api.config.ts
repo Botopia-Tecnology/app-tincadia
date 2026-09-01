@@ -41,6 +41,7 @@ export const API_ENDPOINTS = {
     USER_PROFILE: (userId: string) => `/auth/profile/${userId}`,
     AVAILABLE_USERS: (userId: string) => `/auth/users/${userId}`,
     UPDATE_PUSH_TOKEN: '/auth/push-token',
+    PUSH_DIAGNOSTIC: '/auth/push-diagnostic',
     RESET_PASSWORD: '/auth/reset-password',
     UPLOAD_AVATAR: (userId: string) => `/auth/profile/${userId}/avatar`,
     DELETE_AVATAR: (userId: string) => `/auth/profile/${userId}/avatar`,

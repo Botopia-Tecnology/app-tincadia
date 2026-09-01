@@ -330,6 +330,37 @@ export const authService = {
         return null;
     },
 
+    /**
+     * Reporta al backend por que NO se pudo registrar un push token.
+     *
+     * Los fallos de registro ocurren DENTRO del dispositivo (permiso denegado,
+     * error al pedir el token a Expo), asi que nunca llegaba ninguna peticion y
+     * en los logs del servidor no quedaba rastro: con un usuario remoto era
+     * imposible distinguir "rechazo el permiso" de "fallo la credencial".
+     *
+     * Nunca lanza: es telemetria, no debe romper el arranque de la app.
+     */
+    async reportPushDiagnostic(payload: {
+        reason: string;
+        kind?: 'expo' | 'fcm' | 'voip';
+        detail?: string;
+        platform?: string;
+        appVersion?: string;
+    }): Promise<void> {
+        try {
+            await apiClient(API_ENDPOINTS.PUSH_DIAGNOSTIC, {
+                method: 'POST',
+                body: JSON.stringify({
+                    ...payload,
+                    detail: payload.detail?.slice(0, 500),
+                }),
+                suppressUnauthorizedHandling: true,
+            });
+        } catch {
+            // Sin reintentos ni logs: si el diagnostico falla, no importa.
+        }
+    },
+
     async updatePushToken(userId: string, pushToken: string): Promise<void> {
         await apiClient(API_ENDPOINTS.UPDATE_PUSH_TOKEN, {
             method: 'POST',

@@ -95,6 +95,9 @@ export function MessageBubble({
     const mediaRequestRef = useRef(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [audioSound, setAudioSound] = useState<Audio.Sound | null>(null);
+    // El callback de estado se registra una sola vez con el Sound, asi que no
+    // ve el valor actualizado del useState. La ref si.
+    const audioSoundRef = useRef<Audio.Sound | null>(null);
     const [showFullscreen, setShowFullscreen] = useState(false);
     const [isSavingToGallery, setIsSavingToGallery] = useState(false);
     const [audioDuration, setAudioDuration] = useState<number | null>(null);
@@ -236,6 +239,34 @@ export function MessageBubble({
         loadAudioDuration();
     }, [type, mediaUri, audioDuration]);
 
+    /**
+     * Al terminar la reproduccion se rebobina a 0, para que el siguiente play
+     * suene desde el principio sin depender de remontar el componente.
+     */
+    const onEstadoAudio = (status: AVPlaybackStatus) => {
+        if (!status.isLoaded) return;
+        if (status.didJustFinish) {
+            setIsPlaying(false);
+            void (async () => {
+                try {
+                    await audioSoundRef.current?.setPositionAsync(0);
+                } catch {
+                    // Si ya se descargo, el siguiente play lo recrea.
+                }
+            })();
+        }
+    };
+
+    // Liberar el audio al desmontar: sin esto cada nota de voz reproducida
+    // quedaba cargada en memoria mientras durase la sesion.
+    useEffect(() => {
+        return () => {
+            const sound = audioSoundRef.current;
+            audioSoundRef.current = null;
+            void sound?.unloadAsync().catch(() => undefined);
+        };
+    }, []);
+
     const handlePlayAudio = async () => {
         if (!mediaUri) return;
 
@@ -247,16 +278,32 @@ export function MessageBubble({
 
         try {
             if (audioSound) {
-                await audioSound.playAsync();
+                // Al terminar, el cursor queda al final: un playAsync() directo
+                // no reproduce nada. Hay que rebobinar antes.
+                //
+                // Sin esto el audio solo sonaba la primera vez; volvia a
+                // funcionar al salir y entrar al chat porque el componente se
+                // desmontaba y se creaba un Sound nuevo desde la posicion 0.
+                const status = await audioSound.getStatusAsync();
+
+                if (status.isLoaded) {
+                    if (status.didJustFinish || status.positionMillis >= (status.durationMillis ?? 0)) {
+                        await audioSound.setPositionAsync(0);
+                    }
+                    await audioSound.playAsync();
+                } else {
+                    // El Sound se descargo (memoria, cambio de pista): se recrea.
+                    const { sound } = await Audio.Sound.createAsync({ uri: mediaUri });
+                    setAudioSound(sound);
+                    audioSoundRef.current = sound;
+                    sound.setOnPlaybackStatusUpdate(onEstadoAudio);
+                    await sound.playAsync();
+                }
             } else {
                 const { sound } = await Audio.Sound.createAsync({ uri: mediaUri });
                 setAudioSound(sound);
-                sound.setOnPlaybackStatusUpdate((status) => {
-                    if (status.isLoaded && status.didJustFinish) {
-                        setIsPlaying(false);
-                        // Optional: seek to start?
-                    }
-                });
+                audioSoundRef.current = sound;
+                sound.setOnPlaybackStatusUpdate(onEstadoAudio);
                 await sound.playAsync();
             }
             setIsPlaying(true);

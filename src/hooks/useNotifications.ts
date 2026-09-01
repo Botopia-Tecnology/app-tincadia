@@ -276,7 +276,6 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     const conversationId = getStringValue(payload.conversationId);
     const roomName = getStringValue(payload.roomName);
     const callSessionId = getStringValue(payload.callSessionId || (payload.metadata as Record<string, unknown> | undefined)?.callSessionId);
-    console.log('[PUSH_DEBUG] clearNativeCallUi called', { callUUID, conversationId });
 
     // VERY IMPORTANT: Emit this FIRST so CallScreen knows to close immediately
     // without waiting for CallKeep or failing if CallKeep throws.
@@ -309,15 +308,23 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
     let cancelled = false;
     let unsubscribeTokenRefresh: (() => void) | undefined;
     let unsubscribeFCM: (() => void) | undefined;
 
+
     // 1. Register for Standard Expo Push Notifications (for Chat Messages)
     const registerForPush = async () => {
-      if (!Device.isDevice) return;
+      if (!Device.isDevice) {
+        void authService.reportPushDiagnostic({
+          reason: 'no_es_dispositivo', kind: 'expo', platform: Platform.OS,
+        });
+        return;
+      }
 
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
@@ -354,6 +361,12 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             '[PUSH_REGISTER] Permiso denegado permanentemente. El usuario debe activarlo en Ajustes del sistema.',
             { status: finalStatus, ios: permissions.ios?.status },
           );
+          void authService.reportPushDiagnostic({
+            reason: 'permiso_denegado_permanente',
+            kind: 'expo',
+            platform: Platform.OS,
+            detail: `status=${finalStatus} ios=${permissions.ios?.status ?? 'n/a'}`,
+          });
           return;
         }
 
@@ -367,37 +380,108 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
           previo: permissions.status,
           canAskAgain: permissions.canAskAgain,
         });
+        void authService.reportPushDiagnostic({
+          reason: 'permiso_denegado',
+          kind: 'expo',
+          platform: Platform.OS,
+          detail: `status=${finalStatus} previo=${permissions.status} puedePreguntar=${permissions.canAskAgain}`,
+        });
         return;
       }
 
       // Con el permiso concedido el token todavia puede fallar: credenciales
       // de APNs, projectId que no corresponde al build, o falta de
       // aps-environment. Se aisla para distinguirlo de un permiso denegado.
+      // ANDROID: forzar el registro del dispositivo en FCM antes de pedir el
+      // token a Expo.
+      //
+      // POST_NOTIFICATIONS y el registro FCM son cosas distintas y no van
+      // sincronizadas. Al actualizar o reinstalar la app, Android CONSERVA el
+      // permiso pero el registro FCM de esa instalacion queda sin inicializar:
+      // el codigo veia "granted", se saltaba la solicitud, y getExpoPushToken
+      // fallaba con SERVICE_NOT_AVAILABLE.
+      //
+      // Por eso el token solo aparecia tras "borrar datos": eso resetea el
+      // permiso, se muestra el dialogo, y ese flujo si inicializa el registro.
+      // Llamarlo explicitamente cubre el caso sin depender del dialogo.
+      if (Platform.OS === 'android') {
+        try {
+          if (!messaging().isDeviceRegisteredForRemoteMessages) {
+            await messaging().registerDeviceForRemoteMessages();
+          }
+        } catch (error) {
+          // No es fatal: puede que ya estuviera registrado. Se sigue adelante y
+          // el fallo real, si lo hay, saldra al pedir el token.
+        }
+      }
+
+      // Reintentos: SERVICE_NOT_AVAILABLE es un error transitorio de Google
+      // Play Services y Google lo documenta como reintentable. Observado en
+      // pruebas: el mismo dispositivo fallaba dos veces y funcionaba a la
+      // tercera en cuestion de segundos. Sin reintento, el usuario se queda sin
+      // notificaciones hasta que vuelva a iniciar sesion.
+      const esperar = (msDelay: number) => new Promise((r) => setTimeout(r, msDelay));
+      const ESPERAS_MS = [0, 2000, 8000, 30000];
+
       let token: string | undefined;
+      let ultimoError: unknown;
+
+      for (let intento = 0; intento < ESPERAS_MS.length; intento++) {
+        if (cancelled) return;
+        if (ESPERAS_MS[intento] > 0) {
+          await esperar(ESPERAS_MS[intento]);
+          if (cancelled) return;
+        }
+
+        try {
+          token = (await Notifications.getExpoPushTokenAsync({
+            projectId: '8bf6b071-622c-4428-a2f8-b83b95fa2d99',
+          })).data;
+          ultimoError = undefined;
+          break;
+        } catch (error) {
+          ultimoError = error;
+        }
+      }
+
       try {
-        token = (await Notifications.getExpoPushTokenAsync({
-          projectId: '8bf6b071-622c-4428-a2f8-b83b95fa2d99',
-        })).data;
+        if (ultimoError) throw ultimoError;
       } catch (error) {
         console.error(
           '[PUSH_REGISTER] Permiso concedido pero getExpoPushTokenAsync fallo (revisar credenciales APNs/FCM y projectId):',
           error,
         );
+        void authService.reportPushDiagnostic({
+          reason: 'error_obtener_token',
+          kind: 'expo',
+          platform: Platform.OS,
+          detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        });
         return;
       }
 
       if (!token) {
         console.warn('[PUSH_REGISTER] getExpoPushTokenAsync devolvio un token vacio.');
+        void authService.reportPushDiagnostic({
+          reason: 'token_vacio', kind: 'expo', platform: Platform.OS,
+        });
         return;
       }
 
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
 
       try {
         await authService.updatePushToken(user.id, token);
         console.log('[PUSH_REGISTER] Expo push token registrado:', token.substring(0, 25) + '...');
       } catch (error) {
-        console.error('[PUSH_REGISTER] El backend rechazo el Expo push token:', error);
+        void authService.reportPushDiagnostic({
+          reason: 'error_backend',
+          kind: 'expo',
+          platform: Platform.OS,
+          detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        });
       }
     };
     registerForPush().catch(e => {
@@ -415,15 +499,54 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
 
     // 3. Register for FCM Data Messages (Android VoIP)
     if (Platform.OS === 'android') {
-      messaging().getToken()
+      // Mismo tratamiento que la ruta Expo: asegurar el registro del
+      // dispositivo y reintentar ante SERVICE_NOT_AVAILABLE, que es
+      // transitorio. Comparten la misma causa raiz porque en Android el token
+      // de Expo se obtiene a traves de FCM.
+      const obtenerTokenFcm = async (): Promise<string> => {
+        const esperasFcm = [0, 2000, 8000, 30000];
+        let ultimo: unknown;
+
+        try {
+          if (!messaging().isDeviceRegisteredForRemoteMessages) {
+            await messaging().registerDeviceForRemoteMessages();
+          }
+        } catch {
+          // No fatal: si ya estaba registrado o falla, lo dira getToken().
+        }
+
+        for (let i = 0; i < esperasFcm.length; i++) {
+          if (cancelled) return '';
+          if (esperasFcm[i] > 0) {
+            await new Promise((r) => setTimeout(r, esperasFcm[i]));
+            if (cancelled) return '';
+          }
+          try {
+            return await messaging().getToken();
+          } catch (e) {
+            ultimo = e;
+          }
+        }
+        throw ultimo;
+      };
+
+      obtenerTokenFcm()
         .then(token => {
           console.log('✅ FCM Token generated:', token ? token.substring(0, 15) + '...' : 'null');
-          if (token && !cancelled) {
-            void authService.updateFcmToken(user.id, token).catch(console.error);
+          if (!token) return;
+          if (cancelled) {
+            return;
           }
+          void authService.updateFcmToken(user.id, token).catch(console.error);
         })
         .catch(error => {
           console.error('❌ Error getting FCM token:', error);
+          void authService.reportPushDiagnostic({
+            reason: 'fcm_error',
+            kind: 'fcm',
+            platform: Platform.OS,
+            detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+          });
         });
 
       // Listen for token refreshes

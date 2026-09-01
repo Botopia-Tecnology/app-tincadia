@@ -104,7 +104,10 @@ const options = {
   },
   android: {
     alertTitle: 'Permisos requeridos',
-    alertDescription: 'Tincadia necesita tu permiso para manejar llamadas entrantes.',
+    alertDescription:
+      'Tincadia necesita tu permiso para manejar llamadas entrantes. ' +
+      'Si no activas la cuenta de llamadas de Tincadia, no podrás recibir ' +
+      'llamadas cuando la aplicación esté en segundo plano o cerrada.',
     cancelButton: 'Cancelar',
     okButton: 'Aceptar',
     imageName: 'phone_account_icon',
