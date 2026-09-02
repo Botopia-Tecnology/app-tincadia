@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import RNCallKeep, { CONSTANTS } from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 import { DeviceEventEmitter } from 'react-native';
@@ -260,11 +260,23 @@ class CallKeepService {
     }
   }
 
-  /** Records a finished session under every identifier a later push may use. */
+  /**
+   * Marca una sesion como terminada, para que un push en vuelo no la reviva.
+   *
+   * Solo se marcan identificadores PROPIOS de esta llamada: el UUID nativo y el
+   * callSessionId. El conversationId y el roomName NO, porque se repiten en
+   * cada llamada de la misma conversacion (roomName es `conv_<conversationId>`).
+   *
+   * Marcarlos dejaba la conversacion entera bloqueada 90s: al colgar y volver a
+   * llamar enseguida, la segunda llamada se rechazaba sola. isEndedCall retira
+   * las lapidas cuando llega un callSessionId nuevo, pero si el contexto ya se
+   * habia limpiado ese id no llegaba y caia en la comprobacion por
+   * conversationId.
+   */
   private markCallEnded(nativeUUID: string, context?: NativeCallContext) {
     this.pruneEndedCallKeys();
     const now = Date.now();
-    [nativeUUID, context?.conversationId, context?.roomName, context?.callSessionId]
+    [nativeUUID, context?.callSessionId]
       .filter((value): value is string => typeof value === 'string' && value.length > 0)
       .forEach((value) => this.endedCallKeys.set(normalizeCallKey(value), now));
   }
@@ -871,6 +883,33 @@ class CallKeepService {
     } finally {
       this.clearNativeCallMemory();
     }
+  }
+
+  /**
+   * ¿Puede la app dibujar sobre otras apps? (Android)
+   *
+   * Ese permiso es lo que exime de las Background Activity Start Restrictions
+   * de Android 10+. Sin el, backToForeground() NO puede lanzar la app cuando
+   * el dispositivo esta desbloqueado y la app en segundo plano: el usuario se
+   * queda en la UI nativa y tiene que tocar la notificacion para entrar.
+   *
+   * Con la pantalla bloqueada si funciona, porque ahi se usa un FullScreenIntent,
+   * que Android permite sin restriccion. De ahi la asimetria observada.
+   *
+   * El permiso esta declarado en el manifest, pero eso solo lo hace solicitable:
+   * hay que concederlo a mano en Ajustes.
+   */
+  async puedeSuperponerse(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const modulo: any = NativeModules.RNCallKeep;
+      if (typeof modulo?.checkOverlayPermission === 'function') {
+        return Boolean(await modulo.checkOverlayPermission());
+      }
+    } catch {
+      // Si el modulo no lo expone, no se puede comprobar: no bloquear por ello.
+    }
+    return true;
   }
 
   setupVoipPush(onVoipToken?: (token: string) => void) {
