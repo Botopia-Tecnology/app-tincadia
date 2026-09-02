@@ -208,6 +208,19 @@ const SPEAKER_NAME_COLORS = [
  */
 const UNANSWERED_CALL_TIMEOUT_MS = 60_000;
 
+/**
+ * Tope para establecer la conexion con LiveKit.
+ *
+ * Los reintentos solo se disparan con onDisconnected u onError. Si el socket se
+ * queda colgando en silencio —red muy mala, un firewall que bloquea WebRTC— no
+ * llega ninguno de los dos eventos y la pantalla se quedaba cargando para
+ * siempre, sin error y sin salida.
+ *
+ * Por debajo de UNANSWERED_CALL_TIMEOUT_MS: si no se conecto en 20s, no va a
+ * conectar, y es mejor decirlo que dejar al usuario esperando un minuto.
+ */
+const CONNECTION_TIMEOUT_MS = 20_000;
+
 function colorForSpeakerName(name: string): string {
     const key = name.trim().toLowerCase() || '_';
     let h = 2166136261;
@@ -516,6 +529,23 @@ export const CallScreen = ({
             DeviceEventEmitter.emit('chat_sync_requested', conversationId);
         }
     }, [roomName, conversationId, callSessionId]);
+
+    // Red de seguridad: si en CONNECTION_TIMEOUT_MS no se establecio la
+    // conexion, se corta con un mensaje en vez de dejar la pantalla cargando.
+    // Solo actua en la conexion INICIAL: una vez conectado, las caidas
+    // posteriores las gestiona el reconector de LiveKit.
+    useEffect(() => {
+        if (isRoomConnected || connectionError || hasConnectedRef.current) return;
+        if (!token || !url) return;
+
+        const temporizador = setTimeout(() => {
+            if (hasConnectedRef.current || hasExitedRef.current) return;
+            console.warn('[CALL_DEBUG] Tiempo de conexión agotado sin respuesta de LiveKit.');
+            setConnectionError('La llamada tardó demasiado en conectar. Revisa tu conexión e intenta de nuevo.');
+        }, CONNECTION_TIMEOUT_MS);
+
+        return () => clearTimeout(temporizador);
+    }, [token, url, isRoomConnected, connectionError, roomRenderKey]);
 
     const handleRoomDisconnected = useCallback(() => {
         console.log('[CALL_DEBUG] LiveKit disconnected.', {
@@ -911,7 +941,13 @@ export const CallScreen = ({
                     }
                 }
             } catch (e) {
+                // Antes esto solo hacia console.error: si /calls/token fallaba
+                // (red, backend dormido, timeout) la pantalla se quedaba en el
+                // estado de carga indefinidamente, sin error ni salida.
                 console.error('Failed to setup call', e);
+                if (isMounted) {
+                    setConnectionError('No se pudo iniciar la llamada. Revisa tu conexión e intenta de nuevo.');
+                }
             }
         };
 
