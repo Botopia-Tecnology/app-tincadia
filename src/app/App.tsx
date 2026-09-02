@@ -13,7 +13,7 @@ import { chatService } from '../services/chat.service';
 import { useSubscription } from '../hooks/useSubscription';
 import { ScreenName, NavigationParams } from '../types/navigation.types';
 import { SplashScreen } from '../screens/SplashScreen';
-import { OverlayPermissionPrompt } from '../components/onboarding/OverlayPermissionPrompt';
+import { BatteryOptimizationPrompt } from '../components/onboarding/BatteryOptimizationPrompt';
 import { LoginScreen } from '../screens/LoginScreen';
 import { CompleteProfileScreen } from '../screens/CompleteProfileScreen';
 import { ChatsScreen } from '../screens/ChatsScreen';
@@ -250,10 +250,9 @@ function AppContent() {
 
   return (
     <>
-      {/* Se pide una sola vez, ya con sesion iniciada y perfil completo, para
-          que el usuario entienda para que sirve. Es omitible: sin el permiso
-          las llamadas siguen llegando. */}
-      <OverlayPermissionPrompt />
+      {/* Se pide una sola vez, ya con sesion iniciada y perfil completo.
+          Es el permiso que decide si las llamadas entran con la app cerrada. */}
+      <BatteryOptimizationPrompt />
 
       <AnimatedScreen key={underlyingScreen}>
         {underlyingScreen === 'chats' ? (

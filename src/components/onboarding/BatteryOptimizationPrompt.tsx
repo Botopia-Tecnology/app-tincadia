@@ -3,22 +3,26 @@ import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as IntentLauncher from 'expo-intent-launcher';
 
-const CLAVE_MOSTRADO = 'tincadia_overlay_prompt_visto';
+const CLAVE_MOSTRADO = 'tincadia_bateria_prompt_visto';
+const PAQUETE = 'com.tincadia.app';
 
 /**
- * Pide el permiso "Mostrar sobre otras apps" (SYSTEM_ALERT_WINDOW).
+ * Pide excluir a Tincadia de la optimizacion de bateria.
  *
- * Android no permite conceder este permiso con un dialogo: hay que abrir
- * Ajustes y activar un interruptor. Se usa MANAGE_APP_OVERLAY_PERMISSION para
- * caer directamente en la pantalla de Tincadia, de modo que el usuario solo
- * tenga que pulsar el interruptor.
+ * Es EL permiso que decide si las llamadas entran con la app cerrada. Android
+ * mata el proceso en segundo plano para ahorrar bateria, y entonces el push
+ * llega pero no hay proceso que lo atienda: la llamada no suena, o se queda a
+ * medias en la pantalla nativa.
  *
- * Sin este permiso las llamadas SIGUEN llegando: lo que falla es entrar directo
- * a la app al contestar con el telefono desbloqueado y la app en segundo plano
- * (Background Activity Start Restrictions de Android 10+). Por eso se puede
- * omitir y solo se muestra una vez.
+ * Verificado en dispositivo: al desactivar la restriccion de bateria, las
+ * llamadas entran correctamente incluso con la app completamente cerrada.
+ *
+ * A diferencia de SYSTEM_ALERT_WINDOW, este permiso SI se puede conceder con un
+ * dialogo del sistema (un si/no), siempre que
+ * REQUEST_IGNORE_BATTERY_OPTIMIZATIONS este declarado en el manifest. Solo si
+ * ese dialogo falla se recurre a la pantalla de Ajustes.
  */
-export function OverlayPermissionPrompt() {
+export function BatteryOptimizationPrompt() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -30,22 +34,14 @@ export function OverlayPermissionPrompt() {
       try {
         const yaMostrado = await AsyncStorage.getItem(CLAVE_MOSTRADO);
         if (yaMostrado === 'true' || cancelado) return;
-
-        // No se comprueba si el permiso ya esta concedido: SYSTEM_ALERT_WINDOW
-        // es un permiso especial y ni PermissionsAndroid ni CallKeep exponen una
-        // forma de consultarlo desde JS. Haria falta un modulo nativo con
-        // Settings.canDrawOverlays().
-        //
-        // Se muestra una sola vez y es omitible, asi que el coste de mostrarlo
-        // a quien ya lo tenga concedido es un aviso descartable, no un bloqueo.
         if (!cancelado) setVisible(true);
       } catch {
         // Si falla la lectura del flag, no se molesta al usuario.
       }
     };
 
-    // Pequeña espera para no competir con los dialogos de notificaciones y
-    // cuenta de llamadas, que salen al entrar.
+    // Espera para no competir con los dialogos de notificaciones y cuenta de
+    // llamadas, que salen al entrar.
     const t = setTimeout(comprobar, 2500);
     return () => {
       cancelado = true;
@@ -53,23 +49,30 @@ export function OverlayPermissionPrompt() {
     };
   }, []);
 
-  const cerrar = async () => {
-    setVisible(false);
+  const marcarVisto = async () => {
     await AsyncStorage.setItem(CLAVE_MOSTRADO, 'true').catch(() => undefined);
   };
 
-  const abrirAjustes = async () => {
-    await cerrar();
+  const omitir = async () => {
+    setVisible(false);
+    await marcarVisto();
+  };
+
+  const activar = async () => {
+    setVisible(false);
+    await marcarVisto();
+
     try {
+      // Dialogo del sistema: un si/no, sin salir de la app.
       await IntentLauncher.startActivityAsync(
-        'android.settings.MANAGE_APP_OVERLAY_PERMISSION' as IntentLauncher.ActivityAction,
-        { data: 'package:com.tincadia.app' },
+        'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' as IntentLauncher.ActivityAction,
+        { data: `package:${PAQUETE}` },
       );
     } catch {
-      // Algunos fabricantes no exponen la pantalla por app: se abre la general.
+      // Algunos fabricantes bloquean ese dialogo: se abre la lista de Ajustes.
       try {
         await IntentLauncher.startActivityAsync(
-          'android.settings.MANAGE_OVERLAY_PERMISSION' as IntentLauncher.ActivityAction,
+          'android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS' as IntentLauncher.ActivityAction,
         );
       } catch {
         // Sin pantalla disponible no hay nada mas que hacer.
@@ -80,26 +83,26 @@ export function OverlayPermissionPrompt() {
   if (!visible) return null;
 
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={cerrar}>
+    <Modal transparent animationType="fade" visible onRequestClose={omitir}>
       <View style={estilos.fondo}>
         <View style={estilos.tarjeta}>
-          <Text style={estilos.titulo}>Entra directo a tus llamadas</Text>
+          <Text style={estilos.titulo}>No te pierdas ninguna llamada</Text>
 
           <Text style={estilos.texto}>
-            Activa <Text style={estilos.negrita}>“Mostrar sobre otras apps”</Text> para
-            que Tincadia se abra sola al contestar una llamada.
+            Android puede cerrar Tincadia en segundo plano para ahorrar batería.
+            Si lo hace, <Text style={estilos.negrita}>las llamadas no te
+            entrarán</Text> cuando la app esté cerrada.
           </Text>
 
           <Text style={estilos.nota}>
-            Sin esto seguirás recibiendo las llamadas, pero tendrás que tocar la
-            notificación para entrar.
+            Toca Permitir en el aviso que aparecerá a continuación.
           </Text>
 
-          <TouchableOpacity style={estilos.botonPrincipal} onPress={abrirAjustes}>
-            <Text style={estilos.textoBotonPrincipal}>Activar</Text>
+          <TouchableOpacity style={estilos.botonPrincipal} onPress={activar}>
+            <Text style={estilos.textoBotonPrincipal}>Continuar</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={estilos.botonSecundario} onPress={cerrar}>
+          <TouchableOpacity style={estilos.botonSecundario} onPress={omitir}>
             <Text style={estilos.textoBotonSecundario}>Ahora no</Text>
           </TouchableOpacity>
         </View>
