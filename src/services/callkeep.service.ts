@@ -370,7 +370,14 @@ class CallKeepService {
     };
 
     this.nativeCallContexts.set(normalizeCallKey(nativeUUID), fullContext);
-    [nativeUUID, requestedUUID, fullContext.roomName, fullContext.conversationId]
+
+    // callSessionId incluido a proposito: es el UNICO identificador que
+    // comparten las dos vias de aviso (push FCM y broadcast de Supabase
+    // Realtime). Sin el, cada via podia resolver un UUID nativo distinto —el
+    // push trae nativeCallUUID y el broadcast a veces solo conversationId— y
+    // la guarda de duplicados no las reconocia como la misma llamada: sonaba
+    // dos veces, y ademas la segunda colgaba a la primera con endCall().
+    [nativeUUID, requestedUUID, fullContext.roomName, fullContext.conversationId, fullContext.callSessionId]
       .filter((value): value is string => typeof value === 'string' && value.length > 0)
       .forEach((alias) => this.nativeCallAliases.set(normalizeCallKey(alias), nativeUUID));
   }

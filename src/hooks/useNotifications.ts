@@ -760,7 +760,14 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
               const callUUID = data.nativeCallUUID || data.callUUID || data.uuid || data.roomName || data.conversationId;
               if (!callUUID) return;
 
-              const nativeCallUUID = callKeepService.resolveCallUUID(String(callUUID));
+              // Se resuelve primero por callSessionId: es el unico identificador
+              // que comparten esta via (broadcast de Realtime) y el push FCM.
+              // Sin esto cada una resolvia un UUID nativo distinto para la misma
+              // llamada, sonaba dos veces y la segunda colgaba a la primera.
+              const sessionId = getStringValue(data.callSessionId || data.call_session_id);
+              const nativeCallUUID = sessionId
+                ? callKeepService.resolveCallUUID(sessionId)
+                : callKeepService.resolveCallUUID(String(callUUID));
               if (activeIncomingCallRef.current === nativeCallUUID) {
                 console.log('[useNotifications] iOS fallback skipped: already ringing.');
                 return;
