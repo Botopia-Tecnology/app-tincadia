@@ -98,13 +98,15 @@ export function BatteryOptimizationPrompt() {
             Toca Permitir en el aviso que aparecerá a continuación.
           </Text>
 
-          <TouchableOpacity style={estilos.botonPrincipal} onPress={activar}>
-            <Text style={estilos.textoBotonPrincipal}>Continuar</Text>
-          </TouchableOpacity>
+          <View style={estilos.fila}>
+            <TouchableOpacity style={estilos.botonSecundario} onPress={omitir}>
+              <Text style={estilos.textoBotonSecundario}>Ahora no</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity style={estilos.botonSecundario} onPress={omitir}>
-            <Text style={estilos.textoBotonSecundario}>Ahora no</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={estilos.botonPrincipal} onPress={activar}>
+              <Text style={estilos.textoBotonPrincipal}>Continuar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -145,10 +147,18 @@ const estilos = StyleSheet.create({
     color: '#777',
     marginBottom: 20,
   },
+  // Fila de acciones: la confirmacion va a la derecha, como en el resto de la app.
+  fila: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+  },
   botonPrincipal: {
     backgroundColor: '#2E7D91',
     borderRadius: 10,
     paddingVertical: 13,
+    paddingHorizontal: 24,
     alignItems: 'center',
   },
   textoBotonPrincipal: {
@@ -158,8 +168,8 @@ const estilos = StyleSheet.create({
   },
   botonSecundario: {
     paddingVertical: 12,
+    paddingHorizontal: 16,
     alignItems: 'center',
-    marginTop: 4,
   },
   textoBotonSecundario: {
     color: '#666',
