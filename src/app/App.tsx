@@ -13,6 +13,7 @@ import { chatService } from '../services/chat.service';
 import { useSubscription } from '../hooks/useSubscription';
 import { ScreenName, NavigationParams } from '../types/navigation.types';
 import { SplashScreen } from '../screens/SplashScreen';
+import { OverlayPermissionPrompt } from '../components/onboarding/OverlayPermissionPrompt';
 import { LoginScreen } from '../screens/LoginScreen';
 import { CompleteProfileScreen } from '../screens/CompleteProfileScreen';
 import { ChatsScreen } from '../screens/ChatsScreen';
@@ -212,8 +213,12 @@ function AppContent() {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (isAuthenticated && profileComplete) {
+        // Atras se ignora durante la llamada. Sacar 'call' del stack no cerraba
+        // la sesion (callParams seguia con valor), asi que el bloque de
+        // CallScreen quedaba montado y con isManualPipMode=true: la llamada
+        // seguia viva detras del chat, sin mas rastro que la flecha de PiP en
+        // la esquina. Para salir esta colgar; para minimizar, onMinimize.
         if (currentScreen === 'call') {
-          setScreenStack(prev => prev.length > 1 ? prev.slice(0, -1) : ['chats']);
           return true;
         }
         if (screenStack.length > 1) {
@@ -245,6 +250,11 @@ function AppContent() {
 
   return (
     <>
+      {/* Se pide una sola vez, ya con sesion iniciada y perfil completo, para
+          que el usuario entienda para que sirve. Es omitible: sin el permiso
+          las llamadas siguen llegando. */}
+      <OverlayPermissionPrompt />
+
       <AnimatedScreen key={underlyingScreen}>
         {underlyingScreen === 'chats' ? (
           <ChatsScreen

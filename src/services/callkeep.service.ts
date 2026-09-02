@@ -1,4 +1,4 @@
-import { Platform, NativeModules } from 'react-native';
+import { Platform } from 'react-native';
 import RNCallKeep, { CONSTANTS } from 'react-native-callkeep';
 import VoipPushNotification from 'react-native-voip-push-notification';
 import { DeviceEventEmitter } from 'react-native';
@@ -883,33 +883,6 @@ class CallKeepService {
     } finally {
       this.clearNativeCallMemory();
     }
-  }
-
-  /**
-   * ¿Puede la app dibujar sobre otras apps? (Android)
-   *
-   * Ese permiso es lo que exime de las Background Activity Start Restrictions
-   * de Android 10+. Sin el, backToForeground() NO puede lanzar la app cuando
-   * el dispositivo esta desbloqueado y la app en segundo plano: el usuario se
-   * queda en la UI nativa y tiene que tocar la notificacion para entrar.
-   *
-   * Con la pantalla bloqueada si funciona, porque ahi se usa un FullScreenIntent,
-   * que Android permite sin restriccion. De ahi la asimetria observada.
-   *
-   * El permiso esta declarado en el manifest, pero eso solo lo hace solicitable:
-   * hay que concederlo a mano en Ajustes.
-   */
-  async puedeSuperponerse(): Promise<boolean> {
-    if (Platform.OS !== 'android') return true;
-    try {
-      const modulo: any = NativeModules.RNCallKeep;
-      if (typeof modulo?.checkOverlayPermission === 'function') {
-        return Boolean(await modulo.checkOverlayPermission());
-      }
-    } catch {
-      // Si el modulo no lo expone, no se puede comprobar: no bloquear por ello.
-    }
-    return true;
   }
 
   setupVoipPush(onVoipToken?: (token: string) => void) {
