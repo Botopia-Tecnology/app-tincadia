@@ -1113,13 +1113,43 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     if (!user) return;
 
     let cancelled = false;
-    void pendingCallActionStorage.get().then((pending) => {
+    const temporizadores: NodeJS.Timeout[] = [];
+
+    // Ventana durante la cual una accion pendiente sigue siendo valida. Pasado
+    // ese tiempo la llamada ya no existe y reproducirla seria abrir una sala
+    // muerta.
+    const VIGENCIA_ACCION_MS = 90_000;
+
+    const intentarAccionPendiente = async () => {
+      if (cancelled) return;
+      const pending = await pendingCallActionStorage.get();
       if (cancelled || !pending) return;
 
       const routing = resolveIncomingCallRouting(pending);
       if (!routing.roomName || !routing.conversationId) {
-        console.warn('[useNotifications] Dropping pending answer without call routing:', pending.callUUID);
-        void pendingCallActionStorage.clear();
+        // NO se descarta si la accion todavia es reciente.
+        //
+        // Antes se borraba aqui mismo, y esa era la unica pista que quedaba: en
+        // un arranque en frio este efecto puede correr antes de que el contexto
+        // de la llamada este disponible, asi que el usuario contestaba, la app
+        // abria, y la accion se descartaba para siempre sin navegar.
+        //
+        // Se conserva para que un render posterior —cuando el contexto ya se
+        // resuelva— pueda completarla. Solo se descarta si caduco.
+        const antiguedad = Date.now() - (pending.createdAt ?? 0);
+
+        if (antiguedad > VIGENCIA_ACCION_MS) {
+          console.warn(
+            '[useNotifications] Se descarta la accion pendiente por antigua:',
+            pending.callUUID,
+          );
+          void pendingCallActionStorage.clear();
+        } else {
+          console.warn(
+            '[useNotifications] Aun sin destino para la accion pendiente; se conserva para reintentar.',
+            { callUUID: pending.callUUID, antiguedadMs: antiguedad },
+          );
+        }
         return;
       }
 
@@ -1131,10 +1161,22 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
       }
       void pendingCallActionStorage.clear();
       navigateToAnsweredIncomingCall(routing);
+    };
+
+    void intentarAccionPendiente();
+
+    // Reintentos escalonados: en un arranque en frio el contexto de la llamada
+    // (CallState, metadatos locales) puede tardar en estar disponible. Sin esto
+    // el primer intento fallaba y no habia segunda oportunidad, asi que la app
+    // abria sin entrar a la llamada. Se cortan solos en cuanto la accion se
+    // consume o caduca.
+    [800, 2000, 4000].forEach((retraso) => {
+      temporizadores.push(setTimeout(() => void intentarAccionPendiente(), retraso));
     });
 
     return () => {
       cancelled = true;
+      temporizadores.forEach(clearTimeout);
     };
   }, [user, onNavigateToCall]);
 
