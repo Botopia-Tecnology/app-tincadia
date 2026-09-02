@@ -499,10 +499,12 @@ class CallKeepService {
     const fallbackConversationId = CallState.getIncomingCallConversationId(callUUID);
     CallState.clearIncomingCall(context?.conversationId || callUUID);
 
-    if (Platform.OS === 'android') {
-      RNCallKeep.backToForeground();
-    }
-
+    // Persistir ANTES de traer la app al frente.
+    //
+    // Con la app muerta, backToForeground provoca un arranque en frio que lee
+    // pendingCallActionStorage nada mas montar. Si se llamaba primero, se
+    // competia con esta escritura y el arranque podia encontrar el almacen
+    // vacio: la app abria sin saber a que llamada iba.
     await pendingCallActionStorage.set({
       type: 'answer',
       callUUID,
@@ -513,6 +515,10 @@ class CallKeepService {
       senderName: context?.senderName,
       createdAt: Date.now(),
     }).catch((error) => console.warn('[CallKeep] Could not persist pending answer action:', error));
+
+    if (Platform.OS === 'android') {
+      RNCallKeep.backToForeground();
+    }
 
     DeviceEventEmitter.emit('CallKeep_AnswerCall', {
       callUUID,

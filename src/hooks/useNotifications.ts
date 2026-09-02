@@ -928,27 +928,63 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
     const sub = DeviceEventEmitter.addListener('CallKeep_AnswerCall', ({ callUUID, roomName, conversationId, callSessionId }) => {
       const routing = resolveIncomingCallRouting({ callUUID, roomName, conversationId, callSessionId });
 
+      // Clear the reference before ending native UI so CallKeep_EndCall does not reject the call locally.
+      activeIncomingCallRef.current = null;
+
+      // ANDROID: retirar la UI nativa SIEMPRE, incluso si no se pudo resolver
+      // el destino.
+      //
+      // Antes esto vivia despues de un `return` temprano: cuando el contexto no
+      // se resolvia —lo habitual con la app en segundo plano o cerrada, porque
+      // todas las fuentes (getIncomingCallContext, CallState,
+      // getLatestLocalCallMetadata) son memoria del proceso y estan vacias— se
+      // salia sin cerrar nada y la pantalla nativa se quedaba colgada encima
+      // sin navegar a ningun sitio.
+      //
+      // En iOS no pasa porque CallKit retira su UI solo al contestar; ademas
+      // alli la llamada debe seguir viva (es lo que trae la app al frente y
+      // mantiene JS y el audio corriendo mientras LiveKit conecta).
+      if (Platform.OS === 'android') {
+        try {
+          callKeepService.endCallSilently(callUUID);
+        } catch (e) {
+          console.warn('Error terminando llamada nativa al contestar', e);
+        }
+      }
+
       if (!routing.roomName || !routing.conversationId) {
-        console.warn('[useNotifications] Refusing to navigate answered native call without canonical room context.', {
+        console.warn('[useNotifications] Sin contexto canonico para la llamada contestada; se intenta con la accion persistida.', {
           callUUID,
           roomName,
           conversationId,
           callSessionId,
           resolved: routing,
         });
+
+        // Respaldo persistente: callkeep.service guarda la accion en
+        // pendingCallActionStorage antes de emitir el evento, asi que sobrevive
+        // a que la app estuviera cerrada. Sin esto el usuario se quedaba mirando
+        // la pantalla nativa sin que pasara nada.
+        void pendingCallActionStorage.get().then((pendiente) => {
+          if (!pendiente || pendiente.type !== 'answer') return;
+
+          const respaldo = resolveIncomingCallRouting({
+            callUUID: pendiente.callUUID,
+            roomName: pendiente.roomName,
+            conversationId: pendiente.conversationId,
+            callSessionId: pendiente.callSessionId,
+          });
+
+          if (!respaldo.roomName || !respaldo.conversationId) {
+            console.warn('[useNotifications] La accion persistida tampoco resuelve el destino.');
+            return;
+          }
+
+          CallState.clearIncomingCall(respaldo.conversationId);
+          navigateToAnsweredIncomingCall(respaldo);
+          void pendingCallActionStorage.clear();
+        });
         return;
-      }
-
-      // Clear the reference before ending native UI so CallKeep_EndCall does not reject the call locally.
-      activeIncomingCallRef.current = null;
-
-      if (Platform.OS === 'android') {
-        // Android: backToForeground ya trajo la app al frente; la UI nativa sobra.
-        try {
-          callKeepService.endCallSilently(callUUID);
-        } catch (e) {
-          console.warn('Error terminando llamada nativa al contestar', e);
-        }
       }
       // iOS: la app no puede traerse al foreground por sí misma. La llamada
       // CallKit debe seguir viva tras contestar: es lo que hace que iOS abra la
