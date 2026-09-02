@@ -312,6 +312,38 @@ class CallKeepService {
   }
 
   /**
+   * Sesiones cuyo evento terminal llego ANTES que el aviso de llamada entrante.
+   *
+   * El caso: el emisor cuelga sin que el receptor haya contestado. El receptor
+   * nunca tuvo contexto de esa llamada, asi que no hay lapida que consultar
+   * —isEndedCall deja pasar cuando no encuentra el callSessionId—, y si el
+   * 'incoming_call' llega despues del 'call_ended', suena una llamada que ya
+   * termino.
+   *
+   * Aqui se anotan los identificadores de todo evento terminal recibido, exista
+   * o no una llamada local asociada, para poder rechazar un aviso posterior de
+   * la misma sesion.
+   */
+  private terminatedSessions: Map<string, number> = new Map();
+
+  private markSessionTerminated(identifiers: Array<string | undefined>) {
+    const now = Date.now();
+    for (const [key, at] of Array.from(this.terminatedSessions.entries())) {
+      if (now - at > CallKeepService.ENDED_CALL_TTL_MS) this.terminatedSessions.delete(key);
+    }
+    identifiers
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .forEach((value) => this.terminatedSessions.set(normalizeCallKey(value), now));
+  }
+
+  private isSessionTerminated(identifiers: Array<string | undefined>): boolean {
+    if (this.terminatedSessions.size === 0) return false;
+    return identifiers
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .some((value) => this.terminatedSessions.has(normalizeCallKey(value)));
+  }
+
+  /**
    * True when this payload belongs to a session already ended here.
    *
    * A genuine callback carries a fresh callSessionId, so it is cleared as a new
@@ -690,6 +722,15 @@ class CallKeepService {
       return resolvedUUID;
     }
 
+    // El evento terminal de esta sesion ya llego: el emisor colgo antes de que
+    // contestaramos. isEndedCall no lo detecta porque nunca hubo llamada local
+    // que dejara lapida —deja pasar cuando no encuentra el callSessionId—, asi
+    // que se comprueba aparte.
+    if (this.isSessionTerminated([uuid, resolvedUUID, context.callSessionId, context.conversationId, context.roomName])) {
+      console.log('[CallKeep] Ignoring displayIncomingCall: la sesión ya recibió su evento terminal:', resolvedUUID);
+      return resolvedUUID;
+    }
+
     const nativeUUID = Platform.OS === 'ios' && !UUID_REGEX.test(resolvedUUID) ? createUuid() : resolvedUUID;
     this.rememberNativeCall(nativeUUID, uuid, context);
     if (!this.canUseNativeUUID(nativeUUID, 'displayIncomingCall')) return nativeUUID;
@@ -727,6 +768,17 @@ class CallKeepService {
     );
 
     if (TERMINAL_CALL_NOTIFICATION_TYPES.has(notificationType)) {
+      // Se anota SIEMPRE, exista o no una llamada local: si el 'incoming_call'
+      // de esta misma sesion llega despues (el emisor colgo antes de que el
+      // receptor contestara), hay con que rechazarlo.
+      this.markSessionTerminated([
+        requestedUUID,
+        notification.originalCallUUID,
+        notification.callSessionId,
+        notification.conversationId,
+        notification.roomName,
+      ]);
+
       const terminalIds = Array.from(new Set([
         requestedUUID,
         notification.originalCallUUID,
