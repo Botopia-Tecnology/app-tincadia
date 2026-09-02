@@ -44,8 +44,12 @@ function asPayloadObject(value: unknown): Record<string, any> {
 
 const CALL_NOTIFICATION_TYPES = new Set(['call', 'incoming_call', 'call_ended', 'call_missed', 'call_rejected']);
 const TERMINAL_CALL_NOTIFICATION_TYPES = new Set(['call_ended', 'call_missed', 'call_rejected']);
-/** Matches the 30s cutoff the Android FCM handlers already apply to call pushes. */
-const STALE_CALL_PUSH_MS = 30_000;
+// Debe ser MENOR que el expiry del push VoIP en el servidor (8s para
+// 'incoming_call', ver chat-ms/notifications.service.ts). Con ambos en 30s la
+// guarda nunca llegaba a actuar: APNs podia retener el push 29s y entregarlo,
+// y el cliente lo aceptaba por no superar el umbral. El resultado era la
+// llamada entrante fantasma de ~2s tras colgar el emisor.
+const STALE_CALL_PUSH_MS = 10_000;
 /**
  * How long the native incoming banner stays up before it is dismissed as missed.
  *
