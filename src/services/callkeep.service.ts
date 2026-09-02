@@ -180,25 +180,55 @@ class CallKeepService {
     return normalizeCallKey(this.resolveCallUUID(uuid));
   }
 
+  /**
+   * Marca un colgado como interno, para que el evento nativo `endCall` que
+   * llegue despues NO se interprete como rechazo del usuario.
+   *
+   * Se registra bajo TODOS los identificadores conocidos de la llamada, no solo
+   * el UUID nativo resuelto. Motivo: quien llama a esto (endCallSilently)
+   * ejecuta forgetNativeCall justo despues, que borra los alias — y el evento
+   * nativo llega de forma asincrona, cuando ya no hay con que resolver. Si el
+   * fabricante devuelve el UUID en otro formato (el original en vez del nativo,
+   * o distinta capitalizacion), la supresion no se encontraba y el colgado para
+   * pasar a la llamada de la app se registraba como rechazo.
+   *
+   * Eso explicaba que fallara solo en algunos dispositivos: depende del UUID
+   * que devuelva cada capa de Android.
+   */
   private suppressEndCallOnce(uuid: string) {
     const nativeUUID = this.resolveCallUUID(uuid);
-    const key = normalizeCallKey(nativeUUID);
-    this.suppressedEndCallUUIDs.add(key);
+    const context = this.nativeCallContexts.get(normalizeCallKey(nativeUUID));
 
-    const previousTimer = this.suppressedEndCallTimers.get(key);
-    if (previousTimer) clearTimeout(previousTimer);
+    const claves = [uuid, nativeUUID, context?.conversationId, context?.roomName, context?.callSessionId]
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .map(normalizeCallKey);
 
-    const timer = setTimeout(() => {
-      this.suppressedEndCallUUIDs.delete(key);
-      this.suppressedEndCallTimers.delete(key);
-    }, 8000);
+    Array.from(new Set(claves)).forEach((key) => {
+      this.suppressedEndCallUUIDs.add(key);
 
-    this.suppressedEndCallTimers.set(key, timer);
+      const previousTimer = this.suppressedEndCallTimers.get(key);
+      if (previousTimer) clearTimeout(previousTimer);
+
+      const timer = setTimeout(() => {
+        this.suppressedEndCallUUIDs.delete(key);
+        this.suppressedEndCallTimers.delete(key);
+      }, 8000);
+
+      this.suppressedEndCallTimers.set(key, timer);
+    });
   }
 
   private consumeSuppressedEndCall(uuid: string) {
-    const key = this.getNativeUUIDKey(uuid);
-    if (!this.suppressedEndCallUUIDs.has(key)) return false;
+    // Se prueba tanto el UUID resuelto como el crudo: los alias pueden haberse
+    // borrado ya (forgetNativeCall) cuando llega el evento nativo, asi que
+    // resolver no siempre devuelve el mismo valor con el que se suprimio.
+    const candidatas = Array.from(new Set([
+      this.getNativeUUIDKey(uuid),
+      normalizeCallKey(uuid),
+    ]));
+
+    const key = candidatas.find((c) => this.suppressedEndCallUUIDs.has(c));
+    if (!key) return false;
 
     this.suppressedEndCallUUIDs.delete(key);
     const timer = this.suppressedEndCallTimers.get(key);
