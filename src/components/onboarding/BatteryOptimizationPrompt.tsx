@@ -86,16 +86,23 @@ export function BatteryOptimizationPrompt() {
     <Modal transparent animationType="fade" visible onRequestClose={omitir}>
       <View style={estilos.fondo}>
         <View style={estilos.tarjeta}>
-          <Text style={estilos.titulo}>No te pierdas ninguna llamada</Text>
+          <Text style={estilos.titulo}>Permite el uso en segundo plano</Text>
 
           <Text style={estilos.texto}>
-            Android puede cerrar Tincadia en segundo plano para ahorrar batería.
-            Si lo hace, <Text style={estilos.negrita}>las llamadas no te
-            entrarán</Text> cuando la app esté cerrada.
+            Para recibir llamadas con la app cerrada, Tincadia necesita
+            funcionar <Text style={estilos.negrita}>sin restricciones de
+            batería</Text>.
+          </Text>
+
+          <Text style={estilos.texto}>
+            En la pantalla que se abrirá, elige la opción{' '}
+            <Text style={estilos.negrita}>“Sin restricciones”</Text> o{' '}
+            <Text style={estilos.negrita}>“Permitir”</Text>.
           </Text>
 
           <Text style={estilos.nota}>
-            Toca Permitir en el aviso que aparecerá a continuación.
+            Según tu teléfono puede aparecer como “Sin restricciones”, “No
+            optimizar” o “Permitir actividad en segundo plano”.
           </Text>
 
           <View style={estilos.fila}>
