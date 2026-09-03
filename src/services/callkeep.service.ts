@@ -199,6 +199,11 @@ class CallKeepService {
     const nativeUUID = this.resolveCallUUID(uuid);
     const context = this.nativeCallContexts.get(normalizeCallKey(nativeUUID));
 
+    // Aqui SI se incluyen conversationId y roomName, al reves que en
+    // markSessionTerminated/markCallEnded: esto solo vive 8s y su unico fin es
+    // reconocer el evento nativo inmediato, que puede llegar con cualquiera de
+    // estos identificadores. La ventana es demasiado corta para estorbar a una
+    // rellamada.
     const claves = [uuid, nativeUUID, context?.conversationId, context?.roomName, context?.callSessionId]
       .filter((value): value is string => typeof value === 'string' && value.length > 0)
       .map(normalizeCallKey);
@@ -642,12 +647,14 @@ class CallKeepService {
     // llamada sigue en vuelo— no quedaba cubierto: el aviso llegaba, no
     // encontraba lapida y CallKit volvia a mostrar la llamada un par de
     // segundos hasta que el emisor procesaba el rechazo.
+    // Solo identificadores PROPIOS de esta llamada. conversationId y roomName
+    // NO: se repiten en cada llamada de la misma conversacion (roomName es
+    // `conv_<conversationId>`), asi que anotarlos bloqueaba la conversacion
+    // entera y la rellamada inmediata se colgaba sola.
     this.markSessionTerminated([
       callUUID,
       nativeUUID,
       context?.callSessionId,
-      context?.conversationId || fallbackConversationId,
-      context?.roomName,
     ]);
     // Covers the rejected-without-answering path too: the duplicate guard is
     // dropped here, before any of the returns below reach forgetNativeCall.
@@ -762,7 +769,7 @@ class CallKeepService {
     // contestaramos. isEndedCall no lo detecta porque nunca hubo llamada local
     // que dejara lapida —deja pasar cuando no encuentra el callSessionId—, asi
     // que se comprueba aparte.
-    if (this.isSessionTerminated([uuid, resolvedUUID, context.callSessionId, context.conversationId, context.roomName])) {
+    if (this.isSessionTerminated([uuid, resolvedUUID, context.callSessionId])) {
       console.log('[CallKeep] Ignoring displayIncomingCall: la sesión ya recibió su evento terminal:', resolvedUUID);
       return resolvedUUID;
     }
@@ -807,12 +814,11 @@ class CallKeepService {
       // Se anota SIEMPRE, exista o no una llamada local: si el 'incoming_call'
       // de esta misma sesion llega despues (el emisor colgo antes de que el
       // receptor contestara), hay con que rechazarlo.
+      // Mismo criterio: sin conversationId ni roomName, que se reutilizan.
       this.markSessionTerminated([
         requestedUUID,
         notification.originalCallUUID,
         notification.callSessionId,
-        notification.conversationId,
-        notification.roomName,
       ]);
 
       const terminalIds = Array.from(new Set([
