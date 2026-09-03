@@ -633,6 +633,22 @@ class CallKeepService {
       });
     CallState.clearIncomingCall(context?.conversationId || fallbackConversationId || callUUID);
     this.displayedNativeCallUUIDs.delete(nativeUUID);
+
+    // El propio usuario acaba de colgar: se anota la sesion como terminada para
+    // que un aviso posterior de ESTA MISMA llamada no vuelva a sonar.
+    //
+    // markSessionTerminated solo se alimentaba de eventos terminales ENTRANTES,
+    // asi que este caso —yo cuelgo y el emisor aun no lo sabe, su push de
+    // llamada sigue en vuelo— no quedaba cubierto: el aviso llegaba, no
+    // encontraba lapida y CallKit volvia a mostrar la llamada un par de
+    // segundos hasta que el emisor procesaba el rechazo.
+    this.markSessionTerminated([
+      callUUID,
+      nativeUUID,
+      context?.callSessionId,
+      context?.conversationId || fallbackConversationId,
+      context?.roomName,
+    ]);
     // Covers the rejected-without-answering path too: the duplicate guard is
     // dropped here, before any of the returns below reach forgetNativeCall.
     this.markCallEnded(nativeUUID, {
@@ -673,6 +689,26 @@ class CallKeepService {
       const rejectedRoomName = context?.roomName && !UUID_REGEX.test(context.roomName)
         ? context.roomName
         : `conv_${realConvId}`;
+
+      // El callSessionId identifica la llamada CONCRETA que se rechaza. Si no
+      // viaja, el emisor recibe un call_rejected que no puede asociar a su
+      // sesion activa y no lo aplica: su llamada sigue viva y el receptor
+      // vuelve a recibir el aviso, con el efecto de "cuelgo y me vuelve a
+      // llamar".
+      //
+      // context puede estar ya vacio al colgar, asi que se recupera del
+      // registro de sesiones antes de darlo por perdido.
+      const sesionRechazada =
+        context?.callSessionId ||
+        this.getNativeCallContext(this.resolveCallUUID(callUUID))?.callSessionId;
+
+      if (!sesionRechazada) {
+        console.warn(
+          '[CallKeep] call_rejected sin callSessionId: el emisor no podra asociarlo a su llamada.',
+          callUUID,
+        );
+      }
+
       console.log('[CallKeep] Sending call_rejected for conversation:', realConvId);
 
       const { chatService } = require('./chat.service');
@@ -683,7 +719,7 @@ class CallKeepService {
         type: 'call_rejected' as any,
         metadata: {
           roomName: rejectedRoomName,
-          callSessionId: context?.callSessionId,
+          callSessionId: sesionRechazada,
         },
       });
       console.log('[CallKeep] Successfully notified backend of native rejection.');
