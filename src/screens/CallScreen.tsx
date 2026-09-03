@@ -382,21 +382,8 @@ export const CallScreen = ({
     // ALGUIEN colgó, no que la llamada haya terminado para nosotros.
     const remoteHumansRef = useRef(0);
 
-    /**
-     * Si alguien llego a entrar a la sala, es decir, si la llamada se contesto.
-     *
-     * Viaja en el 'call_ended' como metadata.wasAnswered para que el backend
-     * sepa si ese terminal debe ir por VoIP a iOS. PushKit obliga a iOS a pintar
-     * la pantalla de llamada por cada push VoIP, asi que el terminal de una
-     * llamada ya contestada producia un banner fantasma de ~2s al colgar. Cuando
-     * cancela un timbre en curso si hace falta: cierra la pantalla que ya estaba
-     * sonando, incluso con la app cerrada, donde el broadcast realtime no llega.
-     */
-    const fueContestadaRef = useRef(false);
-
     const handleRemoteHumanCountChange = useCallback((count: number) => {
         remoteHumansRef.current = count;
-        if (count > 0) fueContestadaRef.current = true;
     }, []);
 
     useEffect(() => {
@@ -497,8 +484,6 @@ export const CallScreen = ({
                 metadata: {
                     roomName,
                     callSessionId,
-                    // Decide si este terminal viaja por VoIP a iOS; ver fueContestadaRef.
-                    wasAnswered: fueContestadaRef.current,
                 },
             }).catch(e => console.log('Could not send last-participant call_ended:', e));
         }
@@ -756,8 +741,6 @@ export const CallScreen = ({
                     metadata: {
                         roomName,
                         callSessionId,
-                        // Decide si este terminal viaja por VoIP a iOS; ver fueContestadaRef.
-                        wasAnswered: fueContestadaRef.current,
                     },
                 }).then(({ message: serverMsg }) => {
                     deleteMessage(tempId);
@@ -1687,14 +1670,6 @@ function ControlsView({
                 metadata: {
                     roomName,
                     callSessionId,
-                    // Decide si este terminal viaja por VoIP a iOS.
-                    //
-                    // Aqui cuelgo yo estando en la sala: si hay algun humano
-                    // remoto, la llamada se contesto y el otro ya esta en la
-                    // pantalla de llamada, asi que no necesita un push VoIP
-                    // —que en iOS pintaria un banner fantasma de ~2s—. Se
-                    // entera por LiveKit y por el broadcast realtime.
-                    wasAnswered: remainingHumans > 0,
                 },
             }).then(({ message: serverMsg }) => {
                 deleteMessage(tempId);

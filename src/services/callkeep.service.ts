@@ -423,35 +423,6 @@ class CallKeepService {
     CallState.clearAllIncomingCalls();
   }
 
-  /**
-   * Cierra YA la llamada que iOS pinto sola, sin esperar a ensureReady().
-   *
-   * En iOS el fantasma no se puede evitar: PushKit obliga a reportar una
-   * llamada a CallKit por cada push VoIP —Apple mata la app si no— asi que el
-   * sistema muestra la pantalla ANTES de que corra una sola linea de JS. Lo
-   * unico que se puede hacer es cerrarla cuanto antes.
-   *
-   * ensureReady() inicializa CallKeep entero y en arranque en frio tarda
-   * segundos: esperarlo era buena parte de los ~2s que el fantasma queda
-   * visible. Aqui se intenta el cierre directo primero y solo se recurre a la
-   * ruta lenta si falla.
-   *
-   * Android no necesita esto: FCM entrega el dato a JS y el codigo decide si
-   * pinta la llamada, asi que puede descartarla antes de que se vea.
-   */
-  private cerrarFantasmaYa(uuid: string, reason: number) {
-    const nativeUUID = this.resolveCallUUID(uuid);
-    if (!this.canUseNativeUUID(nativeUUID, 'cerrarFantasmaYa')) return false;
-    try {
-      this.suppressEndCallOnce(nativeUUID);
-      RNCallKeep.reportEndCallWithUUID(nativeUUID, reason);
-      this.forgetNativeCall(nativeUUID);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   private reportCallEndedSilently(uuid: string, reason: number) {
     const nativeUUID = this.resolveCallUUID(uuid);
     if (!this.canUseNativeUUID(nativeUUID, 'reportEndCallWithUUID')) return;
@@ -898,10 +869,8 @@ class CallKeepService {
     if (Number.isFinite(sentAt) && sentAt > 0 && Date.now() - sentAt > STALE_CALL_PUSH_MS) {
       console.log('[CallKeep] Dropping stale incoming call push (delayed by OS):', requestedUUID);
       if (options.nativeAlreadyDisplayed) {
-        if (!this.cerrarFantasmaYa(requestedUUID, CONSTANTS.END_CALL_REASONS.MISSED)) {
-          await this.ensureReady();
-          this.reportCallEndedSilently(requestedUUID, CONSTANTS.END_CALL_REASONS.MISSED);
-        }
+        await this.ensureReady();
+        this.reportCallEndedSilently(requestedUUID, CONSTANTS.END_CALL_REASONS.MISSED);
       }
       if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
         VoipPushNotification.onVoipNotificationCompleted(completionUUID);
@@ -920,10 +889,8 @@ class CallKeepService {
       if (options.nativeAlreadyDisplayed) {
         // iOS requires every VoIP push to report a call, so the banner CallKit
         // already showed must be ended explicitly rather than just ignored.
-        if (!this.cerrarFantasmaYa(requestedUUID, CONSTANTS.END_CALL_REASONS.REMOTE_ENDED)) {
-          await this.ensureReady();
-          this.reportCallEndedSilently(requestedUUID, CONSTANTS.END_CALL_REASONS.REMOTE_ENDED);
-        }
+        await this.ensureReady();
+        this.reportCallEndedSilently(requestedUUID, CONSTANTS.END_CALL_REASONS.REMOTE_ENDED);
       }
       if (completionUUID && typeof VoipPushNotification.onVoipNotificationCompleted === 'function') {
         VoipPushNotification.onVoipNotificationCompleted(completionUUID);
