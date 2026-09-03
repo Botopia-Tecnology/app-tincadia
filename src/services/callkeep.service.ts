@@ -355,6 +355,11 @@ class CallKeepService {
    * session rather than matched — blocking those would turn this fix into a
    * worse bug (unable to call back after hanging up).
    */
+  // NOTA: markCallEnded solo guarda nativeUUID y callSessionId, asi que los
+  // conversationId/roomName que algunos llamadores pasan en `identifiers` nunca
+  // llegan a coincidir. Se mantienen por si alguna vez vuelven a registrarse,
+  // pero hoy la deteccion real se apoya en esos dos. No confiar en ellos para
+  // ampliar la cobertura sin tocar tambien markCallEnded.
   private isEndedCall(identifiers: Array<string | undefined>, callSessionId?: string): boolean {
     this.pruneEndedCallKeys();
     if (this.endedCallKeys.size === 0) return false;
