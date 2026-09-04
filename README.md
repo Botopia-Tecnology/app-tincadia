@@ -1,200 +1,131 @@
 # App Tincadia
 
-Aplicación móvil de Tincadia construida con React Native y Expo. Plataforma de tecnología inclusiva que conecta a personas sordas, oyentes y organizaciones mediante soluciones accesibles, inteligencia artificial y herramientas de comunicación.
+Aplicación móvil de Tincadia, plataforma de tecnología inclusiva que conecta a personas sordas, oyentes y organizaciones. Construida con React Native y Expo.
 
-## Requisitos Previos
+Ofrece chat, videollamadas con intérprete, tablero de comunicación, contactos de emergencia y reconocimiento de lengua de señas colombiana (LSC).
 
-Antes de comenzar, asegúrate de tener instalado:
+## Requisitos previos
 
-- [Node.js](https://nodejs.org/) (versión 18 o superior)
-- [Bun](https://bun.sh/) (gestor de paquetes recomendado)
-- [Expo CLI](https://docs.expo.dev/get-started/installation/) (opcional, se instala automáticamente)
+- [Node.js](https://nodejs.org/) 18 o superior
+- [Bun](https://bun.sh/) (gestor de paquetes del proyecto)
+- Android Studio (para Android) o Xcode y macOS (para iOS)
+- Una cuenta de [Expo](https://expo.dev/) con acceso al proyecto, para compilar con EAS
 
-## Instalación
+## Esta app no corre en Expo Go
 
-1. Clona el repositorio:
-```bash
-git clone <url-del-repositorio>
-cd app-tincadia
-```
+Usa módulos nativos que Expo Go no incluye: CallKeep para la interfaz nativa de llamadas, Firebase Messaging, LiveKit y push VoIP. Hace falta un **development build**.
 
-2. Instala las dependencias:
 ```bash
 bun install
+bun run android     # compila e instala en Android
+bun run ios         # compila e instala en iOS (requiere macOS)
 ```
 
-## Ejecutar el Proyecto
-
-### Modo Desarrollo
-
-Para ejecutar el servidor de desarrollo:
+Con el build ya instalado en el dispositivo, para el día a día basta con levantar el servidor:
 
 ```bash
 bun start
 ```
 
-Luego puedes:
-- Presionar `a` para abrir en Android
-- Presionar `i` para abrir en iOS (requiere macOS)
-- Presionar `w` para abrir en web
-- Escanear el código QR con la app Expo Go en tu dispositivo móvil
+Después de tocar `app.json`, un config plugin o una dependencia nativa hay que **recompilar**; recargar el JS no alcanza.
 
-### Ejecutar en Plataformas Específicas
+## Scripts
 
-```bash
-# Android
-bun run android
+| Comando | Qué hace |
+|---|---|
+| `bun start` | Servidor de desarrollo de Expo |
+| `bun run android` | Compila e instala en Android |
+| `bun run ios` | Compila e instala en iOS (macOS) |
+| `bun run lint` | ESLint |
+| `bun run type-check` | Comprobación de tipos (`tsc --noEmit`) |
 
-# iOS (requiere macOS)
-bun run ios
+`postinstall` ejecuta `patch-package`: hay parches sobre `react-native-callkeep` y `@react-native-voice/voice` en `patches/`. Si borras `node_modules`, se reaplican solos.
 
-# Web
-bun run web
-```
-
-### Linting
-
-Para ejecutar el linter y verificar el código:
-
-```bash
-bun run lint
-```
-
-### Type Checking
-
-Para verificar los tipos de TypeScript:
-
-```bash
-bun run type-check
-```
-
-## Scripts Disponibles
-
-- `bun start` - Inicia el servidor de desarrollo de Expo
-- `bun run android` - Inicia la app en Android
-- `bun run ios` - Inicia la app en iOS (requiere macOS)
-- `bun run web` - Inicia la app en el navegador web
-- `bun run lint` - Ejecuta el linter para verificar el código
-- `bun run type-check` - Verifica los tipos de TypeScript
-
-## Estructura del Proyecto
+## Estructura
 
 ```
 app-tincadia/
 ├── src/
-│   ├── app/           # Componente principal de la aplicación
-│   ├── components/    # Componentes reutilizables
-│   ├── contexts/      # Contextos de React (i18n, etc.)
-│   ├── features/     # Funcionalidades específicas
-│   ├── hooks/         # Hooks personalizados
-│   ├── lib/           # Utilidades y helpers
-│   ├── locales/       # Archivos de traducción (i18n)
-│   └── types/         # Tipos de TypeScript
-├── assets/            # Imágenes, fuentes, etc.
-├── app.json           # Configuración de Expo
-├── babel.config.js    # Configuración de Babel
-├── tsconfig.json      # Configuración de TypeScript
-└── package.json       # Dependencias y scripts
+│   ├── app/          # Navegación y punto de entrada
+│   ├── components/   # Componentes reutilizables
+│   ├── contexts/     # Contextos de React (i18n, sesión…)
+│   ├── database/     # SQLite local (caché de chat)
+│   ├── hooks/        # Hooks propios
+│   ├── lib/          # Utilidades, almacenamiento seguro, estado de llamada
+│   ├── locales/      # Traducciones (es, en, pt)
+│   ├── screens/      # Pantallas
+│   ├── services/     # Clientes de API y servicios nativos
+│   └── types/
+├── plugins/          # Config plugins de Expo (código nativo)
+├── patches/          # Parches de dependencias (patch-package)
+└── app.json          # Configuración de Expo
 ```
 
-## Tecnologías Utilizadas
+### Config plugins
 
-- **Expo** - Framework para desarrollo de aplicaciones React Native
-- **React Native** - Framework para construir aplicaciones móviles nativas
-- **TypeScript** - Superset tipado de JavaScript
-- **Bun** - Gestor de paquetes rápido
-- **ESLint** - Linter para mantener calidad de código
-- **AsyncStorage** - Almacenamiento local para React Native
+En `plugins/` hay modificaciones del proyecto nativo que se aplican al compilar. Se declaran en `app.json` y **solo tienen efecto tras recompilar**:
 
-## Características
+| Plugin | Para qué |
+|---|---|
+| `withVoipAppDelegate` | Registra PushKit en el `AppDelegate` de iOS |
+| `withFirebaseManifestFix` | Ajusta el manifiesto de Android para Firebase |
+| `withModularHeaders` | Modular headers en el Podfile de iOS |
+| `withPictureInPicture` | Picture-in-picture en llamadas |
+| `withProguardRules` | Reglas de ProGuard en release de Android |
+| `withTabletSupport` | Soporte de tablets |
 
-### Internacionalización (i18n)
+## Llamadas y notificaciones
 
-El proyecto incluye soporte para múltiples idiomas (español, inglés, portugués) mediante el contexto `I18nProvider`. El idioma seleccionado se guarda automáticamente en AsyncStorage.
+La parte más delicada del proyecto. Dos plataformas con contratos distintos:
 
-**Uso:**
+### iOS: PushKit obliga a mostrar la llamada
+
+Apple **exige** reportar una llamada a CallKit por cada push VoIP recibido, o mata la app. La pantalla de llamada se pinta **antes de que corra una sola línea de JS**, así que desde el cliente no se puede evitar que aparezca: solo cerrarla después.
+
+De ahí que un push VoIP indebido produzca un "banner fantasma" de un par de segundos. La corrección real es **no enviar ese push** desde el backend, no filtrarlo aquí.
+
+### Android: la optimización de batería mata el proceso
+
+Si el sistema tiene restricciones de batería activas sobre la app, el proceso muere en segundo plano y las llamadas no entran. No es un problema de código, y por eso el onboarding pide desactivarlas.
+
+A diferencia de iOS, FCM entrega los datos a JS sin pintar nada, así que aquí el código sí decide si muestra la llamada.
+
+### Puntos de entrada
+
+- `src/services/callkeep.service.ts` — interfaz nativa de llamadas, push VoIP y guardas contra pushes obsoletos o duplicados
+- `src/hooks/useNotifications.ts` — registro de tokens (FCM, VoIP, Expo), reintentos y diagnóstico remoto
+- `src/screens/CallScreen.tsx` — sala de LiveKit, participantes y eventos terminales
+
+## Internacionalización
+
+Español, inglés y portugués en `src/locales/`. El idioma se guarda en AsyncStorage.
+
 ```typescript
 import { useTranslation } from '@/hooks/useTranslation';
 
-function MyComponent() {
-  const { t, locale, setLocale } = useTranslation();
-  
-  return (
-    <Text>{t('common.loading')}</Text>
-  );
-}
+const { t, locale, setLocale } = useTranslation();
+t('common.loading');
 ```
 
-### Path Aliases
+Para añadir una traducción, edítala en los **tres** archivos (`es.json`, `en.json`, `pt.json`) usando notación de punto.
 
-El proyecto usa path aliases para importaciones más limpias:
+## Convenciones
 
-```typescript
-// En lugar de:
-import { useTranslation } from '../../../hooks/useTranslation';
+- Path alias `@/` hacia `src/`
+- Componentes en `PascalCase`, hooks en `camelCase` con prefijo `use`
+- TypeScript en modo estricto
 
-// Puedes usar:
-import { useTranslation } from '@/hooks/useTranslation';
+## Compilación y publicación
+
+Con [EAS Build](https://docs.expo.dev/build/introduction/), según los perfiles de `eas.json`:
+
+```bash
+eas build --platform ios --profile production
+eas build --platform android --profile preview
 ```
 
-### Utilidades
-
-El proyecto incluye utilidades comunes en `src/lib/utils.ts`:
-- `combineStyles()` - Combina estilos de React Native
-- `formatCurrency()` - Formatea números como moneda colombiana
-- `isValidEmail()` - Valida formato de email
-- `isValidPhone()` - Valida formato de teléfono colombiano
-- `truncateText()` - Trunca texto a una longitud máxima
-
-## Buenas Prácticas
-
-Este proyecto sigue las mismas buenas prácticas implementadas en `tincadia-frontend`:
-
-- ✅ TypeScript con configuración estricta
-- ✅ ESLint configurado
-- ✅ Estructura de carpetas organizada
-- ✅ Path aliases para imports
-- ✅ Internacionalización (i18n)
-- ✅ Hooks personalizados
-- ✅ Tipos TypeScript bien definidos
-
-## Desarrollo
-
-### Agregar Nuevas Traducciones
-
-1. Edita los archivos en `src/locales/` (es.json, en.json, pt.json)
-2. Usa la notación de punto para estructuras anidadas:
-```json
-{
-  "miSeccion": {
-    "miClave": "Mi traducción"
-  }
-}
-```
-
-3. Usa las traducciones en tu código:
-```typescript
-const { t } = useTranslation();
-const text = t('miSeccion.miClave');
-```
-
-### Crear Nuevos Componentes
-
-Los componentes deben ir en `src/components/` y seguir la convención de nombres en PascalCase.
-
-### Crear Nuevos Hooks
-
-Los hooks personalizados deben ir en `src/hooks/` y seguir la convención de nombres en camelCase con prefijo `use`.
-
-## Learn More
-
-Para aprender más sobre las tecnologías utilizadas:
-
-- [Expo Documentation](https://docs.expo.dev/) - Documentación oficial de Expo
-- [React Native Documentation](https://reactnative.dev/) - Documentación oficial de React Native
-- [TypeScript Documentation](https://www.typescriptlang.org/docs/) - Documentación oficial de TypeScript
+No hay OTA (`expo-updates` no está instalado): **cualquier cambio, incluso de solo JS, necesita un build nuevo**.
 
 ## Licencia
 
-Este proyecto es privado y propiedad de Tincadia.
-
+Privado — Tincadia.
