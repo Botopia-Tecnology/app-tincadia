@@ -18,8 +18,30 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const MAX_DURATION_SEC = 60;
 const CIRCLE_SIZE = 300;
-/** Proporción típica del sensor en vertical (ancho:alto = 3:4). */
+/**
+ * Proporcion del sensor en vertical (ancho:alto = 3:4).
+ *
+ * Debe coincidir con CAMERA_RATIO: previewCoverStyle dimensiona la caja del
+ * preview con este valor, asi que si el sensor entrega otra proporcion la
+ * imagen se recorta y el video sale deformado o descuadrado.
+ */
 const CAMERA_ASPECT = 3 / 4;
+/**
+ * Proporcion que se le pide al sensor. Solo tiene efecto en Android.
+ *
+ * Sin esto cada fabricante elegia la suya —muchos equipos entregan 9:16 o
+ * 16:9—, mientras el codigo asumia 3:4 para todos. El cuadro real quedaba mas
+ * grande que el circulo, y el auto-exposure media la escena sobre zonas que el
+ * usuario nunca ve (techo, ventana, lampara): al detectar esa luz de mas
+ * bajaba la exposicion y la cara del centro salia oscura. Por eso la nota se
+ * veia mas oscura en unos modelos que en otros.
+ *
+ * Fijando la proporcion, el sensor entrega lo que el circulo muestra y la
+ * medicion se hace sobre eso. No elimina el contraluz —eso lo decide el
+ * algoritmo del fabricante, y expo-camera 17 no expone `exposure`—, pero si
+ * quita la parte del problema que era del codigo.
+ */
+const CAMERA_RATIO = '4:3' as const;
 
 /** Caja del preview más alta que el círculo para cubrir sin deformar. */
 const previewCoverStyle = {
@@ -223,6 +245,7 @@ export function VideoNoteRecorder({ visible, onClose, onSend }: Props) {
                 facing={facing}
                 flash={flash}
                 mode="video"
+                ratio={CAMERA_RATIO}
                 mirror={facing === 'front'}
               />
             ) : (
