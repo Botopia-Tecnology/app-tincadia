@@ -69,6 +69,25 @@
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
         }
 
+        #hand-hint {
+            margin-top: 50px;
+            padding: 10px 16px;
+            max-width: 260px;
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #FFF;
+            font-size: 14px;
+            line-height: 1.35;
+            text-align: center;
+            backdrop-filter: blur(4px);
+            transition: opacity 0.25s ease;
+        }
+
+        #hand-hint.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
         .prediction-box {
             position: absolute;
             bottom: 40px;
@@ -124,9 +143,12 @@
                 <span class="status-text" id="status-text">Desconectado</span>
             </div>
             <div id="error-msg"></div>
-            <div id="debug-info"
-                style="color: yellow; font-size: 10px; background: rgba(0,0,0,0.5); padding: 5px; margin-top: 50px;">
-                Waiting for data...</div>
+            <!-- Ocupa el sitio del antiguo #debug-info (Socket ID en amarillo),
+                 que era informacion de desarrollo y no debia llegar a produccion.
+                 Ahora guia al usuario: mientras no haya manos en cuadro no se
+                 envia nada al backend, asi que sin este aviso la pantalla parece
+                 congelada. -->
+            <div id="hand-hint">Coloca una mano frente a la cámara para empezar</div>
         </div>
 
         <div id="prediction-container" class="prediction-box" style="display: none;">
@@ -162,9 +184,6 @@
             const urlParams = new URLSearchParams(window.location.search);
             const apiUrl = urlParams.get('apiUrl') || 'http://localhost:3001';
             
-            // Debug: show URL being used
-            const debugEl = document.getElementById('debug-info');
-            if (debugEl) debugEl.innerText = `Connecting to: ${apiUrl}`;
             statusText.innerText = `Conectando a ${apiUrl}...`;
 
             // Connect to root namespace (default) which matches Gateway config
@@ -175,21 +194,18 @@
             });
 
             socket.on('connect', () => {
-                if (debugEl) debugEl.innerText = `Connected! Socket ID: ${socket.id}`;
                 statusDot.classList.add('connected');
                 statusText.innerText = 'Conectado - Listo para señas';
                 sendToRN('status', 'connected');
             });
 
             socket.on('disconnect', (reason) => {
-                if (debugEl) debugEl.innerText = `Disconnected: ${reason}`;
                 statusDot.classList.remove('connected');
                 statusText.innerText = 'Desconectado';
                 sendToRN('status', 'disconnected');
             });
 
             socket.on('connect_error', (err) => {
-                if (debugEl) debugEl.innerText = `Connection error: ${err.message}`;
                 statusText.innerText = `Error: ${err.message}`;
                 sendToRN('error', err.message);
             });
@@ -206,10 +222,6 @@
 
         // --- Prediction Handling ---
         function handlePrediction(data) {
-            // Debug output
-            const debugEl = document.getElementById('debug-info');
-            if (debugEl) debugEl.innerText = `Last: ${JSON.stringify(data)}`;
-
             // data: { word: string | null, confidence: number, status: string }
             if (data.word && data.confidence > 0.4) {
                 // If we already confirmed a word, don't show new ones until reset
@@ -300,12 +312,20 @@
             return flipCanvas;
         }
 
+        /** Aviso de "pon una mano": visible solo mientras no se detecte ninguna. */
+        function setHandHint(visible) {
+            const hint = document.getElementById('hand-hint');
+            if (hint) hint.classList.toggle('hidden', !visible);
+        }
+
         function onResults(results) {
             if (!socket || !socket.connected) return;
 
             // PRUEBA: no enviar frames sin manos. Antes se mandaban 126 ceros que
             // igual pasaban por la red y ensuciaban el prediction_buffer del backend.
-            if (!results.leftHandLandmarks && !results.rightHandLandmarks) return;
+            const hayManos = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
+            setHandHint(!hayManos);
+            if (!hayManos) return;
 
             const landmarks = extractLandmarks(results);
             if (landmarks && landmarks.length === 226) {
