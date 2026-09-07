@@ -375,9 +375,15 @@
                 holistic.onResults(onResults);
 
                 // 2. Start Camera
-                // PRUEBA: 480x640 (retrato) para que coincida con el aspecto del
-                // preview en movil. Con 640x480 + object-fit:cover se recortaban
-                // los hombros, que es justo lo que mide _check_distance en backend.
+                // 640x480 (apaisado), como estaba antes de 9282e07.
+                //
+                // Aquel commit lo cambio a 480x640 (retrato) buscando que no se
+                // recortaran los hombros con object-fit:cover. El efecto real fue
+                // el contrario de lo buscado: en retrato el stream ya llena la
+                // altura del contenedor, asi que no se escala y la imagen queda
+                // demasiado cerca. En apaisado el video se escala para cubrir esa
+                // altura y el encuadre sale mas abierto, que es el que el modelo
+                // espera.
                 camera = new Camera(videoElement, {
                     onFrame: async () => {
                         // PRUEBA: des-espejar el frame antes de enviarlo.
@@ -387,8 +393,8 @@
                         const src = getUnmirroredFrame(videoElement);
                         await holistic.send({ image: src });
                     },
-                    width: 480,
-                    height: 640
+                    width: 640,
+                    height: 480
                 });
 
                 await camera.start();
