@@ -69,23 +69,54 @@
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
         }
 
+        /* Centrado en la pantalla, no colgando de la esquina del overlay:
+           es el unico mensaje visible al entrar y ahi no compite con el
+           indicador de conexion. Comparte el lenguaje visual de
+           .prediction-box (indigo, blur, bordes suaves). */
         #hand-hint {
-            margin-top: 50px;
-            padding: 10px 16px;
-            max-width: 260px;
-            border-radius: 10px;
-            background: rgba(0, 0, 0, 0.6);
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 22px;
+            max-width: 300px;
+            border-radius: 16px;
+            background: rgba(17, 17, 17, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(10px);
             color: #FFF;
-            font-size: 14px;
-            line-height: 1.35;
-            text-align: center;
-            backdrop-filter: blur(4px);
-            transition: opacity 0.25s ease;
+            font-size: 15px;
+            line-height: 1.4;
+            text-align: left;
+            opacity: 1;
+            transition: opacity 0.35s ease, transform 0.35s ease;
         }
 
+        /* La mano late despacio para sugerir el gesto sin distraer. */
+        #hand-hint .hint-icon {
+            font-size: 26px;
+            flex-shrink: 0;
+            animation: hint-pulse 1.8s ease-in-out infinite;
+        }
+
+        @keyframes hint-pulse {
+            0%, 100% { transform: scale(1); }
+            50%      { transform: scale(1.14); }
+        }
+
+        /* Se desvanece hacia arriba en vez de cortarse en seco. */
         #hand-hint.hidden {
             opacity: 0;
+            transform: translate(-50%, calc(-50% - 10px));
             pointer-events: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #hand-hint .hint-icon { animation: none; }
         }
 
         .prediction-box {
@@ -143,12 +174,15 @@
                 <span class="status-text" id="status-text">Desconectado</span>
             </div>
             <div id="error-msg"></div>
-            <!-- Ocupa el sitio del antiguo #debug-info (Socket ID en amarillo),
-                 que era informacion de desarrollo y no debia llegar a produccion.
-                 Ahora guia al usuario: mientras no haya manos en cuadro no se
+            <!-- Sustituye al antiguo #debug-info (Socket ID en amarillo), que era
+                 informacion de desarrollo y no debia llegar a produccion.
+                 Solo se muestra al entrar: mientras no haya manos en cuadro no se
                  envia nada al backend, asi que sin este aviso la pantalla parece
-                 congelada. -->
-            <div id="hand-hint">Coloca una mano frente a la cámara para empezar</div>
+                 congelada. Una vez detectada la primera mano no vuelve a salir. -->
+            <div id="hand-hint">
+                <span class="hint-icon">✋</span>
+                <span>Coloca una mano frente a la cámara para empezar</span>
+            </div>
         </div>
 
         <div id="prediction-container" class="prediction-box" style="display: none;">
@@ -312,10 +346,23 @@
             return flipCanvas;
         }
 
-        /** Aviso de "pon una mano": visible solo mientras no se detecte ninguna. */
-        function setHandHint(visible) {
+        /**
+         * El aviso solo guia el arranque, asi que se retira con la primera mano
+         * y no vuelve. Reaparecer cada vez que las manos salen del encuadre
+         * seria ruido: entre sena y sena eso pasa continuamente.
+         */
+        let handHintDismissed = false;
+
+        function dismissHandHint() {
+            if (handHintDismissed) return;
+            handHintDismissed = true;
+
             const hint = document.getElementById('hand-hint');
-            if (hint) hint.classList.toggle('hidden', !visible);
+            if (!hint) return;
+            hint.classList.add('hidden');
+            // Fuera del arbol al acabar la transicion, para que no quede un
+            // elemento invisible sobre el video.
+            setTimeout(() => hint.remove(), 400);
         }
 
         function onResults(results) {
@@ -323,9 +370,9 @@
 
             // PRUEBA: no enviar frames sin manos. Antes se mandaban 126 ceros que
             // igual pasaban por la red y ensuciaban el prediction_buffer del backend.
-            const hayManos = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
-            setHandHint(!hayManos);
-            if (!hayManos) return;
+            if (!results.leftHandLandmarks && !results.rightHandLandmarks) return;
+
+            dismissHandHint();
 
             const landmarks = extractLandmarks(results);
             if (landmarks && landmarks.length === 226) {
