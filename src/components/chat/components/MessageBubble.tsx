@@ -171,15 +171,25 @@ export function MessageBubble({
                     if (localUri) {
                         setMediaUri(localUri);
                     } else {
-                        const playable =
-                            resolvedKey.startsWith('http') || resolvedKey.startsWith('file://');
-                        setMediaUri(playable ? resolvedKey : normalizeUrl(content));
+                        const fallbackUrl = (metadata as any)?.url;
+                        if (fallbackUrl && typeof fallbackUrl === 'string' && fallbackUrl.startsWith('http')) {
+                            setMediaUri(fallbackUrl);
+                        } else {
+                            const playable =
+                                resolvedKey.startsWith('http') || resolvedKey.startsWith('file://');
+                            setMediaUri(playable ? resolvedKey : (content.startsWith('/') ? normalizeUrl(content) : null));
+                        }
                     }
                 } catch (e) {
                     if (cancelled || requestId !== mediaRequestRef.current) return;
                     console.error('Failed to load/cache media:', e);
-                    const key = resolveChatMediaKey(publicId, content, API_URL);
-                    setMediaUri(key.startsWith('http') || key.startsWith('file://') ? key : normalizeUrl(content));
+                    const fallbackUrl = (metadata as any)?.url;
+                    if (fallbackUrl && typeof fallbackUrl === 'string' && fallbackUrl.startsWith('http')) {
+                        setMediaUri(fallbackUrl);
+                    } else {
+                        const key = resolveChatMediaKey(publicId, content, API_URL);
+                        setMediaUri(key.startsWith('http') || key.startsWith('file://') ? key : (content.startsWith('/') ? normalizeUrl(content) : null));
+                    }
                 } finally {
                     if (!cancelled && requestId === mediaRequestRef.current) {
                         setIsLoading(false);
@@ -192,7 +202,7 @@ export function MessageBubble({
         return () => {
             cancelled = true;
         };
-    }, [content, type, publicId, isDocumentImage, attachmentMimeType]);
+    }, [content, type, publicId, isDocumentImage, attachmentMimeType, (metadata as any)?.url]);
 
     useEffect(() => {
         if (!mediaUri || (type !== 'image' && !isDocumentImage)) return;

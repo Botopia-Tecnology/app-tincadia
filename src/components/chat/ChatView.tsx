@@ -275,12 +275,18 @@ export function ChatView(props: ChatViewProps) {
       }, ...prev]);
 
       const result = await mediaService.uploadMedia(preparedAsset);
-      await sendMessage(result.publicId, preparedAsset.type === 'video' ? 'video' : (preparedAsset.type === 'document' ? 'document' : 'image'), {
-        publicId: result.publicId,
-        fileName: preparedAsset.fileName,
-        mimeType: preparedAsset.mimeType,
-        fileSize: preparedAsset.fileSize,
-      });
+      await sendMessage(
+        result.publicId,
+        preparedAsset.type === 'video' ? 'video' : (preparedAsset.type === 'document' ? 'document' : 'image'),
+        {
+          publicId: result.publicId,
+          url: result.url,
+          fileName: preparedAsset.fileName,
+          mimeType: preparedAsset.mimeType,
+          fileSize: preparedAsset.fileSize,
+        },
+        preparedAsset.uri
+      );
       setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {
       Alert.alert('Error', 'Error al subir archivo');
@@ -308,7 +314,16 @@ export function ChatView(props: ChatViewProps) {
 
       const audioAsset = { uri, type: 'audio' as const, fileName: `audio_${Date.now()}.m4a` };
       const result = await mediaService.uploadMedia(audioAsset);
-      await sendMessage(result.publicId, 'audio', { publicId: result.publicId, duration });
+      await sendMessage(
+        result.publicId,
+        'audio',
+        {
+          publicId: result.publicId,
+          url: result.url,
+          duration,
+        },
+        uri
+      );
       
       // Remove optimistic bubble when real one arrives
       setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
@@ -343,13 +358,19 @@ export function ChatView(props: ChatViewProps) {
         duration: durationSec,
       };
       const result = await mediaService.uploadMedia(videoAsset);
-      await sendMessage(result.publicId, 'video', {
-        publicId: result.publicId,
-        fileName: videoAsset.fileName,
-        mimeType: videoAsset.mimeType,
-        duration: durationSec,
-        isVideoNote: true,
-      });
+      await sendMessage(
+        result.publicId,
+        'video',
+        {
+          publicId: result.publicId,
+          url: result.url,
+          fileName: videoAsset.fileName,
+          mimeType: videoAsset.mimeType,
+          duration: durationSec,
+          isVideoNote: true,
+        },
+        videoAsset.uri
+      );
       setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {
       console.error('Error uploading video note:', err);

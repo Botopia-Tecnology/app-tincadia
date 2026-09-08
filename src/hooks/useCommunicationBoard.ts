@@ -41,17 +41,17 @@ const hasNativeVoiceModule = () => {
   return Boolean(nativeVoiceModule?.startSpeech);
 };
 
-export type CorrectionUpgradeFeature = 'correction' | 'correction_blocked';
+export type BoardUpgradeFeature = 'correction' | 'correction_blocked' | 'lsc';
 
 export const useCommunicationBoard = (onClose?: () => void) => {
-  const { planTier, canUseCorrection, recordCorrectionUse } = useSubscription();
+  const { planTier, canUseCorrection, recordCorrectionUse, canUseLSC } = useSubscription();
   const [text, setText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceRecognitionError, setVoiceRecognitionError] = useState<string | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradeFeature, setUpgradeFeature] = useState<CorrectionUpgradeFeature>('correction');
+  const [upgradeFeature, setUpgradeFeature] = useState<BoardUpgradeFeature>('correction');
 
   // Estados del Karaoke por palabra
   const [words, setWords] = useState<WordToken[]>([]);
@@ -564,6 +564,16 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     }
   };
 
+  const handleSignToTextAccess = () => {
+    if (!canUseLSC) {
+      setUpgradeFeature('lsc');
+      setShowUpgradeModal(true);
+      return false;
+    }
+
+    return true;
+  };
+
   const handleClear = () => {
     setText('');
     handleStop();
@@ -616,6 +626,7 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     handleStop,
     handleNextSentence,
     handleAICorrect,
+    handleSignToTextAccess,
     handleClear,
     handleClose,
     startListening,

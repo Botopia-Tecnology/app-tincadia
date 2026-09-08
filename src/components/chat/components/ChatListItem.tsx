@@ -29,6 +29,23 @@ export const formatMessageTime = (dateString: string): string => {
   }
 };
 
+/** Keep long messages from taking over the chat list preview. */
+export const formatChatPreview = (message: string, maxLength = 80): string => {
+  const normalizedMessage = message.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (Array.from(normalizedMessage).length <= maxLength) return normalizedMessage;
+
+  return `${Array.from(normalizedMessage).slice(0, maxLength - 1).join('').trimEnd()}…`;
+};
+
+const isCallPreviewText = (message: string): boolean => {
+  const normalizedMessage = message
+    .replace(/\u{1F4DE}\s?/gu, '')
+    .replace(/\u260E\uFE0F?\s?/g, '')
+    .trim();
+
+  return /^llamada(?:\s+(?:iniciada|entrante|finalizada|rechazada|perdida))?$/i.test(normalizedMessage);
+};
+
 interface ChatListItemProps {
   item: ChatListItemType;
   onPress: (item: ChatListItemType) => void;
@@ -52,7 +69,7 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
       return <Text style={[styles.lastMessage, { color: colors.textSecondary }]}>{item.phone}</Text>;
     }
 
-    if (/\u{1F4DE}/u.test(item.lastMessage) || item.lastMessage.toLowerCase().includes('llamada')) {
+    if (item.hasActiveIncomingCall || isCallPreviewText(item.lastMessage)) {
       const isEnded = item.lastMessage.toLowerCase().match(/(finalizada|rechazada|perdida)/);
       const sanitizedCallText = item.lastMessage
         .replace(/\u{1F4DE}\s?/gu, '')
@@ -104,9 +121,7 @@ export const ChatListItem = ({ item, onPress, onLongPress, onAddContact, styles 
 
   const hasValidAvatar = !!item.avatarUrl && !imageError;
 
-  const cleanLastMessage = (item.lastMessage || item.phone || '')
-    .replace(/[\r\n]+/g, ' ')
-    .trim();
+  const cleanLastMessage = formatChatPreview(item.lastMessage || item.phone || '');
 
   return (
     <View style={[styles.chatItemRow, { backgroundColor: colors.background }]}>

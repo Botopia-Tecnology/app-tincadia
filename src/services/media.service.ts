@@ -6,6 +6,7 @@ import { Audio } from 'expo-av';
 import { Alert } from 'react-native';
 import { API_URL, API_ENDPOINTS } from '../config/api.config';
 import { authService } from './auth.service';
+import { apiClient } from '../lib/api-client';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // Increased to 50MB for videos
 
@@ -56,6 +57,39 @@ export interface UploadResponse {
 
 class MediaService {
     private recording: Audio.Recording | null = null;
+    private signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+    private inFlightSignedUrls = new Map<string, Promise<string | null>>();
+
+    /**
+     * Compute a deterministic local cache URI in documentDirectory for a given key/publicId
+     */
+    getCacheFileUri(
+        storageKeyOrUrl: string,
+        mediaType?: 'image' | 'video' | 'audio' | 'document',
+        optionsOrMime?: DownloadMediaOptions | string,
+    ): string {
+        const safeFilename = storageKeyOrUrl.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        let extension = 'bin';
+        if (mediaType === 'video') extension = 'mp4';
+        else if (mediaType === 'audio') extension = 'm4a';
+        else if (mediaType === 'image') extension = 'jpg';
+        else if (mediaType === 'document') {
+            const fromKey = storageKeyOrUrl.match(/\.([a-z0-9]{1,8})$/i);
+            extension = fromKey ? fromKey[1] : 'bin';
+        }
+
+        const mime = typeof optionsOrMime === 'string' ? optionsOrMime : optionsOrMime?.mimeType;
+        if (mime) {
+            const fromMime = extensionFromMimeType(mime);
+            if (fromMime) {
+                extension = fromMime;
+            } else {
+                const fromName = mime.match(/\.([a-z0-9]{1,8})$/i);
+                if (fromName) extension = fromName[1];
+            }
+        }
+        return `${FileSystem.documentDirectory}${safeFilename}.${extension}`;
+    }
 
     /** Wait until a camera/provider URI exists and its size is stable. */
     async ensureLocalMediaReady(uri: string, attempts = 20, delayMs = 100): Promise<string> {
@@ -357,7 +391,7 @@ class MediaService {
      * Upload media to Cloudinary via API Gateway
      * Returns the Public ID (essential for signed URLs) and Type
      */
-    async uploadMedia(media: MediaFile): Promise<{ publicId: string; type: string; url: string }> {
+    async uploadMedia(media: MediaFile): Promise<{ publicId: string; type: string; url: string; localUri: string }> {
         try {
             const token = await authService.getToken();
             if (!token) throw new Error('No authenticated');
@@ -395,10 +429,32 @@ class MediaService {
             const data: UploadResponse = JSON.parse(response.body);
             console.log('✅ Upload success:', data.public_id, 'URL:', data.url);
 
+            // Pre-cache the uploaded media locally into persistent cache using the publicId
+            // so downloadMedia will immediately find it without re-downloading from Cloudinary!
+            try {
+                const persistentCacheUri = this.getCacheFileUri(data.public_id, preparedMedia.type, preparedMedia.fileName);
+                await FileSystem.copyAsync({
+                    from: preparedMedia.uri,
+                    to: persistentCacheUri,
+                });
+                console.log(`📦 [MediaService] Pre-cached uploaded media: ${persistentCacheUri}`);
+            } catch (cacheErr) {
+                console.warn('⚠️ [MediaService] Could not pre-cache uploaded file:', cacheErr);
+            }
+
+            // Also cache the Cloudinary URL in signedUrlCache if present
+            if (data.url) {
+                this.signedUrlCache.set(data.public_id, {
+                    url: data.url,
+                    expiresAt: Date.now() + 50 * 60 * 1000,
+                });
+            }
+
             return {
                 publicId: data.public_id,
                 type: preparedMedia.type,
-                url: data.url // Return full Cloudinary URL for direct playback
+                url: data.url, // Return full Cloudinary URL for direct playback
+                localUri: preparedMedia.uri,
             };
 
         } catch (error) {
@@ -508,7 +564,6 @@ class MediaService {
             if (!publicId) return null;
             if (publicId.startsWith('http://') || publicId.startsWith('https://')) return publicId;
 
-            const token = await authService.getToken();
             let resourceType: CloudinaryResourceType = resourceTypeOverride || 'raw';
             if (!resourceTypeOverride) {
                 if (mediaType === 'image') resourceType = 'image';
@@ -521,23 +576,58 @@ class MediaService {
                 resourceType = 'image';
             }
 
-            const response = await fetch(API_URL + API_ENDPOINTS.GET_SIGNED_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ publicId, resourceType })
-            });
+            const cacheKey = `${publicId}:${resourceType}`;
+            const cached = this.signedUrlCache.get(cacheKey) || this.signedUrlCache.get(publicId);
+            if (cached && cached.expiresAt > Date.now() + 60000) {
+                return cached.url;
+            }
 
-            if (response.ok) {
-                const data = await response.json();
-                return data.url || null;
+            // Deduplicate concurrent in-flight requests for the same publicId
+            if (this.inFlightSignedUrls.has(cacheKey)) {
+                return await this.inFlightSignedUrls.get(cacheKey)!;
+            }
+
+            const fetchTask = (async (): Promise<string | null> => {
+                let delayMs = 400;
+                const maxRetries = 2;
+                for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                        const data = await apiClient<{ url: string }>(API_ENDPOINTS.GET_SIGNED_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ publicId, resourceType }),
+                            suppressUnauthorizedHandling: true,
+                        });
+
+                        if (data && data.url) {
+                            this.signedUrlCache.set(cacheKey, {
+                                url: data.url,
+                                expiresAt: Date.now() + 50 * 60 * 1000,
+                            });
+                            return data.url;
+                        }
+                    } catch (e) {
+                        if (attempt < maxRetries) {
+                            console.warn(`[MediaService] getSignedUrl attempt ${attempt + 1} failed, retrying in ${delayMs}ms...`);
+                            await new Promise(res => setTimeout(res, delayMs));
+                            delayMs *= 2;
+                        } else {
+                            console.error('[MediaService] Error fetching signed URL after retries:', e);
+                        }
+                    }
+                }
+                return null;
+            })();
+
+            this.inFlightSignedUrls.set(cacheKey, fetchTask);
+            try {
+                return await fetchTask;
+            } finally {
+                this.inFlightSignedUrls.delete(cacheKey);
             }
         } catch (e) {
-            console.error('Error fetching signed URL:', e);
+            console.error('Error in getSignedUrl:', e);
+            return null;
         }
-        return null;
     }
 
     /**
@@ -553,18 +643,8 @@ class MediaService {
         try {
             if (!storageKeyOrUrl) return null;
 
-            // 1. Generate a consistent filename for caching
-            const safeFilename = storageKeyOrUrl.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            let extension = 'bin';
-            if (mediaType === 'video') extension = 'mp4';
-            else if (mediaType === 'audio') extension = 'm4a';
-            else if (mediaType === 'image') extension = 'jpg';
-            else if (mediaType === 'document') {
-                const fromKey = storageKeyOrUrl.match(/\.([a-z0-9]{1,8})$/i);
-                extension = fromKey ? fromKey[1] : 'bin';
-            }
-            extension = extensionFromMimeType(options.mimeType) || extension;
-            const fileUri = `${FileSystem.documentDirectory}${safeFilename}.${extension}`;
+            // 1. Generate consistent filename for caching
+            const fileUri = this.getCacheFileUri(storageKeyOrUrl, mediaType, options);
 
             // 2. Check if file already exists in persistent storage
             const fileInfo = await FileSystem.getInfoAsync(fileUri);

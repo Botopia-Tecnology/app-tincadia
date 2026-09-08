@@ -4,20 +4,19 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   ScrollView,
   type LayoutChangeEvent,
   type TextLayoutEvent,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useCommunicationBoard } from '../hooks/useCommunicationBoard';
 import { getStyles } from '../styles/CommunicationBoardScreen.styles';
 import { useTheme } from '../contexts/ThemeContext';
 import { MagicPencilIcon } from '../components/icons/ActionIcons';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { StreamingLSCRecorder } from '../components/chat/recorders/StreamingLSCRecorder';
+import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 import { NavigateFunction } from '../types/navigation.types';
 
 interface CommunicationBoardScreenProps {
@@ -46,6 +45,7 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     handleStop,
     handleNextSentence,
     handleAICorrect,
+    handleSignToTextAccess,
     handleClear,
     handleClose,
     startListening,
@@ -54,6 +54,8 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     upgradeFeature,
     dismissUpgradeModal,
   } = useCommunicationBoard(onBack);
+
+  const [showSignToText, setShowSignToText] = useState(false);
 
   // Sin memo esto reconstruye todos los estilos en cada avance del karaoke (20
   // veces por segundo) y, al devolver objetos nuevos, anula el React.memo de
@@ -214,10 +216,11 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <>
+      <KeyboardSafeView
+        style={styles.container}
+        dismissOnPress={false}
+        edges={['top', 'bottom']}
       >
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Pizarra de Comunicación</Text>
@@ -336,11 +339,22 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
                   )}
                   <Text style={styles.actionText} numberOfLines={2}>Corregir Español</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => {
+                    if (handleSignToTextAccess()) {
+                      setShowSignToText(true);
+                    }
+                  }}
+                >
+                  <Ionicons name="videocam" size={24} color="#4F46E5" />
+                  <Text style={styles.actionText} numberOfLines={2}>Señas a Texto</Text>
+                </TouchableOpacity>
               </View>
             </>
           )}
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardSafeView>
 
       <UpgradeModal
         visible={showUpgradeModal}
@@ -351,6 +365,14 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
           onNavigate?.('profile', { openManagePlan: true });
         }}
       />
-    </SafeAreaView>
+
+      <StreamingLSCRecorder
+        visible={showSignToText}
+        onClose={() => setShowSignToText(false)}
+        onTranslationReceived={(translatedText) => {
+          setText((currentText) => currentText ? `${currentText} ${translatedText}` : translatedText);
+        }}
+      />
+    </>
   );
 };
