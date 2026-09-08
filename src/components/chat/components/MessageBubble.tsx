@@ -473,7 +473,7 @@ export function MessageBubble({
                     <Image
                         source={{ uri: mediaUri }}
                         style={[mediaStyles.thumbnail, imageFrameStyle, { opacity: isMediaRenderReady ? 1 : 0 }]}
-                        resizeMode="contain"
+                        resizeMode="cover"
                         onLoadEnd={() => setIsMediaRenderReady(true)}
                         onError={() => setIsMediaRenderReady(false)}
                     />
@@ -693,7 +693,7 @@ export function MessageBubble({
                             <Image
                                 source={{ uri: mediaUri || undefined }}
                                 style={[mediaStyles.thumbnail, imageFrameStyle, { opacity: isMediaRenderReady ? 1 : 0 }]}
-                                resizeMode="contain"
+                                resizeMode="cover"
                                 onLoadEnd={() => setIsMediaRenderReady(true)}
                                 onError={() => setIsMediaRenderReady(false)}
                             />
