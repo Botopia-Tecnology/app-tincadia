@@ -241,7 +241,7 @@ export const messageBubbleMediaStyles = StyleSheet.create({
         height: 150,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.1)',
+        backgroundColor: 'transparent',
         borderRadius: 10,
     },
     thumbnail: {
@@ -256,14 +256,14 @@ export const messageBubbleMediaStyles = StyleSheet.create({
         minHeight: 120,
         borderRadius: 10,
         overflow: 'hidden',
-        backgroundColor: '#8A8A8A',
+        backgroundColor: 'transparent',
         position: 'relative',
     },
     imageLoadingOverlay: {
         ...StyleSheet.absoluteFillObject,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#8A8A8A',
+        backgroundColor: 'transparent',
         zIndex: 1,
     },
     videoThumbWrap: {
@@ -272,6 +272,7 @@ export const messageBubbleMediaStyles = StyleSheet.create({
         borderRadius: 10,
         overflow: 'hidden',
         position: 'relative',
+        backgroundColor: 'transparent',
     },
     videoNoteThumbWrap: {
         width: 180,
@@ -279,7 +280,7 @@ export const messageBubbleMediaStyles = StyleSheet.create({
         borderRadius: 90,
         overflow: 'hidden',
         position: 'relative',
-        backgroundColor: '#111',
+        backgroundColor: 'transparent',
     },
     videoNoteThumbnail: {
         width: 180,
@@ -433,7 +434,7 @@ export const messageBubbleMediaStyles = StyleSheet.create({
         maxHeight: 280,
         borderRadius: 10,
         overflow: 'hidden',
-        backgroundColor: '#111',
+        backgroundColor: 'transparent',
         position: 'relative',
     },
     documentImageLabel: {
