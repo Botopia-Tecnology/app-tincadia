@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid, Permission } from 'react-native';
 import * as Sentry from '@sentry/react-native';
 import * as Clarity from '@microsoft/react-native-clarity';
 import * as TrackingTransparency from 'expo-tracking-transparency';
+import * as Contacts from 'expo-contacts';
 import { usePostHog } from 'posthog-react-native';
 import { Audio } from 'expo-av';
 
@@ -71,7 +72,31 @@ export const useAppInitialization = () => {
       }
     };
 
+    const requestInitialPermissions = async () => {
+      try {
+        if (Platform.OS === 'android') {
+          const permissionsToRequest: Permission[] = [
+            PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
+            PermissionsAndroid.PERMISSIONS.CALL_PHONE,
+            PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
+          ];
+
+          if (Number(Platform.Version) >= 30 && PermissionsAndroid.PERMISSIONS.READ_PHONE_NUMBERS) {
+            permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.READ_PHONE_NUMBERS);
+          }
+
+          const results = await PermissionsAndroid.requestMultiple(permissionsToRequest);
+          console.log('✅ Initial Android permissions requested:', results);
+        } else if (Platform.OS === 'ios') {
+          await Contacts.requestPermissionsAsync();
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to request initial permissions:', err);
+      }
+    };
+
     initTracking();
     initAudio();
+    requestInitialPermissions();
   }, []);
 };
