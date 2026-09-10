@@ -92,6 +92,12 @@ const PROGUARD_RULES = `
 -dontwarn com.google.firebase.**
 -dontwarn com.google.android.gms.**
 
+# Notifee
+-keep class app.notifee.** { *; }
+-keep class io.invertase.notifee.** { *; }
+-dontwarn app.notifee.**
+-dontwarn io.invertase.notifee.**
+
 # Google Sign-In
 -keep class com.reactnativegooglesignin.** { *; }
 

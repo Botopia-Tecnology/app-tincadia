@@ -7,8 +7,10 @@ const withAndroidPictureInPicture = (config) => {
     return withAndroidManifest(config, async (config) => {
         const mainActivity = config.modResults.manifest.application[0].activity[0];
 
-        // Enable PiP support
+        // Enable PiP support and lockscreen call display
         mainActivity.$['android:supportsPictureInPicture'] = 'true';
+        mainActivity.$['android:showWhenLocked'] = 'true';
+        mainActivity.$['android:turnScreenOn'] = 'true';
 
         const currentConfigChanges = mainActivity.$['android:configChanges'] || '';
         const requiredChanges = [
