@@ -18,3 +18,46 @@ index 025480a..dcfdd60 100644
      public void startCall(String uuid, String number, String callerName) {
          this.startCall(uuid, number, callerName, false, null);
      }
+diff --git a/node_modules/react-native-callkeep/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java b/node_modules/react-native-callkeep/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java
+index 5d58692..5c596f3 100644
+--- a/node_modules/react-native-callkeep/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java
++++ b/node_modules/react-native-callkeep/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java
+@@ -459,17 +459,28 @@ public class VoiceConnectionService extends ConnectionService {
+         connection.setConnectionCapabilities(Connection.CAPABILITY_MUTE | Connection.CAPABILITY_SUPPORT_HOLD);
+ 
+         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-            Context context = getApplicationContext();
+-            TelecomManager telecomManager = (TelecomManager) context.getSystemService(context.TELECOM_SERVICE);
+-            PhoneAccount phoneAccount = telecomManager.getPhoneAccount(request.getAccountHandle());
+-
+-            //If the phone account is self managed, then this connection must also be self managed.
+-            if((phoneAccount.getCapabilities() & PhoneAccount.CAPABILITY_SELF_MANAGED) == PhoneAccount.CAPABILITY_SELF_MANAGED) {
+-                Log.d(TAG, "[VoiceConnectionService] PhoneAccount is SELF_MANAGED, so connection will be too");
++            try {
++                Context context = getApplicationContext();
++                TelecomManager telecomManager = (TelecomManager) context.getSystemService(context.TELECOM_SERVICE);
++                PhoneAccount phoneAccount = telecomManager != null ? telecomManager.getPhoneAccount(request.getAccountHandle()) : null;
++
++                //If the phone account is self managed, then this connection must also be self managed.
++                if(phoneAccount != null && (phoneAccount.getCapabilities() & PhoneAccount.CAPABILITY_SELF_MANAGED) == PhoneAccount.CAPABILITY_SELF_MANAGED) {
++                    Log.d(TAG, "[VoiceConnectionService] PhoneAccount is SELF_MANAGED, so connection will be too");
++                    connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
++                }
++                else if (phoneAccount != null) {
++                    Log.d(TAG, "[VoiceConnectionService] PhoneAccount is not SELF_MANAGED, so connection won't be either");
++                } else {
++                    Log.d(TAG, "[VoiceConnectionService] PhoneAccount is null, defaulting to SELF_MANAGED");
++                    connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
++                }
++            } catch (SecurityException e) {
++                Log.w(TAG, "[VoiceConnectionService] SecurityException reading phoneAccount, defaulting to SELF_MANAGED: " + e.getMessage());
++                connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
++            } catch (Exception e) {
++                Log.w(TAG, "[VoiceConnectionService] Error reading phoneAccount: " + e.getMessage());
+                 connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
+-            }
+-            else {
+-                Log.d(TAG, "[VoiceConnectionService] PhoneAccount is not SELF_MANAGED, so connection won't be either");
+             }
+         }
+ 

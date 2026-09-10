@@ -122,8 +122,8 @@ const options = {
     foregroundService: {
       channelId: 'tincadia_calls',
       channelName: 'Llamadas Tincadia',
-      notificationTitle: 'Tincadia está en una llamada',
-      notificationIcon: 'ic_launcher'
+      notificationTitle: 'Llamada entrante',
+      notificationIcon: 'notification_icon'
     }
   }
 };

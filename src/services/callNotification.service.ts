@@ -77,6 +77,47 @@ class CallNotificationService {
       hasAvatar: Boolean(avatarUrl),
     });
 
+    const androidConfig: any = {
+      channelId: INCOMING_CALLS_CHANNEL_ID,
+      category: AndroidCategory.CALL,
+      importance: AndroidImportance.HIGH,
+      visibility: AndroidVisibility.PUBLIC,
+      smallIcon: 'notification_icon',
+      color: '#0066FF',
+      autoCancel: false,
+      ongoing: true,
+      loopSound: true,
+      sound: 'default',
+      pressAction: {
+        id: 'default',
+        launchActivity: 'default',
+      },
+      fullScreenAction: {
+        id: 'default',
+        launchActivity: 'default',
+      },
+      actions: [
+        {
+          title: 'Rechazar',
+          pressAction: {
+            id: 'decline',
+          },
+        },
+        {
+          title: 'Contestar',
+          pressAction: {
+            id: 'answer',
+            launchActivity: 'default',
+          },
+        },
+      ],
+    };
+
+    if (avatarUrl && typeof avatarUrl === 'string' && avatarUrl.trim().startsWith('http')) {
+      androidConfig.largeIcon = avatarUrl.trim();
+      androidConfig.circularLargeIcon = true;
+    }
+
     try {
       await notifee.displayNotification({
         id: callUUID,
@@ -91,44 +132,9 @@ class CallNotificationService {
           senderId: senderId || '',
           hasVideo: hasVideo ? 'true' : 'false',
         },
-        android: {
-          channelId: INCOMING_CALLS_CHANNEL_ID,
-          category: AndroidCategory.CALL,
-          importance: AndroidImportance.HIGH,
-          visibility: AndroidVisibility.PUBLIC,
-          smallIcon: 'phone_account_icon',
-          color: '#0066FF',
-          largeIcon: avatarUrl && avatarUrl.startsWith('http') ? avatarUrl : undefined,
-          circularLargeIcon: true,
-          autoCancel: false,
-          ongoing: true,
-          loopSound: true,
-          sound: 'default',
-          pressAction: {
-            id: 'default',
-            launchActivity: 'default',
-          },
-          fullScreenAction: {
-            id: 'default',
-            launchActivity: 'default',
-          },
-          actions: [
-            {
-              title: 'Rechazar',
-              pressAction: {
-                id: 'decline',
-              },
-            },
-            {
-              title: 'Contestar',
-              pressAction: {
-                id: 'answer',
-                launchActivity: 'default',
-              },
-            },
-          ],
-        },
+        android: androidConfig,
       });
+      console.log('[CallNotificationService] Successfully displayed incoming call notification for:', callUUID);
     } catch (err) {
       console.error('[CallNotificationService] Failed to display notification:', err);
     }
