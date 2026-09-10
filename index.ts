@@ -3,8 +3,10 @@ import './src/config/debug.config';
 import { AppRegistry, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import messaging from '@react-native-firebase/messaging';
+import notifee from '@notifee/react-native';
 import App from './src/app/App';
 import { callKeepService } from './src/services/callkeep.service';
+import { callNotificationService } from './src/services/callNotification.service';
 import { CallState } from './src/lib/callState';
 import { pendingInviteStorage } from './src/lib/secure-storage';
 
@@ -13,6 +15,15 @@ callKeepService.setup();
 // Register the PushKit listener before AuthContext/useNotifications. Native
 // CallKit/PushKit delivery must not wait for a JavaScript session.
 callKeepService.setupVoipPush();
+
+// Initialize rich call notifications for Android
+void callNotificationService.setupChannel();
+callNotificationService.setupForegroundListeners();
+
+// Notifee Background Event Handler (for answer/decline action buttons when app is in background or killed)
+notifee.onBackgroundEvent(async (event) => {
+  await callNotificationService.handleNotificationEvent(event);
+});
 
 // ---- ANDROID: Background FCM Handler ----
 messaging().setBackgroundMessageHandler(async remoteMessage => {

@@ -4,6 +4,7 @@ import VoipPushNotification from 'react-native-voip-push-notification';
 import { DeviceEventEmitter } from 'react-native';
 import { CallState } from '../lib/callState';
 import { pendingCallActionStorage } from '../lib/secure-storage';
+import { callNotificationService } from './callNotification.service';
 
 type NativeCallContext = {
   roomName?: string;
@@ -11,6 +12,7 @@ type NativeCallContext = {
   callSessionId?: string;
   senderId?: string;
   senderName?: string;
+  avatarUrl?: string;
 };
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -116,6 +118,7 @@ const options = {
     okButton: 'Aceptar',
     imageName: 'phone_account_icon',
     additionalPermissions: [],
+    selfManaged: true,
     foregroundService: {
       channelId: 'tincadia_calls',
       channelName: 'Llamadas Tincadia',
@@ -425,6 +428,10 @@ class CallKeepService {
 
   private reportCallEndedSilently(uuid: string, reason: number) {
     const nativeUUID = this.resolveCallUUID(uuid);
+    if (Platform.OS === 'android') {
+      callNotificationService.cancelCallNotification(nativeUUID);
+      callNotificationService.cancelCallNotification(uuid);
+    }
     if (!this.canUseNativeUUID(nativeUUID, 'reportEndCallWithUUID')) return;
     this.clearIncomingCallTimeout(nativeUUID);
     this.suppressEndCallOnce(nativeUUID);
@@ -467,6 +474,7 @@ class CallKeepService {
       callSessionId: getBoundedString(data.callSessionId || data.call_session_id, 128),
       senderId: getBoundedString(data.senderId || data.sender_id, 128),
       senderName: getBoundedString(data.senderName || data.callerName || data.handle, 120),
+      avatarUrl: getBoundedString(data.senderAvatar || data.avatarUrl || data.avatar, 512),
     };
   }
 
@@ -515,6 +523,7 @@ class CallKeepService {
       RNCallKeep.addEventListener('answerCall', this.handleAnswerCall);
       RNCallKeep.addEventListener('endCall', this.handleEndCall);
       RNCallKeep.addEventListener('didDisplayIncomingCall', this.handleDidDisplayIncomingCall);
+      RNCallKeep.addEventListener('showIncomingCallUi', this.handleShowIncomingCallUi);
 
       if (Platform.OS === 'ios') {
         // Con la llamada CallKit viva tras contestar, es CallKit quien activa la
@@ -584,6 +593,8 @@ class CallKeepService {
     console.log('[CallKeep] Answered call:', callUUID);
     if (Platform.OS === 'android') {
       RNCallKeep.setCurrentCallActive(callUUID);
+      callNotificationService.cancelCallNotification(callUUID);
+      callNotificationService.cancelCallNotification(this.resolveCallUUID(callUUID));
     }
     this.clearIncomingCallTimeout(callUUID);
     const context = this.getNativeCallContext(callUUID);
@@ -622,6 +633,12 @@ class CallKeepService {
   };
 
   private handleEndCall = async ({ callUUID }: { callUUID: string }) => {
+    const nativeUUID = this.resolveCallUUID(callUUID);
+    if (Platform.OS === 'android') {
+      callNotificationService.cancelCallNotification(callUUID);
+      callNotificationService.cancelCallNotification(nativeUUID);
+    }
+
     if (this.consumeSuppressedEndCall(callUUID)) {
       console.log('[CallKeep] Suppressing endCall for UUID ended by internal cleanup:', callUUID);
       this.forgetNativeCall(callUUID);
@@ -630,7 +647,6 @@ class CallKeepService {
 
     console.log('[CallKeep] Ended call (native event triggered):', callUUID);
     const context = this.getNativeCallContext(callUUID);
-    const nativeUUID = this.resolveCallUUID(callUUID);
     const fallbackConversationId = CallState.getIncomingCallConversationId(callUUID);
     const wasInsideCallScreen =
       CallState.isInsideCallScreen ||
@@ -759,6 +775,20 @@ class CallKeepService {
     });
   };
 
+  private handleShowIncomingCallUi = ({ callUUID, name, handle }: any = {}) => {
+    if (Platform.OS !== 'android' || !callUUID) return;
+    const context = this.getNativeCallContext(callUUID);
+    callNotificationService.displayCallNotification({
+      callUUID,
+      callerName: name || context?.senderName || handle || 'Tincadia',
+      avatarUrl: context?.avatarUrl,
+      roomName: context?.roomName,
+      conversationId: context?.conversationId,
+      callSessionId: context?.callSessionId,
+      senderId: context?.senderId,
+    });
+  };
+
   displayIncomingCall(uuid: string, handle: string, localizedCallerName: string, context: NativeCallContext = {}) {
     const resolvedUUID = this.resolveCallUUID(uuid);
 
@@ -791,6 +821,18 @@ class CallKeepService {
     RNCallKeep.displayIncomingCall(nativeUUID, handle, localizedCallerName, 'generic', true);
     this.displayedNativeCallUUIDs.add(nativeUUID);
     CallState.setIncomingCallActive(context.conversationId, nativeUUID);
+
+    if (Platform.OS === 'android') {
+      callNotificationService.displayCallNotification({
+        callUUID: nativeUUID,
+        callerName: localizedCallerName || handle,
+        avatarUrl: context.avatarUrl,
+        roomName: context.roomName,
+        conversationId: context.conversationId,
+        callSessionId: context.callSessionId,
+        senderId: context.senderId,
+      });
+    }
 
     const timeout = setTimeout(() => {
       // Timeout local ≠ rechazo del usuario: cerrar en silencio. endCall aquí
@@ -940,6 +982,10 @@ class CallKeepService {
   endCall(uuid: string) {
     const nativeUUID = this.resolveCallUUID(uuid);
     const context = this.getNativeCallContext(nativeUUID);
+    if (Platform.OS === 'android') {
+      callNotificationService.cancelCallNotification(uuid);
+      callNotificationService.cancelCallNotification(nativeUUID);
+    }
     if (!this.canUseNativeUUID(nativeUUID, 'endCall')) return;
     this.clearIncomingCallTimeout(nativeUUID);
     RNCallKeep.endCall(nativeUUID);
@@ -950,6 +996,10 @@ class CallKeepService {
 
   endCallSilently(uuid: string) {
     const nativeUUID = this.resolveCallUUID(uuid);
+    if (Platform.OS === 'android') {
+      callNotificationService.cancelCallNotification(uuid);
+      callNotificationService.cancelCallNotification(nativeUUID);
+    }
     if (!this.canUseNativeUUID(nativeUUID, 'endCallSilently')) return;
     this.suppressEndCallOnce(nativeUUID);
     this.clearIncomingCallTimeout(nativeUUID);
@@ -980,6 +1030,8 @@ class CallKeepService {
     }
 
     if (Platform.OS === 'android') {
+      callNotificationService.cancelCallNotification(uuid);
+      callNotificationService.cancelCallNotification(nativeUUID);
       RNCallKeep.setCurrentCallActive(nativeUUID);
       RNCallKeep.backToForeground();
     }
@@ -999,6 +1051,10 @@ class CallKeepService {
   }
 
   endAllCalls() {
+    if (Platform.OS === 'android') {
+      const nativeUUIDs = Array.from(this.displayedNativeCallUUIDs);
+      nativeUUIDs.forEach((uuid) => callNotificationService.cancelCallNotification(uuid));
+    }
     try {
       RNCallKeep.endAllCalls();
     } catch (error) {
@@ -1010,6 +1066,9 @@ class CallKeepService {
 
   endAllCallsSilently() {
     const nativeUUIDs = Array.from(this.displayedNativeCallUUIDs);
+    if (Platform.OS === 'android') {
+      nativeUUIDs.forEach((uuid) => callNotificationService.cancelCallNotification(uuid));
+    }
     nativeUUIDs.forEach((nativeUUID) => this.suppressEndCallOnce(nativeUUID));
 
     try {
@@ -1061,6 +1120,7 @@ class CallKeepService {
     RNCallKeep.removeEventListener('answerCall');
     RNCallKeep.removeEventListener('endCall');
     RNCallKeep.removeEventListener('didDisplayIncomingCall');
+    RNCallKeep.removeEventListener('showIncomingCallUi');
     if (Platform.OS === 'ios') {
       RNCallKeep.removeEventListener('didActivateAudioSession');
     }

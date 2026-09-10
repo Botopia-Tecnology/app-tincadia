@@ -612,6 +612,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             callSessionId: getStringValue(data.callSessionId),
             senderId,
             senderName: handle,
+            avatarUrl: getStringValue(data.senderAvatar || data.avatarUrl || data.avatar),
           });
 
           const convIdStr = getStringValue(data.conversationId);
@@ -793,6 +794,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
                 callSessionId: getStringValue(data.callSessionId || data.call_session_id),
                 senderId: getStringValue(data.senderId || data.sender_id),
                 senderName: getStringValue(data.senderName),
+                avatarUrl: getStringValue(data.senderAvatar || data.avatarUrl || data.avatar),
               });
             }, 800);
             return;
@@ -823,6 +825,7 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
               callSessionId: getStringValue(data.callSessionId),
               senderId: getStringValue(data.senderId),
               senderName: getStringValue(data.senderName),
+              avatarUrl: getStringValue(data.senderAvatar || data.avatarUrl || data.avatar),
             });
           }
         }
