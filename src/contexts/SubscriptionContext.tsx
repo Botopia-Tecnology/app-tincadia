@@ -31,6 +31,8 @@ interface SubscriptionContextValue {
     recordTranscriptionUse: () => Promise<void>;
     canUseCorrection: () => boolean;
     recordCorrectionUse: () => Promise<void>;
+    correctionLimit: number;
+    correctionUsesToday: number;
     subscriptionStatus: SubscriptionStatus | null;
     isLoading: boolean;
     refreshSubscription: (forceRefresh?: boolean) => Promise<void>;
@@ -297,13 +299,15 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         recordTranscriptionUse,
         canUseCorrection,
         recordCorrectionUse,
+        correctionLimit: getLimit('CORRECTION_LIMIT', 1),
+        correctionUsesToday,
         subscriptionStatus,
         isLoading,
         refreshSubscription: fetchStatus,
     }), [
         planTier, isPremium, isBasico, isGratis, canUseLSC, canUseInterpreter, canUseSubtitles,
         canUseTranscription, recordTranscriptionUse, canUseCorrection,
-        recordCorrectionUse, subscriptionStatus, isLoading, fetchStatus
+        recordCorrectionUse, correctionUsesToday, getLimit, subscriptionStatus, isLoading, fetchStatus
     ]);
 
     return (

@@ -73,7 +73,7 @@ interface UploadingMessage {
   content: string;
   localUri: string;
   type: 'image' | 'video' | 'document' | 'audio';
-  status: 'uploading';
+  status: 'uploading' | 'failed';
   createdAt: string;
   senderId: string;
   metadata?: { duration?: number; isVideoNote?: boolean };
@@ -101,6 +101,7 @@ export function ChatView(props: ChatViewProps) {
   const {
     planTier,
     canUseCorrection, recordCorrectionUse,
+    correctionLimit, correctionUsesToday,
     canUseLSC, canUseTTS
   } = useSubscription(userId);
 
@@ -165,6 +166,7 @@ export function ChatView(props: ChatViewProps) {
   // Animations
   const correctionOpacity = useRef(new Animated.Value(0)).current;
   const swipeableRefs = useRef<Map<string, Swipeable | null>>(new Map());
+  const retryingUploads = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     markMessagesAsRead();
@@ -239,13 +241,17 @@ export function ChatView(props: ChatViewProps) {
     ).start();
 
     try {
-      const { correctedText } = await chatService.correctMessage(messageText);
+      const { correctedText } = await chatService.correctMessage(messageText, currentUser?.id || '');
       setMessageText(correctedText);
       setIsTyping(correctedText.length > 0);
       recordCorrectionUse();
       Vibration.vibrate(50);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Correction error:', err);
+      if (err?.message?.includes('LIMIT_EXCEEDED') || err?.status === 403) {
+        setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'correction_blocked' : 'correction');
+        setShowUpgradeModal(true);
+      }
     } finally {
       setIsCorrecting(false);
       correctionOpacity.stopAnimation();
@@ -257,27 +263,88 @@ export function ChatView(props: ChatViewProps) {
     setShowAttachmentMenu(true);
   };
 
+  const retryUpload = async (failedMsg: UploadingMessage) => {
+    // Guard against concurrent taps for the same message
+    if (retryingUploads.current.has(failedMsg.id)) return;
+    retryingUploads.current.add(failedMsg.id);
+
+    // Reset status to uploading
+    setUploadingMessages(prev => prev.map(m => m.id === failedMsg.id ? { ...m, status: 'uploading' as const } : m));
+
+    try {
+      const mediaAsset = {
+        uri: failedMsg.localUri,
+        type: failedMsg.type as 'image' | 'video' | 'audio' | 'document',
+        fileName: `retry_${Date.now()}.${failedMsg.type === 'video' ? 'mp4' : failedMsg.type === 'audio' ? 'm4a' : 'jpg'}`,
+        mimeType: failedMsg.type === 'video' ? 'video/mp4' : failedMsg.type === 'audio' ? 'audio/m4a' : undefined,
+        duration: failedMsg.metadata?.duration,
+      };
+
+      const result = await mediaService.uploadMedia(mediaAsset);
+
+      // Remove optimistic bubble before sending
+      setUploadingMessages(prev => prev.filter(m => m.id !== failedMsg.id));
+
+      await sendMessage(
+        result.publicId,
+        failedMsg.type,
+        {
+          publicId: result.publicId,
+          url: result.url,
+          duration: failedMsg.metadata?.duration,
+          isVideoNote: failedMsg.metadata?.isVideoNote,
+        },
+        failedMsg.localUri
+      );
+    } catch (err) {
+      console.error('Retry upload failed:', err);
+      setUploadingMessages(prev => {
+        if (prev.some(m => m.id === failedMsg.id)) {
+          return prev.map(m => m.id === failedMsg.id ? { ...m, status: 'failed' as const } : m);
+        }
+        return [{ ...failedMsg, status: 'failed' as const }, ...prev];
+      });
+    } finally {
+      retryingUploads.current.delete(failedMsg.id);
+    }
+  };
+
+  const dismissFailedUpload = (msgId: string) => {
+    retryingUploads.current.delete(msgId);
+    setUploadingMessages(prev => prev.filter(m => m.id !== msgId));
+  };
+
   const processAsset = async (asset: any) => {
     const tempId = `upload-${Date.now()}`;
+    let assetUri = asset?.uri || '';
+    let assetType: 'image' | 'video' | 'document' = asset?.type === 'video' ? 'video' : (asset?.type === 'document' ? 'document' : 'image');
+
     try {
       // Camera/provider URIs can be returned before the native file is fully
       // materialized. Prepare one stable copy before showing/uploading it.
       const preparedAsset = await mediaService.prepareMediaForUpload(asset);
+      assetUri = preparedAsset.uri;
+      assetType = preparedAsset.type === 'video' ? 'video' : (preparedAsset.type === 'document' ? 'document' : 'image');
 
       setUploadingMessages(prev => [{
         id: tempId,
         content: '',
         localUri: preparedAsset.uri,
-        type: preparedAsset.type === 'video' ? 'video' : (preparedAsset.type === 'document' ? 'document' : 'image'),
+        type: assetType,
         status: 'uploading',
         createdAt: new Date().toISOString(),
         senderId: userId
       }, ...prev]);
 
       const result = await mediaService.uploadMedia(preparedAsset);
+      
+      // Remove optimistic uploading bubble BEFORE sending the message
+      // to avoid visual duplication since sendMessage also adds an optimistic pending bubble.
+      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
+      
       await sendMessage(
         result.publicId,
-        preparedAsset.type === 'video' ? 'video' : (preparedAsset.type === 'document' ? 'document' : 'image'),
+        assetType,
         {
           publicId: result.publicId,
           url: result.url,
@@ -287,10 +354,22 @@ export function ChatView(props: ChatViewProps) {
         },
         preparedAsset.uri
       );
-      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {
-      Alert.alert('Error', 'Error al subir archivo');
-      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
+      console.error('Error uploading media:', err);
+      setUploadingMessages(prev => {
+        if (prev.some(m => m.id === tempId)) {
+          return prev.map(m => m.id === tempId ? { ...m, status: 'failed' as const } : m);
+        }
+        return [{
+          id: tempId,
+          content: '',
+          localUri: assetUri,
+          type: assetType,
+          status: 'failed' as const,
+          createdAt: new Date().toISOString(),
+          senderId: userId
+        }, ...prev];
+      });
     }
   };
 
@@ -314,6 +393,10 @@ export function ChatView(props: ChatViewProps) {
 
       const audioAsset = { uri, type: 'audio' as const, fileName: `audio_${Date.now()}.m4a` };
       const result = await mediaService.uploadMedia(audioAsset);
+      
+      // Remove optimistic bubble BEFORE real one is created to avoid duplication
+      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
+      
       await sendMessage(
         result.publicId,
         'audio',
@@ -324,13 +407,23 @@ export function ChatView(props: ChatViewProps) {
         },
         uri
       );
-      
-      // Remove optimistic bubble when real one arrives
-      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {
       console.error('Error uploading audio:', err);
-      Alert.alert('Error', 'Error al enviar audio');
-      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
+      setUploadingMessages(prev => {
+        if (prev.some(m => m.id === tempId)) {
+          return prev.map(m => m.id === tempId ? { ...m, status: 'failed' as const } : m);
+        }
+        return [{
+          id: tempId,
+          content: '',
+          localUri: uri,
+          type: 'audio' as const,
+          status: 'failed' as const,
+          createdAt: new Date().toISOString(),
+          senderId: userId,
+          metadata: { duration }
+        }, ...prev];
+      });
     }
   };
 
@@ -358,6 +451,10 @@ export function ChatView(props: ChatViewProps) {
         duration: durationSec,
       };
       const result = await mediaService.uploadMedia(videoAsset);
+      
+      // Remove optimistic bubble BEFORE real one is created to avoid duplication
+      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
+      
       await sendMessage(
         result.publicId,
         'video',
@@ -371,11 +468,23 @@ export function ChatView(props: ChatViewProps) {
         },
         videoAsset.uri
       );
-      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
     } catch (err) {
       console.error('Error uploading video note:', err);
-      Alert.alert('Error', 'Error al enviar la nota de video');
-      setUploadingMessages(prev => prev.filter(m => m.id !== tempId));
+      setUploadingMessages(prev => {
+        if (prev.some(m => m.id === tempId)) {
+          return prev.map(m => m.id === tempId ? { ...m, status: 'failed' as const } : m);
+        }
+        return [{
+          id: tempId,
+          content: '',
+          localUri: uri,
+          type: 'video' as const,
+          status: 'failed' as const,
+          createdAt: new Date().toISOString(),
+          senderId: userId,
+          metadata: { duration: durationSec, isVideoNote: true },
+        }, ...prev];
+      });
     }
   };
 
@@ -582,6 +691,8 @@ export function ChatView(props: ChatViewProps) {
           setUpgradeFeature(feature);
           setShowUpgradeModal(true);
         }}
+        onRetryUpload={retryUpload}
+        onDismissUpload={dismissFailedUpload}
       />
 
       {isRecordingMode ? (
@@ -598,6 +709,8 @@ export function ChatView(props: ChatViewProps) {
           onCorrection={handleCorrection}
           isCorrecting={isCorrecting}
           correctionOpacity={correctionOpacity}
+          correctionLimit={correctionLimit}
+          correctionUsesToday={correctionUsesToday}
           replyMessage={replyMessage}
           setReplyMessage={setReplyMessage}
           editingMessage={editingMessage}

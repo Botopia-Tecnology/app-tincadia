@@ -13,6 +13,7 @@ import React, {
     useEffect,
     useMemo,
 } from 'react';
+import { userStorage } from '../lib/secure-storage';
 import { authService } from '../services/auth.service';
 import { setOnUnauthorizedCallback } from '../lib/api-client';
 import * as Sentry from '@sentry/react-native';
@@ -59,32 +60,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         const checkAuth = async () => {
             try {
-                // Timeout promise
-                const timeout = new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Auth check timeout')), 5000));
+                // 1. Check if token exists at all
+                const hasToken = await authService.hasStoredToken();
+                if (!hasToken) {
+                    setUser(null);
+                    setIsLoading(false);
+                    return;
+                }
 
-                // Actual check
-                const authCheck = async (): Promise<{ user: User; isProfileComplete: boolean } | null> => {
-                    const hasToken = await authService.hasStoredToken();
-                    if (!hasToken) {
-                        return null;
+                // 2. Try to load optimistically from cache for INSTANT STARTUP
+                const cachedStr = await userStorage.getUser();
+                if (cachedStr) {
+                    try {
+                        const cachedUser = JSON.parse(cachedStr);
+                        const rawRole = cachedUser.role || '';
+                        const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
+                        setUser({
+                            ...cachedUser,
+                            role: normalizedRole,
+                        });
+                        // Turn off loading screen immediately!
+                        setIsLoading(false);
+                    } catch (e) {
+                        console.warn('Failed to parse cached user for instant start', e);
                     }
-                    return await authService.getCurrentUser();
+                }
+
+                // 3. Fetch fresh data from backend in background
+                const timeout = new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Auth check timeout')), 5000));
+                
+                const authCheck = async (): Promise<{ user: User; isProfileComplete: boolean } | null> => {
+                    return await authService.getCurrentUser(true); // forceRefresh=true ensures it actually hits API
                 };
 
-                // Race
-                const result = await Promise.race([authCheck(), timeout]);
+                const result = await Promise.race([authCheck(), timeout]).catch(err => {
+                    console.error('Background auth check failed (network/timeout):', err);
+                    return null;
+                });
 
+                // 4. Update state silently if we got new data
                 if (result) {
-                    // Normalize interpreter role to lowercase to match backend expectation
                     const rawRole = result.user.role || '';
                     const normalizedRole = rawRole.toLowerCase() === 'interpreter' ? 'interpreter' : rawRole;
                     
-                    // Self-healing: if the role was 'Interpreter' (PascalCase), update backend to lowercase
                     if (rawRole === 'Interpreter') {
                         console.log('🩹 Self-healing: Updating role to lowercase in backend');
-                        authService.updateProfile(result.user.id, { role: 'interpreter' } as any).catch(e => {
-                            console.error('Failed to self-heal role casing:', e);
-                        });
+                        authService.updateProfile(result.user.id, { role: 'interpreter' } as any).catch(() => {});
                     }
 
                     setUser({
@@ -92,15 +113,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         role: normalizedRole,
                         isProfileComplete: result.isProfileComplete,
                     });
-                } else {
-                    // Token invalid or API unreachable - clear everything
-                    console.log('Token check returned null or failed, clearing auth data');
-                    // await authService.logout(); // Avoid calling if potentially stuck, just clear local state logic
+                } else if (!cachedStr) {
+                    // Only log out if we failed AND we didn't have any cache to fall back on.
+                    // If we had cache, we keep them logged in (offline mode).
+                    // Real 401s are caught by apiClient interceptor which calls onUnauthorized().
                     setUser(null);
                 }
             } catch (err) {
                 console.error('Auth check failed:', err);
-                // Clear invalid auth state - don't use cached data
                 setUser(null);
             } finally {
                 setIsLoading(false);

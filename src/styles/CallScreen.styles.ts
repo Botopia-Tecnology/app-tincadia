@@ -11,6 +11,21 @@ export const callScreenStyles = StyleSheet.create({
         color: 'white',
         marginTop: 10,
     },
+    callTimerContainer: {
+        position: 'absolute',
+        top: 60,
+        alignSelf: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.55)',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 16,
+        zIndex: 50,
+    },
+    callTimerText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600',
+    },
     connectionActions: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -233,12 +248,10 @@ export const callScreenStyles = StyleSheet.create({
         zIndex: 100,
     },
     transcriptionCloseButton: {
-        alignSelf: 'flex-end',
-        marginBottom: 3,
-        marginRight: 2,
-        width: 18,
-        height: 18,
-        borderRadius: 9,
+        height: 22,
+        minWidth: 22,
+        paddingHorizontal: 4,
+        borderRadius: 11,
         backgroundColor: 'rgba(0, 0, 0, 0.55)',
         justifyContent: 'center',
         alignItems: 'center',
@@ -329,7 +342,6 @@ export const callScreenStyles = StyleSheet.create({
     transcriptionLineFinal: {
         textAlign: 'left',
         marginBottom: 2,
-        lineHeight: 14,
     },
     transcriptionSpeakerName: {
         color: 'rgba(255, 255, 255, 0.65)',
@@ -351,7 +363,6 @@ export const callScreenStyles = StyleSheet.create({
     },
     transcriptionLinePartial: {
         textAlign: 'left',
-        lineHeight: 14,
         marginTop: 0,
     },
     transcriptionUtterancePartial: {

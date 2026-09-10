@@ -162,8 +162,8 @@ export const chatService = {
     /**
      * Correct a message text using AI
      */
-    async correctMessage(text: string): Promise<{ correctedText: string }> {
-        return apiClient(API_ENDPOINTS.CORRECT_TEXT, {
+    async correctMessage(text: string, userId: string): Promise<{ correctedText: string }> {
+        return apiClient(`${API_ENDPOINTS.CORRECT_TEXT}?userId=${userId}`, {
             method: 'POST',
             body: JSON.stringify({ text }),
         });
@@ -175,9 +175,10 @@ export const chatService = {
      */
     async correctMessageStream(
         text: string,
+        userId: string,
         onChunk: (partialText: string) => void
     ): Promise<string> {
-        const url = `${API_URL}${API_ENDPOINTS.CORRECT_TEXT_STREAM}`;
+        const url = `${API_URL}${API_ENDPOINTS.CORRECT_TEXT_STREAM}?userId=${userId}`;
         console.log('🔧 [CORRECTION] Starting stream correction');
         console.log('🔧 [CORRECTION] URL:', url);
         console.log('🔧 [CORRECTION] Text to correct:', text);

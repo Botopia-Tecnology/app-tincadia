@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share, Switch, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Linking, Share, Switch, RefreshControl, Platform } from 'react-native';
 import { Settings, Moon, Sun } from 'lucide-react-native';
 import { KeyboardSafeView } from '../components/common/KeyboardSafeView';
 import { StatusBar } from 'expo-status-bar';
@@ -261,6 +261,29 @@ export function ProfileScreen({
                         <Text style={[styles.menuLabel, { color: colors.text }]}>Chats</Text>
                         <ChevronRightIcon size={20} color={colors.iconSecondary} />
                     </TouchableOpacity>
+                    {Platform.OS === 'android' && (
+                        <TouchableOpacity
+                            style={[styles.menuItem, styles.menuItemBorder, { borderBottomColor: colors.divider }]}
+                            onPress={async () => {
+                                try {
+                                    const IntentLauncher = await import('expo-intent-launcher');
+                                    await IntentLauncher.startActivityAsync(IntentLauncher.ActivityAction.IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                                } catch (error) {
+                                    alert.show({
+                                        type: 'error',
+                                        title: 'Ajustes no disponibles',
+                                        message: 'No pudimos abrir los ajustes de batería automáticamente. Por favor búscalo manualmente en los ajustes de tu teléfono.'
+                                    });
+                                }
+                            }}
+                        >
+                            <View style={styles.menuIcon}>
+                                <Settings size={20} color={colors.icon} />
+                            </View>
+                            <Text style={[styles.menuLabel, { color: colors.text }]}>Optimización de Batería</Text>
+                            <ChevronRightIcon size={20} color={colors.iconSecondary} />
+                        </TouchableOpacity>
+                    )}
 
                 </View>
 

@@ -53,6 +53,8 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
     showUpgradeModal,
     upgradeFeature,
     dismissUpgradeModal,
+    correctionLimit,
+    correctionUsesToday,
   } = useCommunicationBoard(onBack);
 
   const [showSignToText, setShowSignToText] = useState(false);
@@ -332,11 +334,33 @@ export const CommunicationBoardScreen: React.FC<CommunicationBoardScreenProps> =
                   onPress={handleAICorrect}
                   disabled={isCorrecting || !text.trim()}
                 >
-                  {isCorrecting ? (
-                    <ActivityIndicator size="small" color="#FF69B4" style={{ height: 24 }} />
-                  ) : (
-                    <MagicPencilIcon size={24} />
-                  )}
+                  <View>
+                    {isCorrecting ? (
+                      <ActivityIndicator size="small" color="#FF69B4" style={{ height: 24 }} />
+                    ) : (
+                      <MagicPencilIcon size={24} />
+                    )}
+                    <View style={{
+                      position: 'absolute',
+                      top: -4,
+                      right: -8,
+                      backgroundColor: '#FF69B4',
+                      borderRadius: 8,
+                      minWidth: 16,
+                      height: 14,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      paddingHorizontal: 2,
+                    }}>
+                      {correctionLimit === -1 ? (
+                        <Ionicons name="infinite" size={10} color="white" />
+                      ) : (
+                        <Text style={{ color: 'white', fontSize: 8, fontWeight: 'bold' }}>
+                          {Math.max(0, correctionLimit - (correctionUsesToday || 0))}/{correctionLimit}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
                   <Text style={styles.actionText} numberOfLines={2}>Corregir Español</Text>
                 </TouchableOpacity>
                 <TouchableOpacity

@@ -34,6 +34,8 @@ interface ChatInputProps {
   setInputAreaHeight?: (h: number) => void;
   colors?: ThemeColors;
   isDark?: boolean;
+  correctionLimit?: number;
+  correctionUsesToday?: number;
 }
 
 export interface ChatInputHandle {
@@ -61,6 +63,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     setInputAreaHeight = () => {},
     colors,
     isDark: isDarkProp,
+    correctionLimit = -1,
+    correctionUsesToday = 0,
   } = props;
 
   const { colors: themeColors, isDark: themeIsDark } = useTheme();
@@ -173,11 +177,31 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           />
           <TouchableOpacity 
             ref={registerTarget('chat_magic_pencil')}
-            style={[chatViewStyles.pencilButton, { opacity: isCorrecting ? 0.5 : 1 }]} 
+            style={[chatViewStyles.pencilButton, { opacity: isCorrecting ? 0.5 : 1, position: 'relative' }]} 
             onPress={onCorrection} 
             disabled={isCorrecting}
           >
             <MagicPencilIcon size={24} />
+            <View style={{
+              position: 'absolute',
+              top: -2,
+              right: -4,
+              backgroundColor: '#FF69B4',
+              borderRadius: 6,
+              minWidth: 14,
+              height: 12,
+              justifyContent: 'center',
+              alignItems: 'center',
+              paddingHorizontal: 2,
+            }}>
+              {correctionLimit === -1 ? (
+                <Ionicons name="infinite" size={8} color="white" />
+              ) : (
+                <Text style={{ color: 'white', fontSize: 6, fontWeight: 'bold' }}>
+                  {Math.max(0, correctionLimit - (correctionUsesToday || 0))}/{correctionLimit}
+                </Text>
+              )}
+            </View>
           </TouchableOpacity>
         </Animated.View>
 

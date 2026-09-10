@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert, NativeModules, Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import Voice from '@react-native-voice/voice';
 import { chatService } from '../services/chat.service';
 import { useSubscription } from './useSubscription';
+import { useAuth } from '../contexts/AuthContext';
 import { APP_TIERS } from '../config/revenuecat.config';
 
 export interface WordToken {
@@ -41,10 +42,31 @@ const hasNativeVoiceModule = () => {
   return Boolean(nativeVoiceModule?.startSpeech);
 };
 
+function combineSpeechText(base: string, incoming: string): string {
+  const cleanBase = (base || '').trim();
+  const cleanIncoming = (incoming || '').trim();
+
+  if (!cleanBase) return cleanIncoming;
+  if (!cleanIncoming) return cleanBase;
+
+  // If incoming already starts with base (engine delivered full history), use incoming
+  if (cleanIncoming.toLowerCase().startsWith(cleanBase.toLowerCase())) {
+    return cleanIncoming;
+  }
+
+  // If base already ends with incoming (duplicate result), keep base
+  if (cleanBase.toLowerCase().endsWith(cleanIncoming.toLowerCase())) {
+    return cleanBase;
+  }
+
+  return `${cleanBase} ${cleanIncoming}`;
+}
+
 export type BoardUpgradeFeature = 'correction' | 'correction_blocked' | 'lsc';
 
 export const useCommunicationBoard = (onClose?: () => void) => {
-  const { planTier, canUseCorrection, recordCorrectionUse, canUseLSC } = useSubscription();
+  const { user } = useAuth();
+  const { planTier, canUseCorrection, recordCorrectionUse, canUseLSC, correctionLimit, correctionUsesToday } = useSubscription();
   const [text, setText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCorrecting, setIsCorrecting] = useState(false);
@@ -53,10 +75,44 @@ export const useCommunicationBoard = (onClose?: () => void) => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<BoardUpgradeFeature>('correction');
 
-  // Estados del Karaoke por palabra
   const [words, setWords] = useState<WordToken[]>([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(-1);
   const [isPaused, setIsPaused] = useState(false);
+
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
+
+  const sessionStartTextRef = useRef('');
+  const isListeningIntentRef = useRef(false);
+  const restartTimerRef = useRef<any>(null);
+  const speechEndFallbackTimerRef = useRef<any>(null);
+
+  const restartListeningRef = useRef<() => void>(() => {});
+
+  const restartListening = useCallback(() => {
+    if (!isListeningIntentRef.current) return;
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+    }
+    restartTimerRef.current = setTimeout(async () => {
+      if (!isListeningIntentRef.current) return;
+      try {
+        await Voice.start('es-ES');
+      } catch {
+        if (isListeningIntentRef.current) {
+          restartTimerRef.current = setTimeout(() => {
+            if (isListeningIntentRef.current) {
+              Voice.start('es-ES').catch(() => {});
+            }
+          }, 200);
+        }
+      }
+    }, 80);
+  }, []);
+
+  restartListeningRef.current = restartListening;
 
   const currentWordIndexRef = useRef(-1);
   const wordsRef = useRef<WordToken[]>([]);
@@ -72,6 +128,7 @@ export const useCommunicationBoard = (onClose?: () => void) => {
   // (tomar la estimación como buena) y se corrige midiendo cada fragmento.
   const androidRateRef = useRef(1);
   const androidCalibratedRef = useRef(false);
+  const androidAudioStartedRef = useRef(false);
 
   useEffect(() => {
     if (!hasNativeVoiceModule()) {
@@ -82,25 +139,84 @@ export const useCommunicationBoard = (onClose?: () => void) => {
       return;
     }
 
-    // Configurar listeners de Voice para dictado por voz
-    Voice.onSpeechStart = () => setIsListening(true);
-    Voice.onSpeechEnd = () => setIsListening(false);
-    Voice.onSpeechError = (e: any) => {
-      console.error('Speech recognition error:', e);
-      setIsListening(false);
-    };
-    Voice.onSpeechResults = (e: any) => {
-      if (e.value && e.value.length > 0) {
-        setText(e.value[0]);
+    // Configurar listeners de Voice para dictado por voz continuo
+    Voice.onSpeechStart = () => {
+      setIsListening(true);
+      if (speechEndFallbackTimerRef.current) {
+        clearTimeout(speechEndFallbackTimerRef.current);
+        speechEndFallbackTimerRef.current = null;
       }
     };
+
+    Voice.onSpeechEnd = () => {
+      // El usuario hizo una pausa. El reconocedor procesa el audio antes de onSpeechResults.
+      // NO llamamos Voice.start aquí directamente para no cancelar onSpeechResults pendientes.
+      // Un temporizador de respaldo asegura el reinicio si el motor nativo no dispara resultados ni error.
+      if (speechEndFallbackTimerRef.current) {
+        clearTimeout(speechEndFallbackTimerRef.current);
+      }
+      if (isListeningIntentRef.current) {
+        speechEndFallbackTimerRef.current = setTimeout(() => {
+          if (isListeningIntentRef.current) {
+            sessionStartTextRef.current = textRef.current;
+            restartListeningRef.current();
+          }
+        }, 1800);
+      } else {
+        setIsListening(false);
+      }
+    };
+
+    Voice.onSpeechError = () => {
+      if (speechEndFallbackTimerRef.current) {
+        clearTimeout(speechEndFallbackTimerRef.current);
+        speechEndFallbackTimerRef.current = null;
+      }
+      if (isListeningIntentRef.current) {
+        // Aseguramos que lo reconocido hasta ahora quede fijado
+        sessionStartTextRef.current = textRef.current;
+        restartListeningRef.current();
+      } else {
+        setIsListening(false);
+      }
+    };
+
+    Voice.onSpeechResults = (e: any) => {
+      if (speechEndFallbackTimerRef.current) {
+        clearTimeout(speechEndFallbackTimerRef.current);
+        speechEndFallbackTimerRef.current = null;
+      }
+      if (e.value && e.value.length > 0) {
+        const currentSessionText = e.value[0];
+        const newText = combineSpeechText(sessionStartTextRef.current, currentSessionText);
+        setText(newText);
+        textRef.current = newText;
+        // Fijamos este segmento para que la siguiente frase siempre conecte
+        sessionStartTextRef.current = newText;
+      }
+      if (isListeningIntentRef.current) {
+        restartListeningRef.current();
+      }
+    };
+
     Voice.onSpeechPartialResults = (e: any) => {
       if (e.value && e.value.length > 0) {
-        setText(e.value[0]);
+        const currentSessionText = e.value[0];
+        const newText = combineSpeechText(sessionStartTextRef.current, currentSessionText);
+        setText(newText);
+        textRef.current = newText;
       }
     };
 
     return () => {
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+      if (speechEndFallbackTimerRef.current) {
+        clearTimeout(speechEndFallbackTimerRef.current);
+        speechEndFallbackTimerRef.current = null;
+      }
       if (androidTimerRef.current) {
         clearInterval(androidTimerRef.current);
         androidTimerRef.current = null;
@@ -204,7 +320,6 @@ export const useCommunicationBoard = (onClose?: () => void) => {
 
     const lastIndex = Math.min(chunkEnd, list.length - 1);
 
-    // cumulative[i] = peso acumulado hasta terminar la palabra chunkStart + i
     const cumulative: number[] = [];
     let acc = 0;
     for (let i = chunkStart; i <= lastIndex; i++) {
@@ -216,6 +331,7 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     androidStartIndexRef.current = chunkStart;
     androidStartAtRef.current = Date.now();
     androidChunkWeightRef.current = acc;
+    androidAudioStartedRef.current = false; // Reset to false until audio actually begins
 
     setCurrentWordIndex(chunkStart);
     currentWordIndexRef.current = chunkStart;
@@ -226,15 +342,22 @@ export const useCommunicationBoard = (onClose?: () => void) => {
         return;
       }
 
+      if (!androidAudioStartedRef.current) {
+        // Fallback: Si han pasado más de 1.5s y el motor no ha disparado onStart,
+        // asumimos que falló en avisar y arrancamos el avance para no quedarnos atascados.
+        if (Date.now() - androidStartAtRef.current > 1500) {
+          androidAudioStartedRef.current = true;
+          androidStartAtRef.current = Date.now(); // Reset time so word 0 starts now
+        } else {
+          // Esperamos a que onStart confirme que el audio empezó a sonar
+          return;
+        }
+      }
+
       const sched = androidScheduleRef.current;
       const elapsedMs = Date.now() - androidStartAtRef.current;
-      // Reescalamos el tiempo real a la escala de la estimación: si el motor va
-      // el doble de lento (rate = 2), 1000 ms reales equivalen a 500 estimados.
       const estimatedElapsed = elapsedMs / androidRateRef.current;
 
-      // Primera palabra que aún no ha terminado según el reloj. Si el tiempo
-      // ya superó todo el fragmento nos quedamos en la última: onDone es quien
-      // manda avanzar, así el amarillo nunca adelanta a la voz.
       let offset = sched.length - 1;
       for (let i = 0; i < sched.length; i++) {
         if (estimatedElapsed < sched[i]) {
@@ -243,9 +366,6 @@ export const useCommunicationBoard = (onClose?: () => void) => {
         }
       }
 
-      // Nos quedamos en la última palabra del fragmento hasta que onDone
-      // confirme el final real y salte al siguiente: así el amarillo nunca
-      // adelanta a la voz aunque el ritmo medido se quede corto.
       const activeIndex = Math.min(androidStartIndexRef.current + offset, lastIndex);
       if (activeIndex !== currentWordIndexRef.current) {
         setCurrentWordIndex(activeIndex);
@@ -348,16 +468,14 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     Speech.speak(speechText, {
       language: 'es-ES',
       rate: 1.0,
-      // Si el motor sí avisa, reancla el reloj al momento real en que empieza
-      // a sonar (la primera vez tras abrir la app tarda en inicializar).
       onStart: () => {
         if (isSpeakingRef.current) {
-          androidStartAtRef.current = Date.now();
+          if (!androidAudioStartedRef.current) {
+            androidAudioStartedRef.current = true;
+            androidStartAtRef.current = Date.now();
+          }
         }
       },
-      // Punto de sincronización real: al acabar el fragmento sabemos con
-      // certeza dónde está la voz, así que el siguiente arranca sin arrastrar
-      // el error del anterior.
       onDone: () => {
         if (!isSpeakingRef.current) return;
         // Algunos motores emiten onDone más de una vez por fragmento; sin esta
@@ -496,6 +614,7 @@ export const useCommunicationBoard = (onClose?: () => void) => {
       if (!hasNativeVoiceModule()) {
         const message = 'El dictado por voz no está disponible en esta versión instalada.';
         setVoiceRecognitionError(message);
+        isListeningIntentRef.current = false;
         setIsListening(false);
         console.warn(
           'Voice recognition native module is unavailable. Expected NativeModules.Voice or NativeModules.RCTVoice.'
@@ -512,6 +631,7 @@ export const useCommunicationBoard = (onClose?: () => void) => {
       if (!isAvailable) {
         const message = 'Este dispositivo no tiene un servicio de reconocimiento de voz disponible.';
         setVoiceRecognitionError(message);
+        isListeningIntentRef.current = false;
         setIsListening(false);
         console.warn(message);
         Alert.alert('Dictado no disponible', message);
@@ -519,16 +639,38 @@ export const useCommunicationBoard = (onClose?: () => void) => {
       }
 
       setVoiceRecognitionError(null);
+      isListeningIntentRef.current = true;
+      sessionStartTextRef.current = textRef.current;
       setIsListening(true);
       await Voice.start('es-ES');
     } catch (e) {
       console.error('Failed to start voice recognition:', e);
+      isListeningIntentRef.current = false;
       setIsListening(false);
     }
   };
 
+  const handleSetText = useCallback((newTextOrFn: React.SetStateAction<string>) => {
+    setText(prev => {
+      const resolved = typeof newTextOrFn === 'function' ? newTextOrFn(prev) : newTextOrFn;
+      textRef.current = resolved;
+      sessionStartTextRef.current = resolved;
+      return resolved;
+    });
+  }, []);
+
   const stopListening = async () => {
     try {
+      isListeningIntentRef.current = false;
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+      if (speechEndFallbackTimerRef.current) {
+        clearTimeout(speechEndFallbackTimerRef.current);
+        speechEndFallbackTimerRef.current = null;
+      }
+      sessionStartTextRef.current = textRef.current;
       if (!hasNativeVoiceModule()) {
         setIsListening(false);
         return;
@@ -552,13 +694,21 @@ export const useCommunicationBoard = (onClose?: () => void) => {
 
     setIsCorrecting(true);
     try {
-      const { correctedText } = await chatService.correctMessage(text);
+      const { correctedText } = await chatService.correctMessage(text, user?.id || '');
       if (correctedText) {
         setText(correctedText);
+        textRef.current = correctedText;
+        sessionStartTextRef.current = correctedText;
         recordCorrectionUse();
       }
-    } catch (error) {
-      console.error('Error al corregir texto con IA:', error);
+    } catch (error: any) {
+      console.error('Error in AI correction:', error);
+      if (error?.message?.includes('LIMIT_EXCEEDED') || error?.status === 403) {
+        setUpgradeFeature(planTier === APP_TIERS.GRATIS ? 'correction_blocked' : 'correction');
+        setShowUpgradeModal(true);
+      } else {
+        Alert.alert('Error', 'No se pudo procesar el texto.');
+      }
     } finally {
       setIsCorrecting(false);
     }
@@ -576,6 +726,8 @@ export const useCommunicationBoard = (onClose?: () => void) => {
 
   const handleClear = () => {
     setText('');
+    sessionStartTextRef.current = '';
+    textRef.current = '';
     handleStop();
     if (isListening) {
       stopListening();
@@ -612,7 +764,7 @@ export const useCommunicationBoard = (onClose?: () => void) => {
 
   return {
     text,
-    setText,
+    setText: handleSetText,
     isSpeaking,
     isCorrecting,
     isPaused,
@@ -634,5 +786,7 @@ export const useCommunicationBoard = (onClose?: () => void) => {
     showUpgradeModal,
     upgradeFeature,
     dismissUpgradeModal: () => setShowUpgradeModal(false),
+    correctionLimit,
+    correctionUsesToday,
   };
 };

@@ -12,7 +12,7 @@ interface UploadingMessage {
   content: string;
   localUri: string;
   type: 'image' | 'video' | 'document' | 'audio';
-  status: 'uploading';
+  status: 'uploading' | 'failed';
   createdAt: string;
   senderId: string;
   metadata?: { duration?: number; isVideoNote?: boolean };
@@ -31,6 +31,8 @@ interface MessageListProps {
   swipeableRefs: React.MutableRefObject<Map<string, Swipeable | null>>;
   readReceiptsEnabled?: boolean;
   onNeedUpgrade?: (feature: 'transcription' | 'transcription_blocked') => void;
+  onRetryUpload?: (msg: UploadingMessage) => void;
+  onDismissUpload?: (msgId: string) => void;
 }
 
 export const MessageList = ({
@@ -46,6 +48,8 @@ export const MessageList = ({
   swipeableRefs,
   readReceiptsEnabled = true,
   onNeedUpgrade,
+  onRetryUpload,
+  onDismissUpload,
 }: MessageListProps) => {
   const terminalCallTypes = useMemo(() => {
     return new Set(isGroup ? ['call_ended', 'call_missed'] : ['call_ended', 'call_rejected', 'call_missed']);
@@ -80,10 +84,11 @@ export const MessageList = ({
   }, [messages]);
 
   const renderMessageItem = ({ item }: { item: Message | UploadingMessage }) => {
-    if ('status' in item && item.status === 'uploading') {
+    if ('status' in item && (item.status === 'uploading' || item.status === 'failed')) {
       const uploader = item as UploadingMessage;
+      const isFailed = uploader.status === 'failed';
       return (
-        <View style={{ opacity: 0.7 }}>
+        <View style={{ opacity: isFailed ? 1 : 0.7 }}>
           <MessageBubble
             content={uploader.localUri}
             time={uploader.createdAt}
@@ -94,7 +99,22 @@ export const MessageList = ({
             metadata={uploader.metadata}
             onNeedUpgrade={onNeedUpgrade}
           />
-          <ActivityIndicator style={{ position: 'absolute', alignSelf: 'center', top: '40%' }} color="white" />
+          {!isFailed && (
+            <ActivityIndicator style={{ position: 'absolute', alignSelf: 'center', top: '40%' }} color="white" />
+          )}
+          {isFailed && (
+            <View style={{ position: 'absolute', alignSelf: 'center', top: '30%', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 12 }}>
+              <Ionicons name="cloud-offline" size={24} color="#ff4444" />
+              <View style={{ flexDirection: 'row', marginTop: 8, gap: 12 }}>
+                <TouchableOpacity onPress={() => onRetryUpload?.(uploader)} style={{ padding: 6, backgroundColor: colors.primary, borderRadius: 6 }}>
+                  <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>Reintentar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => onDismissUpload?.(uploader.id)} style={{ padding: 6, backgroundColor: '#444', borderRadius: 6 }}>
+                  <Text style={{ color: 'white', fontSize: 12 }}>Descartar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
       );
     }
@@ -117,7 +137,7 @@ export const MessageList = ({
         return new Date(safe).getTime() || 0;
       };
 
-      const callTime = getSafeTime(item.createdAt);
+      const callTime = getSafeTime(msg.createdAt);
       const isExpired = callTime > 0 && (Date.now() - callTime) > CALL_EXPIRY_MS;
 
       const callSessionId = typeof msg.metadata?.callSessionId === 'string' ? msg.metadata.callSessionId : undefined;
@@ -185,13 +205,13 @@ export const MessageList = ({
       return (
         <View style={[chatViewStyles.messageBubbleContainer, { alignSelf: 'center' }]}>
           <MessageBubble
-            content={item.content}
-            time={item.createdAt}
+            content={msg.content}
+            time={msg.createdAt}
             isMine={isMe}
-            isSynced={item.status !== 'pending'}
+            isSynced={msg.status !== 'pending'}
             isRead={false}
             type="text"
-            metadata={item.metadata}
+            metadata={msg.metadata}
           />
         </View>
       );
@@ -199,7 +219,7 @@ export const MessageList = ({
 
     return (
       <Swipeable
-        ref={(ref) => { if (ref) swipeableRefs.current.set(item.id, ref); }}
+        ref={(ref) => { if (ref) swipeableRefs.current.set(msg.id, ref); }}
         enabled={!isDeleted}
         renderRightActions={() => (
           <View style={{ width: 60, justifyContent: 'center', alignItems: 'center' }}>
@@ -207,35 +227,35 @@ export const MessageList = ({
           </View>
         )}
         onSwipeableWillOpen={() => {
-          onSwipeReply(item);
+          onSwipeReply(msg);
           Vibration.vibrate(50);
-          const swipeable = swipeableRefs.current.get(item.id);
+          const swipeable = swipeableRefs.current.get(msg.id);
           if (swipeable) swipeable.close();
         }}
       >
         <Pressable 
-          onLongPress={() => !isDeleted && onLongPress(item)}
+          onLongPress={() => !isDeleted && onLongPress(msg)}
           delayLongPress={250}
         >
           <MessageBubble
-            content={item.content}
-            time={item.createdAt}
+            content={msg.content}
+            time={msg.createdAt}
             isMine={isMe}
-            isSynced={item.status !== 'pending'}
-            isRead={item.status === 'read' && readReceiptsEnabled !== false}
-            type={(item.type as "image" | "video" | "call_ended" | "call_rejected" | "call_missed" | "call" | "text" | "audio") || 'text'}
-            replyToContent={item.replyToContent}
+            isSynced={msg.status !== 'pending'}
+            isRead={msg.status === 'read' && readReceiptsEnabled !== false}
+            type={(msg.type as "image" | "video" | "call_ended" | "call_rejected" | "call_missed" | "call" | "text" | "audio") || 'text'}
+            replyToContent={msg.replyToContent}
             replyToSender={
-              item.replyToSender
-                ? ((item.metadata?.replyToSenderId as string) === userId ? 'Tú' : item.replyToSender)
+              msg.replyToSender
+                ? ((msg.metadata?.replyToSenderId as string) === userId ? 'Tú' : msg.replyToSender)
                 : undefined
             }
-            publicId={item.metadata?.publicId}
-            duration={item.metadata?.duration}
-            senderName={isGroup && !isMe ? item.senderName : undefined}
-            updatedAt={item.updatedAt}
-            readAt={item.readAt}
-            metadata={item.metadata}
+            publicId={msg.metadata?.publicId}
+            duration={msg.metadata?.duration}
+            senderName={isGroup && !isMe ? msg.senderName : undefined}
+            updatedAt={msg.updatedAt}
+            readAt={msg.readAt}
+            metadata={msg.metadata}
             onNeedUpgrade={onNeedUpgrade}
           />
         </Pressable>

@@ -484,62 +484,63 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
         });
       }
     };
-    registerForPush().catch(e => {
-      console.error('[PUSH_REGISTER] Failed to register push token:', e);
-    });
+    // We wrap everything in an async IIFE to prevent registerForPush (Expo) and 
+    // obtenerTokenFcm (FCM) from running concurrently. Running them at the exact same time
+    // causes a race condition in Google Play Services returning SERVICE_NOT_AVAILABLE.
+    const initializeTokens = async () => {
+      try {
+        await registerForPush();
+      } catch (e) {
+        console.error('[PUSH_REGISTER] Failed to register push token:', e);
+      }
 
-    // 2. Register for VoIP Push (iOS)
-    if (Platform.OS === 'ios') {
-      callKeepService.setupVoipPush((token) => {
-        if (token && !cancelled) {
-          void authService.updateVoipToken(user.id, token).catch(console.error);
-        }
-      });
-    }
+      if (cancelled) return;
 
-    // 3. Register for FCM Data Messages (Android VoIP)
-    if (Platform.OS === 'android') {
-      // Mismo tratamiento que la ruta Expo: asegurar el registro del
-      // dispositivo y reintentar ante SERVICE_NOT_AVAILABLE, que es
-      // transitorio. Comparten la misma causa raiz porque en Android el token
-      // de Expo se obtiene a traves de FCM.
-      const obtenerTokenFcm = async (): Promise<string> => {
-        const esperasFcm = [0, 2000, 8000, 30000];
-        let ultimo: unknown;
+      // 2. Register for VoIP Push (iOS)
+      if (Platform.OS === 'ios') {
+        callKeepService.setupVoipPush((token) => {
+          if (token && !cancelled) {
+            void authService.updateVoipToken(user.id, token).catch(console.error);
+          }
+        });
+      }
+
+      // 3. Register for FCM Data Messages (Android VoIP)
+      if (Platform.OS === 'android') {
+        const obtenerTokenFcm = async (): Promise<string> => {
+          const esperasFcm = [0, 2000, 8000, 30000];
+          let ultimo: unknown;
+
+          try {
+            if (!messaging().isDeviceRegisteredForRemoteMessages) {
+              await messaging().registerDeviceForRemoteMessages();
+            }
+          } catch {
+            // No fatal: si ya estaba registrado o falla, lo dira getToken().
+          }
+
+          for (let i = 0; i < esperasFcm.length; i++) {
+            if (cancelled) return '';
+            if (esperasFcm[i] > 0) {
+              await new Promise((r) => setTimeout(r, esperasFcm[i]));
+              if (cancelled) return '';
+            }
+            try {
+              return await messaging().getToken();
+            } catch (e) {
+              ultimo = e;
+            }
+          }
+          throw ultimo;
+        };
 
         try {
-          if (!messaging().isDeviceRegisteredForRemoteMessages) {
-            await messaging().registerDeviceForRemoteMessages();
-          }
-        } catch {
-          // No fatal: si ya estaba registrado o falla, lo dira getToken().
-        }
-
-        for (let i = 0; i < esperasFcm.length; i++) {
-          if (cancelled) return '';
-          if (esperasFcm[i] > 0) {
-            await new Promise((r) => setTimeout(r, esperasFcm[i]));
-            if (cancelled) return '';
-          }
-          try {
-            return await messaging().getToken();
-          } catch (e) {
-            ultimo = e;
-          }
-        }
-        throw ultimo;
-      };
-
-      obtenerTokenFcm()
-        .then(token => {
+          const token = await obtenerTokenFcm();
           console.log('✅ FCM Token generated:', token ? token.substring(0, 15) + '...' : 'null');
-          if (!token) return;
-          if (cancelled) {
-            return;
+          if (token && !cancelled) {
+            void authService.updateFcmToken(user.id, token).catch(console.error);
           }
-          void authService.updateFcmToken(user.id, token).catch(console.error);
-        })
-        .catch(error => {
+        } catch (error) {
           console.error('❌ Error getting FCM token:', error);
           void authService.reportPushDiagnostic({
             reason: 'fcm_error',
@@ -547,8 +548,13 @@ export const useNotifications = (user: User | null, onNavigateToChat: (params: N
             platform: Platform.OS,
             detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
           });
-        });
+        }
+      }
+    };
 
+    initializeTokens();
+
+    if (Platform.OS === 'android') {
       // Listen for token refreshes
       unsubscribeTokenRefresh = messaging().onTokenRefresh(token => {
         console.log('🔄 FCM Token refreshed:', token ? token.substring(0, 15) + '...' : 'null');

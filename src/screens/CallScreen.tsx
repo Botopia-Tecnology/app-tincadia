@@ -45,9 +45,13 @@ type PartialCaption = {
 const CaptionsVisibilityContext = React.createContext<{
     captionsVisible: boolean;
     setCaptionsVisible: (visible: boolean) => void;
+    captionFontSize: number;
+    setCaptionFontSize: React.Dispatch<React.SetStateAction<number>>;
 }>({
     captionsVisible: true,
     setCaptionsVisible: () => undefined,
+    captionFontSize: 11,
+    setCaptionFontSize: () => undefined,
 });
 
 /**
@@ -355,6 +359,7 @@ export const CallScreen = ({
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
     const [isFrontCamera, setIsFrontCamera] = useState(true);
     const [captionsVisible, setCaptionsVisible] = useState(true);
+    const [captionFontSize, setCaptionFontSize] = useState(11);
     // La barra arranca visible y solo se oculta/muestra con su pestañita, igual
     // que el patrón de los subtítulos (CC). No hay auto-ocultado por inactividad:
     // durante una llamada en lengua de señas las manos están ocupadas y una barra
@@ -1005,9 +1010,10 @@ export const CallScreen = ({
                         <Text style={styles.text}>Conectando a la sala...</Text>
                     </View>
                 ) : (
-                    <CaptionsVisibilityContext.Provider value={{ captionsVisible, setCaptionsVisible }}>
+                    <CaptionsVisibilityContext.Provider value={{ captionsVisible, setCaptionsVisible, captionFontSize, setCaptionFontSize }}>
                     <TranscriptionsProvider>
                     <ControlsVisibilityContext.Provider value={controlsVisibilityValue}>
+                        <CallTimer />
                         <VideoView layoutMode={layoutMode} isFrontCamera={isFrontCamera} />
                         <ControlsView
                             onHangup={safeOnBack}
@@ -1049,7 +1055,7 @@ function payloadToUint8Array(payload: Uint8Array | ArrayBuffer | undefined): Uin
 
 function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 30 }: { participantIdentity: string, bottomOffset?: number }) {
     const room = useRoomContext();
-    const { captionsVisible, setCaptionsVisible } = React.useContext(CaptionsVisibilityContext);
+    const { captionsVisible, setCaptionsVisible, captionFontSize, setCaptionFontSize } = React.useContext(CaptionsVisibilityContext);
     const transcriptions = React.useContext(TranscriptionsContext);
     const [isLivekitConnected, setIsLivekitConnected] = useState(false);
     const scrollRef = useRef<ScrollView>(null);
@@ -1090,14 +1096,32 @@ function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 3
 
     return (
         <View style={[styles.participantTranscriptionContainer, { bottom: bottomOffset }]} pointerEvents="box-none">
-            <TouchableOpacity
-                style={styles.transcriptionCloseButton}
-                onPress={() => setCaptionsVisible(false)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel="Cerrar subtítulos"
-            >
-                <Text style={styles.transcriptionCloseText}>✕</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignSelf: 'flex-end', alignItems: 'center', marginBottom: 3, marginRight: 2, gap: 4 }}>
+                <TouchableOpacity
+                    style={styles.transcriptionCloseButton}
+                    onPress={() => setCaptionFontSize(s => Math.max(8, s - 2))}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Reducir tamaño del texto"
+                >
+                    <Text style={styles.transcriptionCloseText}>A-</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.transcriptionCloseButton}
+                    onPress={() => setCaptionFontSize(s => Math.min(24, s + 2))}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Aumentar tamaño del texto"
+                >
+                    <Text style={styles.transcriptionCloseText}>A+</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.transcriptionCloseButton}
+                    onPress={() => setCaptionsVisible(false)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Cerrar subtítulos"
+                >
+                    <Text style={styles.transcriptionCloseText}>✕</Text>
+                </TouchableOpacity>
+            </View>
             <View style={styles.participantTranscriptionBox} pointerEvents="none">
                 <ScrollView
                     ref={scrollRef}
@@ -1107,12 +1131,12 @@ function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 3
                 >
                     {finalLines.map((line) => (
                         <Text key={line.id} style={styles.transcriptionLineFinal}>
-                            <Text style={styles.transcriptionUtterance}>{line.text}</Text>
+                            <Text style={[styles.transcriptionUtterance, { fontSize: captionFontSize }]}>{line.text}</Text>
                         </Text>
                     ))}
                     {partialLine ? (
                         <Text style={styles.transcriptionLinePartial}>
-                            <Text style={styles.transcriptionUtterancePartial}>{partialLine.text}</Text>
+                            <Text style={[styles.transcriptionUtterancePartial, { fontSize: captionFontSize }]}>{partialLine.text}</Text>
                         </Text>
                     ) : null}
                 </ScrollView>
@@ -1342,6 +1366,59 @@ function formatParticipantDisplayName(identity: string): string {
         return `Intérprete: ${match[1].trim()}`;
     }
     return trimmed;
+}
+
+function formatDuration(seconds: number): string {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) {
+        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function CallTimer() {
+    const [seconds, setSeconds] = useState(0);
+    const room = useRoomContext();
+    const [isStarted, setIsStarted] = useState(false);
+
+    useEffect(() => {
+        if (!room) return;
+
+        const checkParticipants = () => {
+            let hasRemoteHuman = false;
+            room.remoteParticipants.forEach((p) => {
+                if (isHumanParticipant(p)) hasRemoteHuman = true;
+            });
+            setIsStarted(hasRemoteHuman);
+        };
+
+        checkParticipants();
+        room.on('participantConnected', checkParticipants);
+        room.on('participantDisconnected', checkParticipants);
+
+        return () => {
+            room.off('participantConnected', checkParticipants);
+            room.off('participantDisconnected', checkParticipants);
+        };
+    }, [room]);
+
+    useEffect(() => {
+        if (!isStarted) return;
+        const interval = setInterval(() => {
+            setSeconds(s => s + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [isStarted]);
+
+    if (!isStarted) return null;
+
+    return (
+        <View style={styles.callTimerContainer} pointerEvents="none">
+            <Text style={styles.callTimerText}>{formatDuration(seconds)}</Text>
+        </View>
+    );
 }
 
 function VideoView({ layoutMode, isFrontCamera }: { layoutMode: LayoutMode, isFrontCamera: boolean }) {

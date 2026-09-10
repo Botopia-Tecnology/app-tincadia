@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Image, TouchableOpacity, ActivityIndicator, Modal, Vibration, Alert } from 'react-native';
 import { Video, ResizeMode, Audio, AVPlaybackStatus } from 'expo-av';
 import * as Speech from 'expo-speech';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { messageBubbleStyles as styles } from '../../../styles/ChatComponents.styles';
 import { messageBubbleMediaStyles as mediaStyles } from '../../../styles/ChatComponents.styles';
@@ -149,15 +149,40 @@ export function MessageBubble({
                     return;
                 }
 
-                setIsLoading(true);
-                const normalizeUrl = (url: string) => {
-                    if (url.startsWith('http')) return url;
-                    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-                };
+                const fallbackUrl = (metadata as any)?.url;
+                const resolvedKey = resolveChatMediaKey(publicId, content, API_URL);
+                const isDirectHttp = resolvedKey.startsWith('http');
                 
-                try {
+                setIsLoading(true);
 
-                    const resolvedKey = resolveChatMediaKey(publicId, content, API_URL);
+                try {
+                    // 2. Check if file is already cached (instant)
+                    const fileUri = mediaService.getCacheFileUri(
+                        resolvedKey, 
+                        isDocumentImage ? 'document' : (type as any), 
+                        isDocumentImage ? { mimeType: attachmentMimeType, resourceType: 'raw' } : undefined
+                    );
+                    const fileInfo = await FileSystem.getInfoAsync(fileUri);
+                    
+                    if (cancelled || requestId !== mediaRequestRef.current) return;
+                    
+                    if (fileInfo.exists && 'size' in fileInfo && fileInfo.size && fileInfo.size > 0) {
+                        setMediaUri(fileUri);
+                        setIsLoading(false);
+                        return; // Done! It's cached.
+                    }
+
+                    // 3. Not cached! Use instant URL if available to show immediately
+                    const instantUrl = (fallbackUrl && typeof fallbackUrl === 'string' && fallbackUrl.startsWith('http')) 
+                                       ? fallbackUrl 
+                                       : (isDirectHttp ? resolvedKey : null);
+                    
+                    if (instantUrl) {
+                        setMediaUri(instantUrl);
+                        setIsLoading(false); // Hide spinner
+                    }
+                    
+                    // 4. Proceed to download in the background for next time
                     const localUri = await mediaService.downloadMedia(
                         resolvedKey,
                         isDocumentImage ? 'document' : type as 'image' | 'video' | 'audio' | 'document',
@@ -169,26 +194,24 @@ export function MessageBubble({
                     if (cancelled || requestId !== mediaRequestRef.current) return;
 
                     if (localUri) {
-                        setMediaUri(localUri);
-                    } else {
-                        const fallbackUrl = (metadata as any)?.url;
-                        if (fallbackUrl && typeof fallbackUrl === 'string' && fallbackUrl.startsWith('http')) {
-                            setMediaUri(fallbackUrl);
-                        } else {
-                            const playable =
-                                resolvedKey.startsWith('http') || resolvedKey.startsWith('file://');
-                            setMediaUri(playable ? resolvedKey : (content.startsWith('/') ? normalizeUrl(content) : null));
+                        // Only switch to localUri if we didn't already load an instantUrl, 
+                        // to prevent video/audio playback interruptions or image flickers.
+                        // The cache will be used naturally the next time the chat is opened.
+                        if (!instantUrl) {
+                            setMediaUri(localUri);
                         }
+                    } else if (!instantUrl) {
+                        setMediaUri(content.startsWith('/') ? `${API_URL}${content.startsWith('/') ? '' : '/'}${content}` : null);
                     }
                 } catch (e) {
                     if (cancelled || requestId !== mediaRequestRef.current) return;
                     console.error('Failed to load/cache media:', e);
-                    const fallbackUrl = (metadata as any)?.url;
-                    if (fallbackUrl && typeof fallbackUrl === 'string' && fallbackUrl.startsWith('http')) {
-                        setMediaUri(fallbackUrl);
-                    } else {
-                        const key = resolveChatMediaKey(publicId, content, API_URL);
-                        setMediaUri(key.startsWith('http') || key.startsWith('file://') ? key : (content.startsWith('/') ? normalizeUrl(content) : null));
+                    
+                    const instantUrl = (fallbackUrl && typeof fallbackUrl === 'string' && fallbackUrl.startsWith('http')) 
+                                       ? fallbackUrl 
+                                       : (isDirectHttp ? resolvedKey : null);
+                    if (!instantUrl) {
+                        setMediaUri(content.startsWith('/') ? `${API_URL}${content.startsWith('/') ? '' : '/'}${content}` : null);
                     }
                 } finally {
                     if (!cancelled && requestId === mediaRequestRef.current) {
@@ -1007,7 +1030,9 @@ export function MessageBubble({
                     <Text style={{ fontSize: 12, fontWeight: 'bold', color: senderColor, marginBottom: 2, paddingHorizontal: 4, paddingTop: 4 }}>{senderName}</Text>
                 )}
                 {renderReplyQuote()}
-                {renderMedia()}
+                <View style={{ alignSelf: 'center' }}>
+                    {renderMedia()}
+                </View>
                 <View style={[styles.footer, { paddingHorizontal: 8, paddingBottom: 4 }]}>
                     {isEdited && (
                         <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther, { marginRight: 4, fontStyle: 'italic' }]}>

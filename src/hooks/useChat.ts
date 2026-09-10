@@ -434,12 +434,18 @@ export function useChat(
                             });
                         }
 
-                        // Si el sender soy yo, el optimistic update ya lo manejó correctamente.
-                        // No guardar como isMine:false por ningún motivo.
+                        // Si el sender soy yo, el optimistic update de este dispositivo ya lo manejó.
+                        // Soporte multi-dispositivo: Si envié un mensaje o llamada desde otro celular,
+                        // no existirá en SQLite de este celular.
                         if (isMine) {
                             // Solo limpiar el broadcast ref si existía
                             recentBroadcastIdsRef.current.delete(msgId);
-                            return;
+                            
+                            const existingLocal = getLocalMessages(conversationId).find(m => m.id === msgId || m.serverId === msgId);
+                            if (existingLocal) {
+                                return; // Ya existe localmente, el optimistic update funcionó
+                            }
+                            // Si no existe, dejamos que pase para que se guarde localmente
                         }
 
                         // If broadcast already handled this message, skip entirely
@@ -477,10 +483,10 @@ export function useChat(
                                 senderName: resolveSenderName(msgSenderId),
                                 content: rawMsg.content as string,
                                 type: (rawMsg.type as string) || 'text',
-                                status: 'delivered',
+                                status: isMine ? 'sent' : 'delivered',
                                 createdAt: (rawMsg.created_at as string) || new Date().toISOString(),
                                 updatedAt: rawMsg.updated_at as string | undefined,
-                                isMine: false,
+                                isMine: isMine,
                                 replyToId: (rawMsg.reply_to_id || meta?.replyToId) as string | undefined,
                                 replyToContent: (rawMsg.reply_to_content || meta?.replyToContent) as string | undefined,
                                 replyToSender: (rawMsg.reply_to_sender || meta?.replyToSender) as string | undefined,
@@ -554,6 +560,18 @@ export function useChat(
                     const msgSenderId = sm?.senderId || sm?.sender_id;
                     const msgCreatedAt = sm?.createdAt || sm?.created_at;
 
+                    const isMine = isSameUserId(msgSenderId as string | undefined, userId);
+                    let shouldProcess = false;
+                    if (!isMine) {
+                        shouldProcess = true;
+                    } else {
+                        // Multi-device: si es mío pero no está localmente, viene de otro dispositivo
+                        const existingLocal = getLocalMessages(conversationId).find(m => m.id === sm.id || m.serverId === sm.id);
+                        if (!existingLocal) {
+                            shouldProcess = true;
+                        }
+                    }
+
                     if (sm?.type === 'call' || sm?.type === 'call_ended' || sm?.type === 'call_rejected' || sm?.type === 'call_missed') {
                         console.log('[CALL_DEBUG] useChat.broadcast.new_message', {
                             currentConversationId: conversationId,
@@ -564,11 +582,11 @@ export function useChat(
                             type: sm.type,
                             createdAt: msgCreatedAt,
                             metadata: sm.metadata,
-                            willSave: Boolean(sm && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId),
+                            willSave: Boolean(sm && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && shouldProcess),
                         });
                     }
 
-                    if (sm && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && msgSenderId !== userId) {
+                    if (sm && (msgConversationId as string)?.toLowerCase() === conversationId.toLowerCase() && shouldProcess) {
                         // Track this ID so the postgres_changes INSERT handler skips redundant work
                         recentBroadcastIdsRef.current.add(sm.id);
                         setTimeout(() => { recentBroadcastIdsRef.current.delete(sm.id); }, 10_000);
@@ -594,9 +612,9 @@ export function useChat(
                             senderName: resolveSenderName(msgSenderId as string),
                             content: sm.content,
                             type: sm.type || 'text',
-                            status: 'delivered',
+                            status: isMine ? 'sent' : 'delivered',
                             createdAt: msgCreatedAt as string,
-                            isMine: false,
+                            isMine: isMine,
                             replyToId: (sm.replyToId || sm.reply_to_id || bMeta?.replyToId) as string | undefined,
                             replyToContent: (sm.replyToContent || sm.reply_to_content || bMeta?.replyToContent) as string | undefined,
                             replyToSender: (sm.replyToSender || sm.reply_to_sender || bMeta?.replyToSender) as string | undefined,

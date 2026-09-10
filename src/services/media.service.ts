@@ -389,78 +389,109 @@ class MediaService {
 
     /**
      * Upload media to Cloudinary via API Gateway
-     * Returns the Public ID (essential for signed URLs) and Type
+     * Returns the Public ID (essential for signed URLs) and Type.
+     * Includes timeout (60s images, 180s video/audio) and automatic retries (3 attempts with exponential backoff).
      */
     async uploadMedia(media: MediaFile): Promise<{ publicId: string; type: string; url: string; localUri: string }> {
-        try {
-            const token = await authService.getToken();
-            if (!token) throw new Error('No authenticated');
+        const MAX_RETRIES = 3;
+        const BASE_DELAY_MS = 2000;
+        const TIMEOUT_IMAGE_MS = 60_000;
+        const TIMEOUT_VIDEO_MS = 180_000;
 
-            const preparedMedia = await this.prepareMediaForUpload(media);
+        const preparedMedia = await this.prepareMediaForUpload(media);
+        const isHeavy = preparedMedia.type === 'video' || preparedMedia.type === 'audio';
+        const timeoutMs = isHeavy ? TIMEOUT_VIDEO_MS : TIMEOUT_IMAGE_MS;
 
-            const uploadUrl = API_URL + API_ENDPOINTS.UPLOAD_CHAT_MEDIA;
+        let lastError: Error | null = null;
 
-            // Prepare type field
-            // Note: Cloudinary 'raw' is used for generic files, but for audio we often use 'video' or 'raw'
-            // We'll stick to 'image' | 'video' | 'raw' as defined in backend
-            let uploadType = (preparedMedia.type === 'audio' || preparedMedia.type === 'document') ? 'raw' : preparedMedia.type;
-
-            console.log(`📤 Uploading ${preparedMedia.type} to ${uploadUrl}`);
-
-            const response = await FileSystem.uploadAsync(uploadUrl, preparedMedia.uri, {
-                httpMethod: 'POST',
-                uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-                fieldName: 'file',
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-                parameters: {
-                    type: uploadType,
-                    // Nombre original con extensión (el URI local suele ser un cache sin extensión útil)
-                    fileName: preparedMedia.fileName || `file_${Date.now()}`,
-                },
-            });
-
-            if (response.status !== 201 && response.status !== 200) {
-                console.error('Upload failed with status:', response.status, response.body);
-                throw new Error(`Upload failed: ${response.status}`);
-            }
-
-            const data: UploadResponse = JSON.parse(response.body);
-            console.log('✅ Upload success:', data.public_id, 'URL:', data.url);
-
-            // Pre-cache the uploaded media locally into persistent cache using the publicId
-            // so downloadMedia will immediately find it without re-downloading from Cloudinary!
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                const persistentCacheUri = this.getCacheFileUri(data.public_id, preparedMedia.type, preparedMedia.fileName);
-                await FileSystem.copyAsync({
-                    from: preparedMedia.uri,
-                    to: persistentCacheUri,
-                });
-                console.log(`📦 [MediaService] Pre-cached uploaded media: ${persistentCacheUri}`);
-            } catch (cacheErr) {
-                console.warn('⚠️ [MediaService] Could not pre-cache uploaded file:', cacheErr);
-            }
+                const token = await authService.getToken();
+                if (!token) throw new Error('No authenticated');
 
-            // Also cache the Cloudinary URL in signedUrlCache if present
-            if (data.url) {
-                this.signedUrlCache.set(data.public_id, {
+                const uploadUrl = API_URL + API_ENDPOINTS.UPLOAD_CHAT_MEDIA;
+                let uploadType = (preparedMedia.type === 'audio' || preparedMedia.type === 'document') ? 'raw' : preparedMedia.type;
+
+                console.log(`📤 [Upload] Attempt ${attempt}/${MAX_RETRIES} — ${preparedMedia.type} to ${uploadUrl}`);
+
+                // Race the upload against a timeout
+                const uploadPromise = FileSystem.uploadAsync(uploadUrl, preparedMedia.uri, {
+                    httpMethod: 'POST',
+                    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+                    fieldName: 'file',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                    parameters: {
+                        type: uploadType,
+                        fileName: preparedMedia.fileName || `file_${Date.now()}`,
+                    },
+                });
+
+                let timeoutId: ReturnType<typeof setTimeout> | undefined;
+                const timeoutPromise = new Promise<never>((_resolve, reject) => {
+                    timeoutId = setTimeout(() => reject(new Error(`Upload timed out after ${timeoutMs / 1000}s`)), timeoutMs);
+                });
+
+                let response: FileSystem.FileSystemUploadResult;
+                try {
+                    response = await Promise.race([uploadPromise, timeoutPromise]);
+                } finally {
+                    if (timeoutId) {
+                        clearTimeout(timeoutId);
+                    }
+                }
+
+                if (response.status !== 201 && response.status !== 200) {
+                    console.error(`[Upload] Failed with status ${response.status}:`, response.body);
+                    throw new Error(`Upload failed: ${response.status}`);
+                }
+
+                const data: UploadResponse = JSON.parse(response.body);
+                console.log(`✅ [Upload] Success on attempt ${attempt}:`, data.public_id);
+
+                // Pre-cache the uploaded media locally into persistent cache using the publicId
+                // so downloadMedia will immediately find it without re-downloading from Cloudinary!
+                try {
+                    const persistentCacheUri = this.getCacheFileUri(data.public_id, preparedMedia.type, preparedMedia.fileName);
+                    await FileSystem.copyAsync({
+                        from: preparedMedia.uri,
+                        to: persistentCacheUri,
+                    });
+                    console.log(`📦 [MediaService] Pre-cached uploaded media: ${persistentCacheUri}`);
+                } catch (cacheErr) {
+                    console.warn('⚠️ [MediaService] Could not pre-cache uploaded file:', cacheErr);
+                }
+
+                // Also cache the Cloudinary URL in signedUrlCache if present
+                if (data.url) {
+                    this.signedUrlCache.set(data.public_id, {
+                        url: data.url,
+                        expiresAt: Date.now() + 50 * 60 * 1000,
+                    });
+                }
+
+                return {
+                    publicId: data.public_id,
+                    type: preparedMedia.type,
                     url: data.url,
-                    expiresAt: Date.now() + 50 * 60 * 1000,
-                });
+                    localUri: preparedMedia.uri,
+                };
+
+            } catch (error: any) {
+                lastError = error;
+                console.warn(`⚠️ [Upload] Attempt ${attempt}/${MAX_RETRIES} failed: ${error.message}`);
+
+                if (attempt < MAX_RETRIES) {
+                    const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1); // 2s, 4s, 8s
+                    console.log(`⏳ [Upload] Retrying in ${delayMs / 1000}s...`);
+                    await new Promise(resolve => setTimeout(resolve, delayMs));
+                }
             }
-
-            return {
-                publicId: data.public_id,
-                type: preparedMedia.type,
-                url: data.url, // Return full Cloudinary URL for direct playback
-                localUri: preparedMedia.uri,
-            };
-
-        } catch (error) {
-            console.error('Media upload error:', error);
-            throw error;
         }
+
+        console.error(`❌ [Upload] All ${MAX_RETRIES} attempts failed for ${preparedMedia.type}`);
+        throw lastError || new Error('Upload failed after all retries');
     }
 
     /**
