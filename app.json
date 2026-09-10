@@ -3,7 +3,7 @@
     "name": "Tincadia",
     "slug": "tincadia",
     "scheme": "tincadia",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -42,7 +42,7 @@
     "android": {
       "package": "com.tincadia.app",
       "usesCleartextTraffic": true,
-      "versionCode": 36,
+      "versionCode": 37,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
