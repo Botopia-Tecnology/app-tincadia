@@ -14,6 +14,7 @@ import { useSubscription } from '../hooks/useSubscription';
 import { ScreenName, NavigationParams } from '../types/navigation.types';
 import { SplashScreen } from '../screens/SplashScreen';
 import { BatteryOptimizationPrompt } from '../components/onboarding/BatteryOptimizationPrompt';
+import { CallNotificationPermissionPrompt } from '../components/onboarding/CallNotificationPermissionPrompt';
 import { LoginScreen } from '../screens/LoginScreen';
 import { CompleteProfileScreen } from '../screens/CompleteProfileScreen';
 import { ChatsScreen } from '../screens/ChatsScreen';
@@ -253,6 +254,9 @@ function AppContent() {
       {/* Se pide una sola vez, ya con sesion iniciada y perfil completo.
           Es el permiso que decide si las llamadas entran con la app cerrada. */}
       <BatteryOptimizationPrompt />
+      {/* Xiaomi/MIUI bloquea notificaciones flotantes por defecto. Este prompt
+          guía al usuario a activarlas para que las llamadas se muestren como pop-up. */}
+      <CallNotificationPermissionPrompt />
 
       <AnimatedScreen key={underlyingScreen}>
         {underlyingScreen === 'chats' ? (
