@@ -13,6 +13,7 @@ type NativeCallContext = {
   senderId?: string;
   senderName?: string;
   avatarUrl?: string;
+  hasVideo?: boolean;
 };
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -469,6 +470,7 @@ class CallKeepService {
       senderId: getBoundedString(data.senderId || data.sender_id, 128),
       senderName: getBoundedString(data.senderName || data.callerName || data.handle, 120),
       avatarUrl: getBoundedString(data.senderAvatar || data.avatarUrl || data.avatar, 512),
+      hasVideo: Boolean(data.hasVideo === true || data.hasVideo === 'true' || data.isVideo === true || data.isVideo === 'true' || data.callType === 'video' || data.type === 'video'),
     };
   }
 
@@ -780,6 +782,7 @@ class CallKeepService {
       conversationId: context?.conversationId,
       callSessionId: context?.callSessionId,
       senderId: context?.senderId,
+      hasVideo: context?.hasVideo ?? false,
     });
   };
 
@@ -825,6 +828,7 @@ class CallKeepService {
         conversationId: context.conversationId,
         callSessionId: context.callSessionId,
         senderId: context.senderId,
+        hasVideo: context.hasVideo ?? false,
       });
     }
 

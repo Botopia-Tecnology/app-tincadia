@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, Vibration } from 'react-native';
 import notifee, {
   AndroidImportance,
   AndroidCategory,
@@ -74,6 +74,7 @@ class CallNotificationService {
     console.log('[CallNotificationService] Displaying incoming call notification:', {
       callUUID,
       callerName,
+      hasVideo,
       hasAvatar: Boolean(avatarUrl),
     });
 
@@ -88,6 +89,8 @@ class CallNotificationService {
       ongoing: true,
       loopSound: true,
       sound: 'default',
+      onlyAlertOnce: false,
+      vibrationPattern: [500, 1000, 500, 1000],
       pressAction: {
         id: 'default',
         launchActivity: 'default',
@@ -98,13 +101,13 @@ class CallNotificationService {
       },
       actions: [
         {
-          title: '🔴 Rechazar',
+          title: '🔴 Colgar',
           pressAction: {
             id: 'decline',
           },
         },
         {
-          title: '🟢 Contestar',
+          title: hasVideo ? '🟢 Video' : '🟢 Contestar',
           pressAction: {
             id: 'answer',
             launchActivity: 'default',
@@ -119,6 +122,11 @@ class CallNotificationService {
     }
 
     try {
+      // Hardware vibration ensures constant ringing pattern across rapid back-to-back calls
+      try {
+        Vibration.vibrate([0, 800, 600, 800], true);
+      } catch {}
+
       await notifee.displayNotification({
         id: callUUID,
         title: callerName || 'Llamada de Tincadia',
@@ -144,6 +152,10 @@ class CallNotificationService {
     if (Platform.OS !== 'android' || !callUUID) return;
 
     try {
+      try {
+        Vibration.cancel();
+      } catch {}
+
       await notifee.cancelNotification(callUUID);
       console.log('[CallNotificationService] Cancelled notification for callUUID:', callUUID);
     } catch (err) {
@@ -152,6 +164,10 @@ class CallNotificationService {
   }
 
   async handleNotificationEvent(event: Event) {
+    try {
+      Vibration.cancel();
+    } catch {}
+
     const { type, detail } = event;
     const notification = detail.notification;
     const callUUID = notification?.id || (notification?.data?.callUUID as string | undefined);

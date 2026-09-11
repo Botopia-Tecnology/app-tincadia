@@ -55,16 +55,24 @@ export const MessageList = ({
     return new Set(isGroup ? ['call_ended', 'call_missed'] : ['call_ended', 'call_rejected', 'call_missed']);
   }, [isGroup]);
 
+  const getNormalizedSessionId = (m: Message): string | undefined => {
+    const meta = typeof m.metadata === 'string' ? (() => { try { return JSON.parse(m.metadata); } catch { return {}; } })() : (m.metadata || {});
+    const sid = meta.callSessionId || meta.call_session_id;
+    return typeof sid === 'string' && sid.trim() ? sid.trim().toLowerCase() : undefined;
+  };
+
+  const getNormalizedRoomName = (m: Message): string | undefined => {
+    const meta = typeof m.metadata === 'string' ? (() => { try { return JSON.parse(m.metadata); } catch { return {}; } })() : (m.metadata || {});
+    return typeof meta.roomName === 'string' && meta.roomName.trim() ? meta.roomName.trim().toLowerCase() : undefined;
+  };
+
   const endedCallSessionIds = useMemo(() => {
     const endedSessions = new Set<string>();
 
     messages.forEach((message) => {
       if (!terminalCallTypes.has(message.type)) return;
 
-      const sessionId = typeof message.metadata?.callSessionId === 'string'
-        ? message.metadata.callSessionId
-        : undefined;
-
+      const sessionId = getNormalizedSessionId(message);
       if (sessionId) {
         endedSessions.add(sessionId);
       }
@@ -140,35 +148,33 @@ export const MessageList = ({
       const callTime = getSafeTime(msg.createdAt);
       const isExpired = callTime > 0 && (Date.now() - callTime) > CALL_EXPIRY_MS;
 
-      const callSessionId = typeof msg.metadata?.callSessionId === 'string' ? msg.metadata.callSessionId : undefined;
-      const roomName = typeof msg.metadata?.roomName === 'string' ? msg.metadata.roomName : undefined;
+      const callSessionId = getNormalizedSessionId(msg);
+      const roomName = getNormalizedRoomName(msg);
       const hasEndedBySession = Boolean(callSessionId && endedCallSessionIds.has(callSessionId));
       const callIndex = messages.findIndex(m => m.id === msg.id);
       const nextCallIndex = messages.findIndex((m, index) => index > callIndex && m.type === 'call');
       const nextCallTime = nextCallIndex >= 0 ? getSafeTime(messages[nextCallIndex].createdAt) : 0;
 
-      const hasEndedByLegacyFallback = messages.some((m, index) => {
+      const hasEndedByFallback = messages.some((m, index) => {
         if (!terminalCallTypes.has(m.type)) return false;
-
-        const endingSessionId = typeof m.metadata?.callSessionId === 'string' ? m.metadata.callSessionId : undefined;
-        if (endingSessionId) return false;
 
         if (callIndex >= 0 && index <= callIndex) return false;
         if (nextCallIndex >= 0 && index >= nextCallIndex) return false;
 
-        const endingTime = getSafeTime(m.createdAt);
-        if (endingTime < callTime) return false;
-        if (nextCallTime > 0 && endingTime > nextCallTime) return false;
+        const endingSessionId = getNormalizedSessionId(m);
+        if (callSessionId && endingSessionId && endingSessionId !== callSessionId) return false;
 
-        const endingRoomName = typeof m.metadata?.roomName === 'string' ? m.metadata.roomName : undefined;
+        const endingRoomName = getNormalizedRoomName(m);
         if (roomName && endingRoomName && endingRoomName !== roomName) return false;
 
-        // Legacy fallback: some persisted/broadcast end events arrive without callSessionId.
-        // Bind them only to the message window of this call so fast repeated calls stay independent.
+        const endingTime = getSafeTime(m.createdAt);
+        if (callTime > 0 && endingTime > 0 && endingTime < callTime) return false;
+        if (nextCallTime > 0 && endingTime > 0 && endingTime > nextCallTime) return false;
+
         return true;
       });
 
-      const hasEnded = isExpired || hasEndedBySession || hasEndedByLegacyFallback || msg.id !== latestCallMessageId;
+      const hasEnded = isExpired || hasEndedBySession || hasEndedByFallback || msg.id !== latestCallMessageId;
 
       if (hasEnded) {
         return (
