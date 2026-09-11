@@ -107,7 +107,7 @@ class CallNotificationService {
           },
         },
         {
-          title: hasVideo ? '🟢 Video' : '🟢 Contestar',
+          title: '🟢 Video',
           pressAction: {
             id: 'answer',
             launchActivity: 'default',
@@ -130,7 +130,7 @@ class CallNotificationService {
       await notifee.displayNotification({
         id: callUUID,
         title: callerName || 'Llamada de Tincadia',
-        body: hasVideo ? '📹 Videollamada entrante...' : '📞 Llamada de voz entrante...',
+        body: '📹 Videollamada entrante...',
         data: {
           callUUID,
           callerName: callerName || '',
@@ -138,7 +138,7 @@ class CallNotificationService {
           conversationId: conversationId || '',
           callSessionId: callSessionId || '',
           senderId: senderId || '',
-          hasVideo: hasVideo ? 'true' : 'false',
+          hasVideo: 'true',
         },
         android: androidConfig,
       });
