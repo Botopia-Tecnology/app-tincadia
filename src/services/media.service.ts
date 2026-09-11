@@ -352,17 +352,43 @@ class MediaService {
      * Transcribe a voice note / audio file via Model-ms (Vosk local).
      */
     async audioToText(audioUri: string): Promise<string | null> {
+        let tempDownloadUri: string | null = null;
         try {
             const token = await authService.getToken();
             if (!token) throw new Error('No authenticated');
 
-            const endpoint = `${API_URL}/model/audio-to-text`;
-            console.log('🎙️ Sending audio for transcription:', audioUri);
+            let localFileUri = audioUri;
 
-            const response = await FileSystem.uploadAsync(endpoint, audioUri, {
+            // FileSystem.uploadAsync REQUIRES a local file URI (file://).
+            // When an audio is received from another user, audioUri is a remote HTTP URL.
+            // We must download it to local storage first before uploading to the model service.
+            if (audioUri.startsWith('http://') || audioUri.startsWith('https://')) {
+                const cachedUri = this.getCacheFileUri(audioUri, 'audio');
+                const cachedInfo = await FileSystem.getInfoAsync(cachedUri);
+                if (cachedInfo.exists && 'size' in cachedInfo && typeof cachedInfo.size === 'number' && cachedInfo.size > 0) {
+                    localFileUri = cachedUri;
+                } else {
+                    tempDownloadUri = `${FileSystem.cacheDirectory}transcribe_${Date.now()}.m4a`;
+                    console.log(`📥 [MediaService] Downloading remote audio for transcription: ${audioUri}`);
+                    const downloadRes = await FileSystem.downloadAsync(audioUri, tempDownloadUri);
+                    localFileUri = downloadRes.uri;
+                }
+            } else if (!audioUri.startsWith('file://')) {
+                // If it's a Cloudinary publicId or relative storage key
+                const downloaded = await this.downloadMedia(audioUri, 'audio');
+                if (downloaded) {
+                    localFileUri = downloaded;
+                }
+            }
+
+            const endpoint = `${API_URL}/model/audio-to-text`;
+            console.log('🎙️ Sending audio for transcription:', localFileUri);
+
+            const response = await FileSystem.uploadAsync(endpoint, localFileUri, {
                 httpMethod: 'POST',
                 uploadType: FileSystem.FileSystemUploadType.MULTIPART,
                 fieldName: 'file',
+                mimeType: 'audio/m4a',
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -384,6 +410,12 @@ class MediaService {
         } catch (error) {
             console.error('Audio-to-text error:', error);
             throw error;
+        } finally {
+            if (tempDownloadUri) {
+                try {
+                    await FileSystem.deleteAsync(tempDownloadUri, { idempotent: true });
+                } catch {}
+            }
         }
     }
 

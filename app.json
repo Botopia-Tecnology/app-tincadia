@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Tincadia",
-    "slug": "app-tincadia",
+    "slug": "tincadia",
     "scheme": "tincadia",
     "version": "1.0.8",
     "orientation": "default",
@@ -19,7 +19,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tincadia.app",
       "usesAppleSignIn": true,
-      "buildNumber": "3",
+      "buildNumber": "4",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSContactsUsageDescription": "Tincadia necesita acceso a tus contactos para encontrar amigos que ya usan la app y facilitar la comunicación.",
@@ -190,9 +190,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "f00a224c-23fe-49ad-8474-e1ab7145df54"
+        "projectId": "8bf6b071-622c-4428-a2f8-b83b95fa2d99"
       }
     },
-    "owner": "tincadia"
+    "owner": "juandavidr7"
   }
 }
