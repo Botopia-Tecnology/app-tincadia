@@ -20,7 +20,7 @@ export interface DisplayCallNotificationOptions {
   hasVideo?: boolean;
 }
 
-const INCOMING_CALLS_CHANNEL_ID = 'tincadia_incoming_calls';
+const INCOMING_CALLS_CHANNEL_ID = 'tincadia_incoming_calls_v2';
 
 class CallNotificationService {
   private channelCreated = false;
@@ -37,7 +37,7 @@ class CallNotificationService {
         visibility: AndroidVisibility.PUBLIC,
         sound: 'default',
         vibration: true,
-        vibrationPattern: [0, 500, 250, 500],
+        vibrationPattern: [0, 1000, 500, 1000, 500, 1000],
         bypassDnd: true,
       });
       this.channelCreated = true;
@@ -84,6 +84,7 @@ class CallNotificationService {
       visibility: AndroidVisibility.PUBLIC,
       smallIcon: 'notification_icon',
       color: '#0066FF',
+      asForegroundService: true,
       autoCancel: false,
       ongoing: true,
       loopSound: true,
@@ -98,13 +99,13 @@ class CallNotificationService {
       },
       actions: [
         {
-          title: 'Rechazar',
+          title: '🔴 Rechazar',
           pressAction: {
             id: 'decline',
           },
         },
         {
-          title: 'Contestar',
+          title: '🟢 Contestar',
           pressAction: {
             id: 'answer',
             launchActivity: 'default',
@@ -145,6 +146,7 @@ class CallNotificationService {
 
     try {
       await notifee.cancelNotification(callUUID);
+      await notifee.stopForegroundService().catch(() => {});
       console.log('[CallNotificationService] Cancelled notification for callUUID:', callUUID);
     } catch (err) {
       console.warn('[CallNotificationService] Could not cancel notification:', err);

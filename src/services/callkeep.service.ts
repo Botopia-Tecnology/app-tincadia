@@ -118,13 +118,7 @@ const options = {
     okButton: 'Aceptar',
     imageName: 'phone_account_icon',
     additionalPermissions: [],
-    selfManaged: true,
-    foregroundService: {
-      channelId: 'tincadia_calls',
-      channelName: 'Llamadas Tincadia',
-      notificationTitle: 'Llamada entrante',
-      notificationIcon: 'notification_icon'
-    }
+    selfManaged: true
   }
 };
 
