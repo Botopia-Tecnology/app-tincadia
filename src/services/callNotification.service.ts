@@ -37,7 +37,7 @@ class CallNotificationService {
         visibility: AndroidVisibility.PUBLIC,
         sound: 'default',
         vibration: true,
-        vibrationPattern: [0, 1000, 500, 1000, 500, 1000],
+        vibrationPattern: [500, 1000, 500, 1000],
         bypassDnd: true,
       });
       this.channelCreated = true;
@@ -84,7 +84,6 @@ class CallNotificationService {
       visibility: AndroidVisibility.PUBLIC,
       smallIcon: 'notification_icon',
       color: '#0066FF',
-      asForegroundService: true,
       autoCancel: false,
       ongoing: true,
       loopSound: true,
@@ -146,7 +145,6 @@ class CallNotificationService {
 
     try {
       await notifee.cancelNotification(callUUID);
-      await notifee.stopForegroundService().catch(() => {});
       console.log('[CallNotificationService] Cancelled notification for callUUID:', callUUID);
     } catch (err) {
       console.warn('[CallNotificationService] Could not cancel notification:', err);
