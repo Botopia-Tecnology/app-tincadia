@@ -136,6 +136,10 @@ function TranscriptionsProvider({ children }: { children: React.ReactNode }) {
                         };
                     }
 
+                    if (current.partial?.text === trimmed) {
+                        return prev;
+                    }
+
                     return {
                         ...prev,
                         [rawSpeaker]: { ...current, partial: { speaker, text: trimmed } },
@@ -994,7 +998,11 @@ export const CallScreen = ({
                 token={token}
                 connect={true}
                 options={{ adaptiveStream: true }}
-                audio={true}
+                audio={{
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: false,
+                }}
                 video={true}
                 onConnected={handleRoomConnected}
                 onDisconnected={handleRoomDisconnected}
@@ -1070,11 +1078,9 @@ function ParticipantTranscriptionOverlay({ participantIdentity, bottomOffset = 3
     // Auto-scroll to bottom when new text arrives
     useEffect(() => {
         if (scrollRef.current) {
-            setTimeout(() => {
-                scrollRef.current?.scrollToEnd({ animated: true });
-            }, 100);
+            scrollRef.current.scrollToEnd({ animated: true });
         }
-    }, [finalLines, partialLine]);
+    }, [finalLines.length, partialLine?.text]);
 
     useEffect(() => {
         if (!room) return;
